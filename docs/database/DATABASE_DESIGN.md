@@ -4,7 +4,7 @@ Link: [dbdiagram.io/d/hotel_management_database_design-6a80285cc6a866c907722415]
 
 Nguồn yêu cầu: `Hotel_Management_Project_Specification.docx` (mục 2 Chức năng, mục 3 Trang, mục 5 Business Rules, mục 7 Luồng nghiệp vụ).
 
-DBMS mục tiêu: **PostgreSQL 14+**. Lý do: cần `daterange` + `EXCLUDE USING gist` để chặn overlap booking (BR-002) ở tầng database, `JSONB` để snapshot policy và payload gateway, generated column, partial index. Nếu bắt buộc dùng MySQL, xem mục 11.4.
+DBMS mục tiêu: **MySQL 8.0+**. Lý do: cộng đồng yêu cầu MySQL ( PROJECT_PLAN.md ), dễ triển khai trong môi trường học tập. BR-002 (chống overlap booking) được thực thi bằng trigger kiểm tra tại application layer; BR-004/BR-015 tương tự. `JSON` (MySQL 8) thay thế `JSONB` cho snapshot policy. Không dùng `daterange`/`EXCLUDE USING gist`/`CITEXT`/partial index — xem chi tiết từng feature ở mục 11.4.
 
 File DBML để dán vào https://dbdiagram.io: [`hotel_management.dbml`](./hotel_management.dbml)
 
@@ -16,7 +16,7 @@ Bản này được review theo ba mục tiêu: **tách rõ master/config data v
 
 | #   | Nguyên tắc                                                                                                                                                                                                                                                                                               | Lý do                                                                                                                                                 |
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| P1  | Khóa chính`BIGINT GENERATED ALWAYS AS IDENTITY`, kèm `public_id UUID` hoặc `*_code` để lộ ra ngoài (URL, API, email, hóa đơn)                                                                                                                                                             | PK tuần tự giúp index nhỏ và join nhanh; không lộ ID tuần tự ra ngoài để tránh enumeration attack                                         |
+| P1  | Khóa chính`BIGINT NOT NULL AUTO_INCREMENT`, kèm `public_id CHAR(36)` hoặc `*_code` để lộ ra ngoài (URL, API, email, hóa đơn)                                                                                                                                               | PK tự tăng giúp index nhỏ và join nhanh; không lộ ID tuần tự ra ngoài để tránh enumeration attack                                         |
 | P2  | Tiền tệ dùng`NUMERIC(14,2)` + cột `currency CHAR(3)`, **không dùng** `FLOAT/DOUBLE`                                                                                                                                                                                                      | Float làm sai lệch phép cộng tiền.`14,2` đủ cho VND                                                                                           |
 | P3  | Thời điểm dùng`TIMESTAMPTZ`; ngày lưu trú dùng `DATE`                                                                                                                                                                                                                                          | Đêm khách sạn là đơn vị**ngày**; còn `checked_in_at` thực tế là thời điểm nên phải có timezone                              |
 | P4  | Khoảng ngày lưu trú luôn là nửa mở`[check_in, check_out)`                                                                                                                                                                                                                                        | Khách A trả phòng 17/08 thì khách B nhận phòng đúng 17/08. Khoảng đóng`[]` sẽ báo trùng phòng sai và mất doanh thu một đêm      |
@@ -26,7 +26,7 @@ Bản này được review theo ba mục tiêu: **tách rõ master/config data v
 | P8  | **Không dùng SCD Type 2** cho giá RoomType/ServiceItem                                                                                                                                                                                                                                            | Snapshot tại transaction đã giải quyết trọn vấn đề giữ giá cũ. SCD2 thêm bảng version, thêm join, thêm lỗi mà không thêm giá trị |
 | P9  | **Một giá trị chỉ có một source of truth.** Cột aggregate ở cấp cha được phép tồn tại nhưng phải ghi rõ tổng hợp từ đâu và cập nhật trong cùng transaction                                                                                                                | Xem bảng nguồn dữ liệu ở mục 11.1                                                                                                                |
 | P10 | Trạng thái dùng`ENUM` khi tập giá trị do code quyết định; dùng **bảng lookup** khi vận hành cần tự thêm giá trị                                                                                                                                                                  | `booking_status` là logic code → enum. `booking_sources` (thêm OTA mới) → bảng                                                               |
-| P11 | Ràng buộc nghiệp vụ bất biến đặt ở DB (CHECK/UNIQUE/EXCLUDE/trigger), không chỉ ở application                                                                                                                                                                                                  | Nhiều instance backend + job + query tay đều ghi được. Chỉ validate ở app sẽ lọt dữ liệu rác khi race condition                           |
+| P11 | Ràng buộc nghiệp vụ bất biến đặt ở DB (CHECK/UNIQUE/trigger) hoặc application layer (pessimistic locking), không chỉ ở application đơn lẻ                                                                                                                                  | Nhiều instance backend + job + query tay đều ghi được. Trigger và stored procedure đảm bảo toàn vẹn ngay cả khi truy vấn trực tiếp vào DB                          |
 
 ---
 
@@ -74,7 +74,7 @@ Mỗi thực thể dưới đây tồn tại vì một câu trong tài liệu y�
 **Booking & Availability**
 
 - **Booking** — đơn đặt: trạng thái, người liên hệ, tổng tiền, nguồn. Là gốc của mọi luồng ở mục 7. **Không giữ khoảng ngày lưu trú** — khoảng ngày thuộc BookingRoom (xem QĐ-6).
-- **BookingRoom** — dòng đặt cho **một phòng trong một khoảng ngày**. Đây là quyết định thiết kế then chốt: (a) BR-002 nói ràng buộc overlap là theo **phòng**, nên `EXCLUDE` phải nằm trên bảng có `room_id`; (b) khách đặt 2 phòng trong 1 đơn là bình thường; (c) mỗi phòng có thể có ngày trả khác nhau; (d) đổi phòng giữa kỳ lưu trú trở thành thêm dòng, không phải sửa dòng cũ.
+- **BookingRoom** — dòng đặt cho **một phòng trong một khoảng ngày**. Đây là quyết định thiết kế then chốt: (a) BR-002 nói ràng buộc overlap là theo **phòng**, nên trigger chống overlap phải nằm trên bảng có `room_id`; (b) khách đặt 2 phòng trong 1 đơn là bình thường; (c) mỗi phòng có thể có ngày trả khác nhau; (d) đổi phòng giữa kỳ lưu trú trở thành thêm dòng, không phải sửa dòng cũ.
 - **BookingRoomNight** — một dòng cho mỗi đêm với giá đêm đó. **Đây là source of truth của giá phòng đã bán.** Cần vì: (a) dòng 154-156 yêu cầu doanh thu theo **ngày**, một booking 28/08–02/09 phải phân bổ sang hai tháng; (b) giá từng đêm khác nhau nên không tồn tại một con số "giá phòng" duy nhất cho cả kỳ lưu trú; (c) khóa giá tại thời điểm đặt để đổi `base_price`/`RateOverride` sau này không hồi tố.
 - **BookingGuest** — dòng 105 (staff xem *ai* đang ở trong phòng) và dòng 122 (booking walk-in không có tài khoản). **Khách lưu trú ≠ người đặt**: người đặt là `bookings.contact_*`, khách thực tế ở là BookingGuest. Khách sạn ở Việt Nam phải khai báo lưu trú theo CCCD/passport → cần lưu giấy tờ tùy thân, có mã hóa.
 - **BookingSource** — dòng 124 liệt kê WEBSITE, WALK_IN, PHONE, BOOKING_COM, AGODA, STAFF_MANUAL và dòng 152 yêu cầu thống kê theo nguồn. Là bảng lookup vì OTA mới phát sinh theo hợp đồng thương mại. `commission_percent` là **config hiện tại**, phải snapshot vào booking (mục 6.2).
@@ -117,7 +117,7 @@ CustomerProfile 1─N Booking  (nullable: walk-in không có account)
 BookingSource   1─N Booking
 CancellationPolicy 1─N Booking  (+ snapshot JSONB toàn bộ policy vào booking)
 
-Booking 1─N BookingRoom ────── N─1 Room       ← EXCLUDE overlap ở đây (BR-002)
+Booking 1─N BookingRoom ────── N─1 Room       ← overlap check bằng trigger BR-002
 BookingRoom 1─N BookingRoomNight              ← 1 dòng / 1 đêm, source of truth giá phòng
 BookingRoom 0─1 BookingRoom (moved_from)      ← chuỗi đổi phòng giữa kỳ
 Booking 1─N BookingGuest ───── N─1 BookingRoom (nullable, composite FK)
@@ -138,7 +138,7 @@ User 1─N EmailMessage (recipient)             User 1─N AuditLog (actor)
 Tài liệu nói thẳng ở dòng 119 và BR-003. Một phòng khả dụng cho khoảng `[in, out)` khi và chỉ khi: `rooms.operational_status = 'ACTIVE'` **và** không có `booking_rooms` đang hiệu lực nào overlap **và** không có `room_status_blocks` nào overlap. Không có cột `is_available` trong schema — cố tình như vậy, vì một cột như thế sai ngay khi có booking đầu tiên.
 
 **QĐ-2. Chống trùng phòng bằng ràng buộc DB, không bằng "check rồi insert".**
-Dòng 74 yêu cầu "kiểm tra lại availability trước khi tạo booking". Nhưng kiểm tra ở application rồi mới insert vẫn để lọt double-booking: hai request đồng thời đều đọc thấy trống rồi đều ghi thành công. Giải pháp là `EXCLUDE USING gist` trên `booking_rooms` — request thứ hai bị DB từ chối, không phụ thuộc timing.
+Dòng 74 yêu cầu "kiểm tra lại availability trước khi tạo booking". Nhưng kiểm tra ở application rồi mới insert vẫn để lọt double-booking: hai request đồng thời đều đọc thấy trống rồi đều ghi thành công. Giải pháp là trigger BEFORE INSERT/UPDATE trên `booking_rooms` — request thứ hai bị DB từ chối ngay tại trigger, không phụ thuộc timing. Kết hợp `SELECT ... FOR UPDATE` trên `rooms` trong transaction tạo booking để giảm contention ở tầng trigger.
 
 **QĐ-3. Booking PENDING phải có thời điểm hết hạn.**
 Dòng 76-78: booking tạo ở trạng thái PENDING rồi mới thanh toán. Nếu khách bỏ giữa đường, phòng bị giữ vô thời hạn và không bán được. Cần `hold_expires_at` + job giải phóng. Thiếu cột này là lỗi thất thoát doanh thu.
@@ -183,9 +183,9 @@ Tài khoản đăng nhập. Không chứa thuộc tính riêng của khách hay 
 
 | Cột                            | Kiểu        | Ràng buộc                                    | Giải thích                                                                                                                                                        |
 | ------------------------------- | ------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                          | BIGINT       | PK, identity                                   |                                                                                                                                                                     |
-| `public_id`                   | UUID         | NOT NULL, UNIQUE, default`gen_random_uuid()` | Dùng trong URL/API thay cho id (P1)                                                                                                                                |
-| `email`                       | CITEXT       | NOT NULL, UNIQUE                               | `CITEXT` để `An@x.com` = `an@x.com`. Dòng 37 yêu cầu kiểm tra email chưa được dùng — `VARCHAR` thường sẽ lọt trùng chỉ khác hoa/thường |
+| `id`                          | BIGINT       | PK, AUTO_INCREMENT                             |                                                                                                                                                                     |
+| `public_id`                   | CHAR(36)     | NOT NULL, UNIQUE, default`UUID()`              | Dùng trong URL/API thay cho id (P1)                                                                                                                                |
+| `email`                       | VARCHAR(255) | NOT NULL, UNIQUE                               | Dùng collation`utf8mb4_0900_ai_ci` để`An@x.com` = `an@x.com` (MySQL 8). Dòng 37 yêu cầu kiểm tra email chưa được dùng                    |
 | `email_verified_at`           | TIMESTAMPTZ  | NULL                                           | Dòng 38, 41: NULL = chờ xác thực, chưa cho truy cập chức năng                                                                                               |
 | `password_hash`               | TEXT         | NULL                                           | NULL hợp lệ với tài khoản tạo từ OAuth (dòng 50). Lưu bcrypt cost ≥ 12 hoặc argon2id                                                                     |
 | `phone`                       | VARCHAR(20)  | NULL, UNIQUE khi không NULL                   | Dòng 36 thu số điện thoại                                                                                                                                      |
@@ -284,7 +284,7 @@ Hai bảng phục vụ **quản lý ca trực** (dòng 168-173, dòng 268-271). 
 | `name`             | VARCHAR(80) | NOT NULL               | Ca sáng, Ca chiều, Ca đêm                                                       |
 | `start_time`       | TIME        | NOT NULL               | Giờ bắt đầu                                                                     |
 | `end_time`         | TIME        | NOT NULL               | Giờ kết thúc                                                                     |
-| `crosses_midnight` | BOOLEAN     | NOT NULL default false | Ca đêm 22:00–06:00 vượt qua ngày. Cần để tính`shift_period` chính xác |
+| `crosses_midnight` | BOOLEAN     | NOT NULL default false | Ca đêm 22:00–06:00 vượt qua ngày. Cần để tính`shift_end_at` chính xác ở application layer |
 | `is_active`        | BOOLEAN     | NOT NULL default true  | Không xóa ca đang dùng, chỉ vô hiệu hóa                                     |
 
 `TIME` không có timezone — giờ làm việc luôn theo múi giờ địa phương của khách sạn, không phải UTC.
@@ -297,7 +297,8 @@ Hai bảng phục vụ **quản lý ca trực** (dòng 168-173, dòng 268-271). 
 | `staff_id`                    | BIGINT            | NOT NULL, FK→staff_profiles RESTRICT |                                                                                                                                 |
 | `shift_id`                    | SMALLINT          | NOT NULL, FK→shifts RESTRICT         |                                                                                                                                 |
 | `work_date`                   | DATE              | NOT NULL                              | Dòng 170: gán Staff vào ca**theo ngày**                                                                               |
-| `shift_period`                | TSTZRANGE         | NOT NULL                              | Khoảng thời gian thực tế của ca tại ngày làm việc. Cột sinh từ`work_date` + giờ ca + xử lý `crosses_midnight` |
+| `shift_start_at`              | DATETIME          | NOT NULL                              | Thời điểm bắt đầu ca tại ngày làm việc. Tính từ`work_date` + giờ bắt đầu ca. Vượt nửa đêm xử lý ở application layer |
+| `shift_end_at`                | DATETIME          | NOT NULL                              | Thời điểm kết thúc ca. Nếu ca vượt nửa đêm (Night 22:00–06:00), giá trị rơi vào ngày hôm sau — xử lý ở application layer |
 | `status`                      | assignment_status | NOT NULL default`SCHEDULED`         | `SCHEDULED / COMPLETED / ABSENT / CANCELLED`                                                                                  |
 | `note`                        | TEXT              | NULL                                  | Ghi chú cho Staff khác hoặc lý do vắng                                                                                     |
 | `assigned_by`                 | BIGINT            | NOT NULL, FK→users RESTRICT          |                                                                                                                                 |
@@ -306,37 +307,42 @@ Hai bảng phục vụ **quản lý ca trực** (dòng 168-173, dòng 268-271). 
 **BR-015 / dòng 173 — không trùng ca:**
 
 ```sql
-ALTER TABLE shift_assignments
-  ADD CONSTRAINT shift_no_overlap
-  EXCLUDE USING gist (staff_id WITH =, shift_period WITH &&)
-  WHERE (status IN ('SCHEDULED', 'COMPLETED'));
+-- MySQL: sử dụng BEFORE INSERT/UPDATE trigger thay vì EXCLUDE constraint
+-- PostgreSQL (tham khảo, không chạy trên MySQL):
+-- ALTER TABLE shift_assignments
+--   ADD CONSTRAINT shift_no_overlap
+--   EXCLUDE USING gist (staff_id WITH =, shift_period WITH &&)
+--   WHERE (status IN ('SCHEDULED', 'COMPLETED'));
 ```
 
-Cách đọc: không được có hai dòng **cùng Staff** mà **`shift_period` giao nhau**, xét trong các dòng còn hiệu lực. `&&` trên `tstzrange` đúng cả khi ca vượt nửa đêm. Ví dụ: ca Morning 06:00–14:00 và ca Afternoon 14:00–22:00 **không** giao nhau (`[06:00, 14:00)` và `[14:00, 22:00)` — giờ kết thúc = điểm đầu của ca tiếp theo), nhưng hai ca Morning cùng ngày thì giao toàn bộ và bị chặn.
+MySQL không có kiểu `TSTZRANGE` hay `EXCLUDE ... USING gist`, nên ràng buộc không trùng ca được triển khai qua `BEFORE INSERT/UPDATE` trigger kiểm tra overlap giữa `shift_start_at` và `shift_end_at` cho cùng `staff_id` và `work_date` khi `status IN ('SCHEDULED', 'COMPLETED')`. Trigger xử lý đúng cả khi ca vượt nửa đêm (ví dụ: ca Night 22:00–06:00, `shift_end_at` nằm ở ngày hôm sau).
 
 UNIQUE(`staff_id`, `shift_id`, `work_date`) — không gán cùng một Staff vào cùng một ca trong cùng ngày (chặt hơn EXCLUDE vì không có khoảng giao nhau nào được phép).
 
 Index: `(work_date, shift_id)` cho xem lịch trực ngày nào.
 
-#### Tính `shift_period`
+#### Tính `shift_start_at` / `shift_end_at`
 
-`TIME` không có timezone, nên `shift_period` tính từ `work_date` + giờ ca + múi giờ khách sạn. Logic ở service layer hoặc trigger:
+`start_time` và `end_time` là `TIME` không có timezone, nên logic tính datetime thực tế ở application layer hoặc trigger. Giờ timezone của khách sạn nên lấy từ `hotel_settings` nếu có, thay vì hard-code.
 
+- **Ca thường** (Morning 06:00–14:00): `end_time > start_time`, `shift_end_at` cùng ngày với `work_date`.
+- **Ca đêm** (Night 22:00–06:00): `crosses_midnight = true` và `end_time <= start_time`, nên `shift_end_at` cộng thêm 1 ngày so với `work_date` → `shift_end_at` rơi vào ngày hôm sau, đúng 8 tiếng.
+
+**MySQL trigger / application logic:**
+
+```sql
+-- Pseudo-code (điều chỉnh theo ngôn ngữ lập trình dùng)
+SET NEW.shift_start_at = NEW.work_date + INTERVAL HOUR(shift.start_time) HOUR
+                           + INTERVAL MINUTE(shift.start_time) MINUTE;
+SET NEW.shift_end_at = NEW.work_date + INTERVAL HOUR(shift.end_time) HOUR
+                         + INTERVAL MINUTE(shift.end_time) MINUTE;
+-- Ca đêm: nếu crosses_midnight = true, cộng thêm 1 ngày
+IF shift.crosses_midnight AND shift.end_time <= shift.start_time THEN
+  SET NEW.shift_end_at = NEW.shift_end_at + INTERVAL 1 DAY;
+END IF;
 ```
-SHIFT_PERIOD = tstzrange(
-  (work_date + start_time) AT TIME ZONE hotel_tz,
-  (work_date + end_time)   AT TIME ZONE hotel_tz
-    + CASE WHEN crosses_midnight AND end_time <= start_time
-           THEN INTERVAL '1 day' ELSE INTERVAL '0'
-    END,
-  '[)'
-)
-```
 
-- Ca thường (Morning 06:00–14:00): `end_time > start_time`, không cộng ngày.
-- Ca đêm (Night 22:00–06:00): `crosses_midnight = true` và `06:00 <= 22:00`, nên `end_time` cộng thêm 1 ngày → `[22:00, +1day 06:00)`, đúng 8 tiếng.
-
-Giờ timezone của khách sạn nên đưa vào `hotel_settings` nếu có, thay vì hard-code. Nếu bỏ shift management, hai bảng này có thể để trống mà không ảnh hưởng luồng chính.
+Nếu bỏ shift management, hai bảng này có thể để trống mà không ảnh hưởng luồng chính.
 
 ---
 
@@ -436,18 +442,32 @@ Bảng then chốt cho BR-003/BR-004. Ghi lại khoảng phòng không bán đư
 | `block_type`  | room_block_type | NOT NULL                                                   | `MAINTENANCE / RENOVATION / OUT_OF_SERVICE / INTERNAL_USE / DEEP_CLEANING` |
 | `start_date`  | DATE            | NOT NULL                                                   |                                                                              |
 | `end_date`    | DATE            | NOT NULL, CHECK`> start_date`                            | Nửa mở`[start, end)` theo P4                                             |
-| `block_range` | DATERANGE       | GENERATED:`daterange(start_date, end_date, '[)')` STORED | Cột sinh để dùng cho EXCLUDE; không phải nhớ tự build range ở app   |
 | `reason`      | TEXT            | NULL                                                       | Ghi chú cho Staff                                                           |
 | `created_by`  | BIGINT          | NOT NULL, FK→users RESTRICT                               | Ai chặn phòng                                                              |
 | `created_at`  | TIMESTAMPTZ     | NOT NULL default now()                                     |                                                                              |
 
+**Không có `block_range` / `DATERANGE`.** MySQL không có kiểu `DATERANGE`. Overlap kiểm tra bằng trigger tương tự BR-002:
+
 ```sql
-ALTER TABLE room_status_blocks
-  ADD CONSTRAINT room_block_no_overlap
-  EXCLUDE USING gist (room_id WITH =, block_range WITH &&);
+CREATE TRIGGER trg_block_no_overlap
+BEFORE INSERT OR UPDATE OF room_id, start_date, end_date
+ON room_status_blocks
+FOR EACH ROW
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM room_status_blocks
+    WHERE room_id = NEW.room_id
+      AND id <> COALESCE(NEW.id, 0)
+      AND start_date < NEW.end_date
+      AND end_date > NEW.start_date
+  ) THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Room status block overlaps with an existing block';
+  END IF;
+END;
 ```
 
-Ràng buộc này chặn hai lệnh bảo trì trùng nhau trên cùng phòng. Kiểm tra chéo giữa block và booking đã có phải làm bằng trigger (mục 8.3) vì `EXCLUDE` không hoạt động qua hai bảng.
+Ràng buộc này chặn hai lệnh bảo trì trùng nhau trên cùng phòng. Kiểm tra chéo giữa block và booking được thực hiện bằng trigger đối xứng (mục 8.3).
 
 ---
 
@@ -582,7 +602,7 @@ Giữ thông tin **đơn đặt** và **người liên hệ**. Không giữ kho�
 | Cột                                   | Kiểu                  | Ràng buộc                                    | Giải thích                                                                                                                                                                                                                                        |
 | -------------------------------------- | ---------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                                 | BIGINT                 | PK                                             | Dùng nội bộ DB/FK                                                                                                                                                                                                                                |
-| `public_id`                          | UUID                   | NOT NULL, UNIQUE, default`gen_random_uuid()` | Dùng cho URL/API (P1). Không dùng PK tuần tự làm public identifier                                                                                                                                                                            |
+| `public_id`                          | CHAR(36)               | NOT NULL, UNIQUE, default`UUID()` | Dùng cho URL/API (P1). Không dùng PK tuần tự làm public identifier. MySQL `UUID()` trả chuỗi 36 ký tự có dấu `-`; nếu cần chuỗi ngắn hơn dùng application-side UUID v4                                                                                              |
 | `booking_code`                       | VARCHAR(20)            | NOT NULL, UNIQUE                               | `BK-2026-000123`. Khách đọc mã này qua điện thoại/email; không đọc UUID                                                                                                                                                                |
 | `customer_id`                        | BIGINT                 | **NULL**, FK→customer_profiles RESTRICT | NULL hợp lệ và cần thiết: dòng 122 booking walk-in/OTA không có tài khoản. Validate theo`booking_sources.requires_account` ở service layer                                                                                             |
 | `source_id`                          | SMALLINT               | NOT NULL, FK→booking_sources RESTRICT         | Dòng 124, 152                                                                                                                                                                                                                                      |
@@ -663,8 +683,9 @@ Nơi BR-001, BR-002, BR-003 và BR-009 được thực thi. Đây cũng là nơi
 | `room_type_name_snapshot`     | VARCHAR(120)        | NOT NULL                                                            | Snapshot tên loại phòng lúc đặt. Cần vì Staff có thể đổi tên "Deluxe" thành "Deluxe Garden"; hóa đơn và lịch sử của khách cũ phải giữ tên tại thời điểm bán |
 | `check_in_date`               | DATE                | NOT NULL                                                            |                                                                                                                                                                                            |
 | `check_out_date`              | DATE                | NOT NULL,**CHECK `> check_in_date`**                        | **BR-001** cưỡng chế tại DB                                                                                                                                                      |
-| `stay_range`                  | DATERANGE           | GENERATED:`daterange(check_in_date, check_out_date, '[)')` STORED | Cột nền cho EXCLUDE (P4)                                                                                                                                                                 |
-| `nights`                      | INT                 | GENERATED:`check_out_date - check_in_date` STORED                 |                                                                                                                                                                                            |
+| `nights`                      | INT                 | GENERATED ALWAYS AS (`DATEDIFF(check_out_date, check_in_date)`) STORED | Số đêm lưu trú. MySQL 8 hỗ trợ generated columns                                                                                                                                                              |
+
+**Không có `stay_range` / `DATERANGE`.** MySQL không có kiểu `DATERANGE`. Khoảng ngày lưu trú half-open `[check_in, check_out)` được biểu diễn bằng hai cột DATE đã có. Overlap kiểm tra bằng trigger (xem bên dưới).
 | `room_subtotal`               | NUMERIC(14,2)       | NOT NULL default 0, CHECK`>= 0`                                   | **Aggregate** = `SUM(booking_room_nights.price)` của dòng này. Cập nhật trong cùng transaction với nights (P9)                                                              |
 | `status`                      | booking_room_status | NOT NULL default`RESERVED`                                        | 5 giá trị, xem bảng dưới                                                                                                                                                              |
 | `guest_count`                 | SMALLINT            | NOT NULL default 1, CHECK`>= 1`                                   |                                                                                                                                                                                            |
@@ -675,7 +696,7 @@ Nơi BR-001, BR-002, BR-003 và BR-009 được thực thi. Đây cũng là nơi
 
 **Đã bỏ `room_rate_snapshot`.** Một kỳ lưu trú có thể có giá khác nhau từng đêm (15/08 = 1.000.000, 16/08 = 1.200.000, 17/08 = 1.500.000) nên không tồn tại một con số duy nhất đại diện chính xác cho cả dòng phòng. Giá thực bán từng đêm nằm ở `booking_room_nights.price` (source of truth); `room_subtotal` là aggregate của chúng.
 
-**Đã bỏ `is_active`.** EXCLUDE dùng trực tiếp `status IN ('RESERVED','OCCUPIED')`, nên một cột derived song song chỉ tạo nguy cơ lệch dữ liệu. Không vừa có `is_active` vừa dùng `status` ở constraint.
+**Đã bỏ `is_active`.** Trigger BR-002 dùng trực tiếp `status IN ('RESERVED','OCCUPIED')`, nên một cột derived song song chỉ tạo nguy cơ lệch dữ liệu. Không vừa có `is_active` vừa dùng `status` ở trigger.
 
 #### Ý nghĩa `booking_room_status`
 
@@ -687,37 +708,53 @@ Nơi BR-001, BR-002, BR-003 và BR-009 được thực thi. Đây cũng là nơi
 | `RELEASED`  | Reservation được giải phóng trước khi hoàn tất lưu trú (cancel/expire) | inactive       |
 | `MOVED_OUT` | Khách đã rời phòng này vì được chuyển sang phòng khác                | inactive       |
 
-`COMPLETED` là giá trị mới. Bản trước để dòng đã checkout ở `OCCUPIED`, khiến nó vẫn nằm trong tập active của EXCLUDE và tiếp tục chặn phòng vô ích. Tách `COMPLETED` (kết thúc bình thường) khỏi `RELEASED` (kết thúc bất thường) cũng cần cho báo cáo: đêm đã bán thực tế chỉ tính dòng `COMPLETED`/`OCCUPIED`.
+`COMPLETED` là giá trị mới. Bản trước để dòng đã checkout ở `OCCUPIED`, khiến nó vẫn nằm trong tập active và tiếp tục chặn phòng vô ích. Tách `COMPLETED` (kết thúc bình thường) khỏi `RELEASED` (kết thúc bất thường) cũng cần cho báo cáo: đêm đã bán thực tế chỉ tính dòng `COMPLETED`/`OCCUPIED`.
 
-**Ràng buộc chống trùng phòng (BR-002):**
+**Ràng buộc chống trùng phòng (BR-002) — MySQL:**
+
+MySQL không có `EXCLUDE USING gist`. BR-002 được thực thi bằng `BEFORE INSERT/UPDATE` trigger:
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS btree_gist;
+CREATE TRIGGER trg_booking_room_no_overlap
+BEFORE INSERT OR UPDATE OF room_id, check_in_date, check_out_date, status
+ON booking_rooms
+FOR EACH ROW
+BEGIN
+  IF NEW.status IN ('RESERVED', 'OCCUPIED') THEN
+    IF EXISTS (
+      SELECT 1 FROM booking_rooms
+      WHERE room_id = NEW.room_id
+        AND id <> COALESCE(NEW.id, 0)
+        AND status IN ('RESERVED', 'OCCUPIED')
+        AND check_in_date < NEW.check_out_date
+        AND check_out_date > NEW.check_in_date
+    ) THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Room is already booked for overlapping dates (BR-002)';
+    END IF;
+  END IF;
+END;
+```
 
-ALTER TABLE booking_rooms
-  ADD CONSTRAINT booking_rooms_no_overlap
-  EXCLUDE USING gist (
-    room_id    WITH =,
-    stay_range WITH &&
-  )
-  WHERE (status IN ('RESERVED', 'OCCUPIED'));
+Cách đọc: không được tồn tại hai dòng **cùng `room_id`** mà khoảng ngày giao nhau, xét trong các dòng còn hiệu lực (`status IN ('RESERVED','OCCUPIED')`). Ba điểm cần lưu ý:
 
+1. `status IN (...)` là bắt buộc. Không có nó, booking đã hủy vẫn chặn khách mới đặt lại phòng đó — phòng bị "chết" vĩnh viễn sau một lần hủy.
+2. Điều kiện `check_in_date < NEW.check_out_date AND check_out_date > NEW.check_in_date` xử lý đúng trường hợp back-to-back: `[15/08, 17/08)` và `[17/08, 19/08)` **không** giao nhau, nên khách mới nhận phòng đúng ngày khách cũ trả phòng (P4).
+3. Trigger chạy ở tầng DB nên chặn được cả hai request đồng thời (QĐ-2), cả booking do Staff nhập tay (BR-009), và cả `INSERT` chạy tay lúc xử lý sự cố.
+4. Với nhiều instance backend, nên dùng `SELECT ... FOR UPDATE` trên hàng phòng trước khi INSERT trong cùng transaction để tránh race giữa trigger kiểm tra và commit — trigger không thay thế được pessimistic locking ở tầng transaction khi tải đồng thời cực cao.
+
+```sql
 -- Cho composite FK từ booking_guests (mục 6.5)
 ALTER TABLE booking_rooms
   ADD CONSTRAINT booking_rooms_id_booking_uniq UNIQUE (id, booking_id);
 ```
 
-Cách đọc: không được tồn tại hai dòng **cùng `room_id`** mà **`stay_range` giao nhau**, xét trong các dòng còn hiệu lực. Ba điểm cần lưu ý:
-
-1. `WHERE (status IN ...)` là bắt buộc. Không có nó, booking đã hủy vẫn chặn khách mới đặt lại phòng đó — phòng bị "chết" vĩnh viễn sau một lần hủy.
-2. `&&` trên `daterange '[)'` xử lý đúng trường hợp back-to-back: `[15/08, 17/08)` và `[17/08, 19/08)` **không** giao nhau, nên khách mới nhận phòng đúng ngày khách cũ trả phòng (P4).
-3. Ràng buộc chạy ở tầng DB nên chặn được cả hai request đồng thời (QĐ-2), cả booking do Staff nhập tay (BR-009), và cả `INSERT` chạy tay lúc xử lý sự cố.
-
-**Index:** EXCLUDE constraint tự tạo backing GiST index trên `(room_id, stay_range)`, nên **không tạo thêm** GiST index trùng cấu trúc — index thừa làm chậm mọi INSERT/UPDATE mà không thêm khả năng đọc. Chỉ giữ các B-tree thực sự dùng:
+**Index:** GiST index không tồn tại trên MySQL. Chỉ giữ các B-tree thực sự dùng:
 
 ```sql
 CREATE INDEX booking_rooms_booking     ON booking_rooms (booking_id);
 CREATE INDEX booking_rooms_room_status ON booking_rooms (room_id, status);
+CREATE INDEX booking_rooms_dates       ON booking_rooms (room_id, check_in_date, check_out_date, status);
 CREATE INDEX booking_rooms_arrivals    ON booking_rooms (check_in_date, status);
 ```
 
@@ -845,8 +882,21 @@ CHECK ((actor_type = 'USER'   AND changed_by IS NOT NULL)
 **Append-only.** Chặn bằng trigger, không chỉ bằng quy ước:
 
 ```sql
-CREATE TRIGGER bsh_no_update BEFORE UPDATE OR DELETE ON booking_status_history
-  FOR EACH ROW EXECUTE FUNCTION raise_append_only_violation();
+DELIMITER $$
+
+CREATE TRIGGER bsh_no_update BEFORE UPDATE ON booking_status_history
+FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'booking_status_history is append-only';
+END$$
+
+CREATE TRIGGER bsh_no_delete BEFORE DELETE ON booking_status_history
+FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'booking_status_history is append-only';
+END$$
+
+DELIMITER ;
 ```
 
 Index: `(booking_id, created_at)`.
@@ -860,26 +910,36 @@ Vì vậy **mọi FK từ bảng con của booking dùng `ON DELETE RESTRICT`, k
 Trường hợp duy nhất được xóa vật lý: booking **chưa từng chốt** (`PENDING` hoặc `EXPIRED`, chưa có payment thành công, chưa có invoice) — ví dụ dọn rác các hold bị bỏ sau nhiều tháng. Việc này làm qua một stored procedure ghi rõ giới hạn, xóa con trước cha trong một transaction:
 
 ```sql
-CREATE PROCEDURE purge_abandoned_booking(p_booking_id BIGINT) AS $$
+CREATE PROCEDURE purge_abandoned_booking(IN p_booking_id BIGINT)
 BEGIN
+  DECLARE v_status VARCHAR(20);
+  DECLARE v_has_payment INT DEFAULT 0;
+  DECLARE v_has_invoice INT DEFAULT 0;
+
   -- chỉ cho phép với booking chưa từng phát sinh nghiệp vụ
-  IF NOT EXISTS (SELECT 1 FROM bookings
-                 WHERE id = p_booking_id AND status IN ('PENDING','EXPIRED')) THEN
-    RAISE EXCEPTION 'Booking % đã phát sinh nghiệp vụ, không được xóa', p_booking_id;
+  SELECT status INTO v_status FROM bookings WHERE id = p_booking_id;
+  IF v_status IS NULL THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Booking not found';
   END IF;
-  IF EXISTS (SELECT 1 FROM payments WHERE booking_id = p_booking_id
-                                      AND status = 'SUCCEEDED')
-     OR EXISTS (SELECT 1 FROM invoices WHERE booking_id = p_booking_id) THEN
-    RAISE EXCEPTION 'Booking % có payment/invoice, không được xóa', p_booking_id;
+  IF v_status NOT IN ('PENDING','EXPIRED') THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Booking has business activity, cannot delete';
   END IF;
 
+  SELECT COUNT(*) INTO v_has_payment FROM payments
+   WHERE booking_id = p_booking_id AND status = 'SUCCEEDED';
+  SELECT COUNT(*) INTO v_has_invoice FROM invoices WHERE booking_id = p_booking_id;
+  IF v_has_payment > 0 OR v_has_invoice > 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Booking has payment or invoice, cannot delete';
+  END IF;
+
+  -- Xóa con trước cha trong transaction
   DELETE FROM booking_room_nights
    WHERE booking_room_id IN (SELECT id FROM booking_rooms WHERE booking_id = p_booking_id);
   DELETE FROM booking_guests         WHERE booking_id = p_booking_id;
   DELETE FROM booking_rooms          WHERE booking_id = p_booking_id;
   DELETE FROM booking_status_history WHERE booking_id = p_booking_id;
   DELETE FROM bookings               WHERE id = p_booking_id;
-END $$ LANGUAGE plpgsql;
+END;
 ```
 
 Lưu ý `booking_status_history` có trigger chặn DELETE, nên procedure này cần chạy với quyền cho phép tạm vô hiệu trigger (`session_replication_role` hoặc một cờ trong trigger function). Nếu team muốn tuyệt đối không xóa gì, bỏ hai dòng cuối và chỉ giữ booking ở `EXPIRED` — tốn dung lượng nhưng đơn giản hơn.
@@ -1225,20 +1285,20 @@ Index `(entity_type, entity_id, created_at DESC)`, `(actor_user_id, created_at D
 | BR     | Yêu cầu                                                        | Cơ chế thực thi                                                                                                                                  | Ở đâu                                                                        |
 | ------ | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | BR-001 | Check-out > check-in                                             | `CHECK (check_out_date > check_in_date)`                                                                                                          | `booking_rooms` (chỉ ở đây — `bookings` không còn cột ngày, QĐ-6) |
-| BR-002 | Không hai booking hiệu lực overlap trên một phòng          | `EXCLUDE USING gist (room_id WITH =, stay_range WITH &&) WHERE status IN ('RESERVED','OCCUPIED')`                                                 | `booking_rooms`                                                               |
+| BR-002 | Không hai booking hiệu lực overlap trên một phòng          | Trigger BEFORE INSERT/UPDATE (MySQL): `SELECT ... IF EXISTS` kiểm tra `check_in_date < NEW.check_out_date AND check_out_date > NEW.check_in_date` với `room_id = NEW.room_id AND status IN ('RESERVED','OCCUPIED')` | `booking_rooms`                                                               |
 | BR-003 | Availability = trạng thái vận hành + booking + khoảng ngày | Không có cột`is_available`; tính bằng query mục 9.1                                                                                         | Query                                                                           |
-| BR-004 | Phòng bảo trì không được booking                          | `rooms.operational_status` + `room_status_blocks` trong điều kiện query + trigger chặn tạo booking lên phòng bị block                   | Query + trigger 8.3                                                             |
+| BR-004 | Phòng bảo trì không được booking                          | Trigger trên `booking_rooms` chặn INSERT/UPDATE nếu phòng có `room_status_blocks` overlap (8.3); trigger trên `room_status_blocks` chặn nếu phòng đã có booking hiệu lực                   | Query + trigger 8.3                                                             |
 | BR-005 | Khách chỉ hủy booking của mình, ở trạng thái cho phép   | Trigger kiểm`bookings.customer_id = actor` và `status IN ('PENDING','CONFIRMED')`; kiểm quyền ở service                                    | Trigger + service                                                               |
 | BR-006 | Chỉ review sau check-out                                        | Trigger BEFORE INSERT kiểm`bookings.status='CHECKED_OUT'`                                                                                        | `reviews`                                                                     |
 | BR-007 | Một booking tối đa một review                                | `UNIQUE (booking_id)`                                                                                                                             | `reviews`                                                                     |
 | BR-008 | Không hard delete Room/Staff nếu mất liên kết               | `deleted_at` + FK `ON DELETE RESTRICT` từ `booking_rooms`, `invoices`, `folio_charges`; mọi bảng con của booking dùng RESTRICT (6.7) | Toàn schema                                                                    |
-| BR-009 | Booking ngoài hệ thống phải chặn ngày                      | Booking ngoài dùng chung`bookings`/`booking_rooms` nên tự động chịu EXCLUDE của BR-002                                                  | `booking_sources` + `booking_rooms`                                         |
+| BR-009 | Booking ngoài hệ thống phải chặn ngày                      | Booking ngoài dùng chung`bookings`/`booking_rooms` nên tự động chịu trigger BR-002                                                  | `booking_sources` + `booking_rooms`                                         |
 | BR-010 | Chỉ booking hợp lệ mới check-in                              | `CHECK (status<>'CHECKED_IN' OR checked_in_at IS NOT NULL)` + trigger state machine chỉ cho `CONFIRMED → CHECKED_IN`                          | `bookings`                                                                    |
 | BR-011 | Chỉ CHECKED_IN mới checkout                                    | Trigger state machine chỉ cho`CHECKED_IN → CHECKED_OUT`                                                                                         | `bookings`                                                                    |
 | BR-012 | Payment phải xác minh từ gateway                              | `CHECK (status<>'SUCCEEDED' OR verified_at IS NOT NULL)` + `payment_events.signature_valid` + UNIQUE `provider_txn_id`                        | `payments`, `payment_events`                                                |
 | BR-013 | Invoice liên kết booking, giữ lịch sử                       | FK RESTRICT + trigger chặn UPDATE các cột chứng từ sau`ISSUED` + snapshot `buyer_*`/`invoice_items` + VOID thay vì sửa                 | `invoices`, `invoice_items`                                                 |
 | BR-014 | Chỉ Admin được quản lý Staff và ca trực                  | RBAC: permission`staff:manage` và`shift:manage` chỉ gán cho role ADMIN. Trigger không Staff có 2 ca overlap cùng lúc                     | `role_permissions`, `shift_assignments`                                     |
-| BR-015 | Một Staff không được trùng ca trong cùng khoảng giờ     | `EXCLUDE USING gist (staff_id WITH =, shift_period WITH &&) WHERE status IN ('SCHEDULED','COMPLETED')`                                            | `shift_assignments`                                                           |
+| BR-015 | Một Staff không được trùng ca trong cùng khoảng giờ     | Trigger BEFORE INSERT/UPDATE: kiểm tra overlap bằng điều kiện `NOT (existing.shift_end <= NEW.shift_start OR existing.shift_start >= NEW.shift_end)` với `staff_id = NEW.staff_id AND status IN ('SCHEDULED','COMPLETED')` | `shift_assignments`                                                           |
 
 ### 8.1. State machine của booking
 
@@ -1256,6 +1316,38 @@ CHECKED_IN ─> CHECKED_OUT(BR-011)
 
 Mọi bước khác bị từ chối. Đặt ở DB vì dòng 96 nói rõ booking đã check-in/check-out không được hủy theo luồng thường — nếu chỉ chặn ở app, một endpoint mới viết sau sẽ vô tình phá quy tắc. Mỗi lần chuyển thành công, trigger ghi một dòng `booking_status_history` với `actor_type` và `source` tương ứng.
 
+MySQL trigger (ví dụ cho `trg_booking_state_machine`):
+
+```sql
+DELIMITER $$
+
+CREATE TRIGGER trg_booking_state_machine
+BEFORE UPDATE ON bookings
+FOR EACH ROW
+BEGIN
+  DECLARE allowed INT DEFAULT 0;
+
+  IF OLD.status = 'PENDING' AND NEW.status IN ('CONFIRMED','CANCELLED','EXPIRED') THEN
+    SET allowed = 1;
+  ELSEIF OLD.status = 'CONFIRMED' AND NEW.status IN ('CHECKED_IN','CANCELLED','NO_SHOW') THEN
+    SET allowed = 1;
+  ELSEIF OLD.status = 'CHECKED_IN' AND NEW.status = 'CHECKED_OUT' THEN
+    SET allowed = 1;
+  END IF;
+
+  IF allowed = 0 THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Invalid booking status transition';
+  END IF;
+
+  -- Ghi lịch sử chuyển trạng thái
+  INSERT INTO booking_status_history (booking_id, from_status, to_status, actor_type, changed_by, source)
+  VALUES (NEW.id, OLD.status, NEW.status, 'USER', NEW.updated_by, 'TRIGGER');
+END$$
+
+DELIMITER ;
+```
+
 ### 8.2. Đồng bộ `booking_room_status` với `booking_status`
 
 Trạng thái dòng phòng phải theo trạng thái đơn, do trigger đảm nhiệm:
@@ -1270,30 +1362,30 @@ Chuyển `MOVED_OUT` là thao tác riêng của luồng đổi phòng (mục 6.3
 
 ### 8.3. Trigger kiểm tra chéo block ↔ booking (BR-004)
 
-`EXCLUDE` chỉ áp trong một bảng. Cần hai trigger đối xứng:
+MySQL không có `EXCLUDE` cross-table. Cần trigger kiểm tra chéo:
 
-- BEFORE INSERT/UPDATE trên `booking_rooms`: từ chối nếu tồn tại `room_status_blocks` cùng `room_id` có `block_range && stay_range`, hoặc nếu `rooms.operational_status <> 'ACTIVE'`.
+- BEFORE INSERT/UPDATE trên `booking_rooms`: từ chối nếu tồn tại `room_status_blocks` cùng `room_id` có overlap (`start_date < NEW.check_out_date AND end_date > NEW.check_in_date`), hoặc nếu `rooms.operational_status <> 'ACTIVE'`.
 - BEFORE INSERT/UPDATE trên `room_status_blocks`: từ chối nếu đã có `booking_rooms` hiệu lực overlap (Staff không được đặt bảo trì lên phòng đã bán) — hoặc cho phép nhưng cảnh báo và buộc chuyển phòng cho khách theo luồng ở 6.3.
 
-Cả hai trigger cần khóa hàng phòng (`SELECT ... FROM rooms WHERE id = ... FOR SHARE`) hoặc dùng `SERIALIZABLE` để tránh race giữa hai bảng.
+Cả hai trigger nên dùng `SELECT ... FROM rooms WHERE id = NEW.room_id FOR UPDATE` để khóa hàng phòng trước khi kiểm tra overlap, tránh race giữa hai bảng. Thứ tự khóa phải nhất quán (ví dụ: luôn khóa `rooms` trước) để tránh deadlock.
 
-### 8.4. Danh sách trigger cần viết
+### 8.4. Danh sách trigger cần viết (MySQL)
 
 | Trigger                        | Bảng                                          | Việc                                                                                             |
 | ------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `trg_booking_state_machine`  | `bookings`                                   | Chặn chuyển trạng thái sai (8.1), ghi`booking_status_history`                               |
-| `trg_booking_sync_rooms`     | `bookings`                                   | Đồng bộ`booking_room_status` (8.2)                                                           |
-| `trg_booking_room_vs_block`  | `booking_rooms`                              | BR-004 (8.3)                                                                                      |
-| `trg_block_vs_booking_room`  | `room_status_blocks`                         | BR-004 (8.3)                                                                                      |
-| `trg_night_within_stay`      | `booking_room_nights`                        | Đêm phải nằm trong khoảng lưu trú (6.4)                                                    |
-| `trg_stay_range_vs_nights`   | `booking_rooms`                              | Đổi ngày không được để night row lạc ngoài khoảng (6.4)                               |
-| `trg_booking_totals`         | `booking_room_nights`, `folio_charges`     | Cập nhật`room_subtotal`, `rooms_total`, `services_total`, `tax_total`, `total_amount` |
-| `trg_confirm_completeness`   | `bookings`                                   | Khi`→ CONFIRMED`: đủ night rows, tổng khớp, có `cancellation_policy_snapshot`           |
-| `trg_payment_ledger`         | `payments`, `refunds`                      | Cập nhật`paid_amount`/`refunded_amount`/`payment_status` ở `bookings` và `invoices` |
-| `trg_invoice_immutable`      | `invoices`                                   | Chặn UPDATE cột chứng từ sau`ISSUED`, chặn DELETE (7.4)                                    |
-| `trg_invoice_item_immutable` | `invoice_items`                              | Chặn mọi ghi khi hóa đơn cha`<> DRAFT` (7.5)                                               |
-| `trg_review_after_checkout`  | `reviews`                                    | BR-006                                                                                            |
-| `trg_append_only`            | `booking_status_history`, `payment_events` | Chặn UPDATE/DELETE                                                                               |
+| `trg_booking_state_machine`  | `bookings`                                   | `CREATE TRIGGER ... BEFORE UPDATE ON bookings FOR EACH ROW BEGIN ... SIGNAL ... END` — chặn chuyển trạng thái sai (8.1), ghi`booking_status_history` |
+| `trg_booking_sync_rooms`     | `bookings`                                   | `CREATE TRIGGER ... AFTER UPDATE ON bookings FOR EACH ROW BEGIN UPDATE booking_rooms SET ... END` — đồng bộ`booking_room_status` (8.2) |
+| `trg_booking_room_vs_block`  | `booking_rooms`                              | `CREATE TRIGGER ... BEFORE INSERT/UPDATE ON booking_rooms FOR EACH ROW BEGIN SELECT ... SIGNAL ... END` — BR-004 (8.3) |
+| `trg_block_vs_booking_room`  | `room_status_blocks`                         | `CREATE TRIGGER ... BEFORE INSERT/UPDATE ON room_status_blocks FOR EACH ROW BEGIN SELECT ... SIGNAL ... END` — BR-004 (8.3) |
+| `trg_night_within_stay`      | `booking_room_nights`                        | `CREATE TRIGGER ... BEFORE INSERT ON booking_room_nights FOR EACH ROW BEGIN ... SIGNAL ... END` — đêm phải nằm trong khoảng lưu trú (6.4) |
+| `trg_stay_range_vs_nights`   | `booking_rooms`                              | `CREATE TRIGGER ... AFTER UPDATE ON booking_rooms FOR EACH ROW BEGIN ... END` — đổi ngày không được để night row lạc ngoài khoảng (6.4) |
+| `trg_booking_totals`         | `booking_room_nights`, `folio_charges`     | `CREATE TRIGGER ... AFTER INSERT/UPDATE/DELETE ON booking_room_nights/folio_charges FOR EACH ROW BEGIN UPDATE bookings SET ... END` — cập nhật totals |
+| `trg_confirm_completeness`   | `bookings`                                   | `CREATE TRIGGER ... BEFORE UPDATE ON bookings FOR EACH ROW BEGIN ... SIGNAL ... END` — khi`→ CONFIRMED`: đủ night rows, tổng khớp, có policy snapshot |
+| `trg_payment_ledger`         | `payments`, `refunds`                      | `CREATE TRIGGER ... AFTER INSERT/UPDATE ON payments/refunds FOR EACH ROW BEGIN UPDATE bookings SET ... END` — cập nhật paid/refunded/payment_status |
+| `trg_invoice_immutable`      | `invoices`                                   | `CREATE TRIGGER ... BEFORE UPDATE/DELETE ON invoices FOR EACH ROW BEGIN SIGNAL ... END` — chặn sửa sau`ISSUED`, chặn delete (7.4) |
+| `trg_invoice_item_immutable` | `invoice_items`                              | `CREATE TRIGGER ... BEFORE INSERT/UPDATE/DELETE ON invoice_items FOR EACH ROW BEGIN ... END` — chặn khi hóa đơn cha`<> DRAFT` (7.5) |
+| `trg_review_after_checkout`  | `reviews`                                    | `CREATE TRIGGER ... BEFORE INSERT ON reviews FOR EACH ROW BEGIN SELECT ... SIGNAL ... END` — BR-006 |
+| `trg_append_only`            | `booking_status_history`, `payment_events` | `CREATE TRIGGER ... BEFORE UPDATE/DELETE ON ... FOR EACH ROW BEGIN SIGNAL ... END` — chặn UPDATE/DELETE |
 
 ---
 
@@ -1315,7 +1407,7 @@ WHERE r.deleted_at IS NULL
   AND COALESCE(r.max_occupancy_override, rt.max_occupancy) >= $3
   AND rt.bed_count >= $4
   AND ($5 IS NULL OR rt.has_air_conditioner = $5)
-  AND ($6 IS NULL OR r.view_type = ANY($6::room_view[]))
+  AND ($6 IS NULL OR JSON_CONTAINS($6, CONCAT('"', r.view_type, '"')))
   AND ($7 IS NULL OR rt.id = ANY($7))
   AND COALESCE(r.price_override, rt.base_price) BETWEEN $8 AND $9
   -- không trùng booking đang hiệu lực (BR-002)
@@ -1323,24 +1415,29 @@ WHERE r.deleted_at IS NULL
         SELECT 1 FROM booking_rooms br
         WHERE br.room_id = r.id
           AND br.status IN ('RESERVED','OCCUPIED')
-          AND br.stay_range && daterange($1, $2, '[)')
+          AND br.check_in_date < $2
+          AND br.check_out_date > $1
       )
   -- không trùng lệnh chặn vận hành (BR-003/BR-004)
   AND NOT EXISTS (
         SELECT 1 FROM room_status_blocks b
         WHERE b.room_id = r.id
-          AND b.block_range && daterange($1, $2, '[)')
+          AND b.start_date < $2
+          AND b.end_date > $1
       )
 ORDER BY price_per_night, r.room_number
 LIMIT 20 OFFSET 0;                                        -- dòng 201: phân trang
 ```
 
-Hai `NOT EXISTS` dùng backing index của EXCLUDE constraint nên vẫn nhanh khi bảng booking lớn. Giá hiển thị ở đây là giá niêm yết để sắp xếp/lọc; giá thực tính cho từng đêm áp `rate_overrides` ở bước tạo booking.
+Hai `NOT EXISTS` dùng index `(room_id, check_in_date, check_out_date, status)` trên `booking_rooms` và `(room_id, start_date, end_date)` trên `room_status_blocks` nên vẫn nhanh khi bảng booking lớn. Giá hiển thị ở đây là giá niêm yết để sắp xếp/lọc; giá thực tính cho từng đêm áp `rate_overrides` ở bước tạo booking.
 
 ### 9.2. Tạo booking an toàn dưới tải đồng thời (dòng 71-78, QĐ-2)
 
 ```sql
-BEGIN;
+START TRANSACTION;
+  -- Khóa hàng phòng trước để tránh race với trigger BR-002
+  SELECT 1 FROM rooms WHERE id = $16 FOR UPDATE;
+
   INSERT INTO bookings (
       public_id, booking_code, customer_id, source_id,
       source_commission_percent_snapshot, status,
@@ -1348,62 +1445,66 @@ BEGIN;
       adults, children, rooms_total, room_tax_percent_snapshot,
       tax_total, total_amount, hold_expires_at, currency,
       cancellation_policy_id, cancellation_policy_snapshot)
-  SELECT gen_random_uuid(), $1, $2, $3,
+  SELECT UUID(), $1, $2, $3,
          s.commission_percent, 'PENDING',
          $4, $5, $6, $7, $8, $9, $10,
-         $11, $12, now() + interval '15 minutes', 'VND',
+         $11, $12, DATE_ADD(NOW(), INTERVAL 15 MINUTE), 'VND',
          p.id,
-         jsonb_build_object(
+         JSON_OBJECT(
            'code', p.code, 'name', p.name,
            'no_show_charge_percent', p.no_show_charge_percent,
-           'rules', (SELECT jsonb_agg(jsonb_build_object(
+           'rules', (SELECT JSON_ARRAYAGG(JSON_OBJECT(
                               'min_hours_before', r.min_hours_before,
                               'refund_percent',   r.refund_percent)
                             ORDER BY r.min_hours_before DESC)
                      FROM cancellation_policy_rules r WHERE r.policy_id = p.id))
   FROM booking_sources s, cancellation_policies p
-  WHERE s.id = $3 AND p.id = $13
-  RETURNING id;                                        -- → :booking_id
+  WHERE s.id = $3 AND p.id = $13;
 
-  -- Nếu phòng đã bị người khác giữ: EXCLUDE ném lỗi 23P01 exclusion_violation
-  -- Backend bắt 23P01 → trả 409 "Phòng vừa được đặt, vui lòng chọn phòng khác"
+  -- Nếu phòng đã bị người khác giữ: trigger BR-002 ném lỗi SQLSTATE '45000'
+  -- Backend bắt 45000 → trả 409 "Phòng vừa được đặt, vui lòng chọn phòng khác"
   INSERT INTO booking_rooms (
       booking_id, room_id, room_type_id,
       room_type_code_snapshot, room_type_name_snapshot,
       check_in_date, check_out_date, room_subtotal, status)
-  SELECT :booking_id, r.id, rt.id, rt.code, rt.name, $14, $15, 0, 'RESERVED'
+  SELECT LAST_INSERT_ID(), r.id, rt.id, rt.code, rt.name, $14, $15, 0, 'RESERVED'
   FROM rooms r JOIN room_types rt ON rt.id = r.room_type_id
-  WHERE r.id = $16
-  RETURNING id;                                        -- → :booking_room_id
+  WHERE r.id = $16;
 
   -- Giá từng đêm: rate_override (priority cao nhất) → price_override → base_price
+  -- MySQL không có generate_series → tạo dãy ngày bằng application loop hoặc recursive CTE
+  -- Ví dụ dùng recursive CTE (MySQL 8.0+):
   INSERT INTO booking_room_nights (booking_room_id, stay_date, price, rate_override_id)
-  SELECT :booking_room_id, d::date,
-         COALESCE(ro.price, r.price_override, rt.base_price),
-         ro.id
-  FROM generate_series($14::date, $15::date - 1, interval '1 day') d
+  WITH RECURSIVE nights AS (
+      SELECT $14 AS stay_date
+      UNION ALL
+      SELECT DATE_ADD(stay_date, INTERVAL 1 DAY) FROM nights
+      WHERE stay_date < $15 - INTERVAL 1 DAY
+  )
+  SELECT LAST_INSERT_ID(), n.stay_date,
+         COALESCE(
+           (SELECT o.price FROM rate_overrides o
+            WHERE o.is_active
+              AND (o.room_id = $16 OR o.room_type_id = rt.id)
+              AND n.stay_date BETWEEN o.start_date AND o.end_date - INTERVAL 1 DAY
+              AND (o.weekdays IS NULL
+                   OR JSON_CONTAINS(o.weekdays, CAST(DAYOFWEEK(n.stay_date) - 1 AS JSON)))
+            ORDER BY o.priority DESC, o.room_id IS NOT NULL DESC
+            LIMIT 1),
+           r.price_override, rt.base_price)
+  FROM nights n
   CROSS JOIN rooms r
   JOIN room_types rt ON rt.id = r.room_type_id
-  LEFT JOIN LATERAL (
-      SELECT o.id, o.price FROM rate_overrides o
-      WHERE o.is_active
-        AND (o.room_id = r.id OR o.room_type_id = rt.id)
-        AND d::date BETWEEN o.start_date AND o.end_date - 1
-        AND (o.weekdays IS NULL
-             OR EXTRACT(ISODOW FROM d)::smallint = ANY(o.weekdays))
-      ORDER BY o.priority DESC, o.room_id NULLS LAST
-      LIMIT 1
-  ) ro ON true
   WHERE r.id = $16;
 
   -- room_subtotal / rooms_total do trg_booking_totals cập nhật
   INSERT INTO booking_status_history (booking_id, from_status, to_status,
                                       actor_type, changed_by, source)
-  VALUES (:booking_id, NULL, 'PENDING', 'USER', $17, 'MANUAL');
+  VALUES (LAST_INSERT_ID(), NULL, 'PENDING', 'USER', $17, 'MANUAL');
 COMMIT;
 ```
 
-Điểm cốt lõi: không cần `SELECT ... check ... INSERT`. Cứ INSERT, để DB phán quyết — đây là cách duy nhất đúng khi có nhiều instance backend.
+Điểm cốt lõi: không cần `SELECT ... check ... INSERT`. Cứ INSERT, để DB phán quyết — đây là cách duy nhất đúng khi có nhiều instance backend. Trigger BR-002 chạy BEFORE nên overlap bị từ chối ngay tại DB. Nếu tải đồng thời rất cao, `SELECT ... FOR UPDATE` trên `rooms` trước khi INSERT giảm contention giữa các request cùng phòng.
 
 ### 9.3. Khách đang ở trong phòng (dòng 103-106, 241-243)
 
@@ -1417,7 +1518,7 @@ JOIN rooms r    ON r.id = br.room_id
 LEFT JOIN booking_guests g ON g.booking_room_id = br.id
 WHERE b.status  = 'CHECKED_IN'                -- dòng 106: nguồn dữ liệu là booking CHECKED_IN
   AND br.status = 'OCCUPIED'
-  AND ($1::text IS NULL OR r.room_number = $1)
+  AND (CAST($1 AS CHAR) IS NULL OR r.room_number = $1)
 ORDER BY r.room_number;
 ```
 
@@ -1480,7 +1581,7 @@ ORDER BY r.room_number;
 Đọc **từ snapshot**, không join sang `cancellation_policy_rules`.
 
 ```sql
-WITH stay AS (      -- QĐ-6: ngày check-in derive từ booking_rooms
+WITH stay AS (
   SELECT MIN(br.check_in_date) AS first_check_in
   FROM booking_rooms br
   WHERE br.booking_id = $1 AND br.status IN ('RESERVED','OCCUPIED')
@@ -1488,19 +1589,25 @@ WITH stay AS (      -- QĐ-6: ngày check-in derive từ booking_rooms
 ctx AS (
   SELECT b.paid_amount - b.refunded_amount AS net_received,
          b.cancellation_policy_snapshot    AS snap,
-         EXTRACT(EPOCH FROM (
-           (s.first_check_in + TIME '14:00') AT TIME ZONE 'Asia/Ho_Chi_Minh'
-           - now()
-         )) / 3600 AS hours_before_cancel
+         TIMESTAMPDIFF(HOUR,
+           NOW(),
+           TIMESTAMP(CAST(s.first_check_in AS DATE), '14:00:00')
+         ) AS hours_before_cancel
   FROM bookings b CROSS JOIN stay s
   WHERE b.id = $1
 ),
-matched AS (        -- rule có min_hours_before lớn nhất nhưng <= hours_before_cancel
-  SELECT (rule->>'refund_percent')::numeric   AS refund_percent,
-         (rule->>'min_hours_before')::int     AS min_hours_before
-  FROM ctx, jsonb_array_elements(ctx.snap->'rules') AS rule
-  WHERE (rule->>'min_hours_before')::numeric <= ctx.hours_before_cancel
-  ORDER BY (rule->>'min_hours_before')::int DESC
+matched AS (
+  -- MySQL không có jsonb_array_elements; duyệt bằng JSON_TABLE (MySQL 8.0.20+)
+  SELECT j.refund_percent, j.min_hours_before
+  FROM ctx,
+       JSON_TABLE(
+         ctx.snap, '$.rules[*]' COLUMNS (
+           refund_percent   NUMERIC(5,2) PATH '$.refund_percent',
+           min_hours_before INT         PATH '$.min_hours_before'
+         )
+       ) AS j
+  WHERE j.min_hours_before <= ctx.hours_before_cancel
+  ORDER BY j.min_hours_before DESC
   LIMIT 1
 )
 SELECT ctx.hours_before_cancel,
@@ -1521,7 +1628,7 @@ CREATE VIEW v_booking_stay_range AS
 SELECT br.booking_id,
        MIN(br.check_in_date)  AS check_in_date,
        MAX(br.check_out_date) AS check_out_date,
-       MAX(br.check_out_date) - MIN(br.check_in_date) AS span_days,
+       DATEDIFF(MAX(br.check_out_date), MIN(br.check_in_date)) AS span_days,
        SUM(br.nights)         AS total_room_nights,
        COUNT(*)               AS room_count
 FROM booking_rooms br
@@ -1556,10 +1663,11 @@ WHERE r.deleted_at IS NULL;
 
 | Bảng                   | Index                                                                                                        | Phục vụ                                              |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| `booking_rooms`       | Backing GiST của EXCLUDE trên`(room_id, stay_range)` — **tự sinh, không khai báo thêm**       | Tìm phòng trống (9.1) và chống double-booking     |
+| `booking_rooms`       | `(room_id, check_in_date, check_out_date, status)`                                                       | Tìm phòng trống (9.1) và chống double-booking     |
 | `booking_rooms`       | `(booking_id)`                                                                                             | Lấy các phòng của một đơn                       |
 | `booking_rooms`       | `(room_id, status)`                                                                                        | Phòng này đang có ai ở                            |
 | `booking_rooms`       | `(check_in_date, status)`                                                                                  | Danh sách khách đến hôm nay (9.5)                 |
+| `room_status_blocks` | `(room_id, start_date, end_date)`                                                                         | Chặn phòng trùng block (9.1 BR-004)             |
 | `bookings`            | unique`(public_id)`, unique `(booking_code)`                                                             | Tra cứu từ URL/API và từ mã khách đọc          |
 | `bookings`            | `(customer_id, status)`                                                                                    | My Bookings (dòng 225-227)                            |
 | `bookings`            | `(status, created_at DESC)`                                                                                | Danh sách vận hành                                  |
@@ -1578,11 +1686,11 @@ WHERE r.deleted_at IS NULL;
 
 Ghi chú vận hành:
 
-- **Không tạo GiST index trùng với EXCLUDE constraint.** `EXCLUDE USING gist (room_id WITH =, stay_range WITH &&) WHERE (...)` đã sinh một partial GiST index đúng cấu trúc đó; khai báo thêm một index tương đương chỉ làm chậm INSERT/UPDATE và tốn dung lượng mà không thêm khả năng đọc. Chỉ thêm nếu có benchmark chứng minh một hình dạng index khác thực sự cần.
-- **Dashboard không query trực tiếp bảng giao dịch.** Dòng 234-236 và 254-258 yêu cầu nhiều biểu đồ. Khi dữ liệu lớn, dùng materialized view `mv_daily_revenue`, `mv_daily_occupancy` refresh mỗi 15-30 phút. Dashboard chấp nhận trễ vài phút; trang booking thì không.
-- **Partition** `audit_logs`, `payment_events`, `email_messages` theo tháng khi mỗi bảng vượt ~20 triệu dòng.
-- **Connection pool** (PgBouncer) đặt trước DB vì booking dùng transaction ngắn nhưng lượng request cao lúc khuyến mãi.
-- **Isolation level**: `READ COMMITTED` đủ cho phần lớn thao tác vì BR-002 đã được EXCLUDE bảo đảm. Luồng checkout (đọc nhiều bảng để tính tiền rồi phát hành invoice) nên chạy `REPEATABLE READ`.
+- **Index `(room_id, check_in_date, check_out_date, status)`** phục vụ trigger BR-002 và query 9.1. MySQL không có GiST, nên khai báo B-tree composite để cover trigger overlap check và NOT EXISTS scan.
+- **Dashboard không query trực tiếp bảng giao dịch.** Dòng 234-236 và 254-258 yêu cầu nhiều biểu đồ. Khi dữ liệu lớn, dùng view hoặc job định kỳ tạo bảng tổng hợp (`mv_daily_revenue`, `mv_daily_occupancy`) refresh mỗi 15-30 phút. MySQL không có materialized view tự động refresh; cân nhắc dùng event scheduler hoặc job bên ngoài.
+- **Partition** `audit_logs`, `payment_events`, `email_messages` theo tháng khi mỗi bảng vượt ~20 triệu dòng (MySQL `PARTITION BY RANGE`).
+- **Connection pool** (ProxySQL hoặc MySQL Router) đặt trước DB vì booking dùng transaction ngắn nhưng lượng request cao lúc khuyến mãi.
+- **Isolation level**: `READ COMMITTED` đủ cho phần lớn thao tác vì BR-002 trigger chạy BEFORE. Luồng checkout (đọc nhiều bảng để tính tiền rồi phát hành invoice) nên chạy `SERIALIZABLE`.
 
 ---
 
@@ -1646,23 +1754,27 @@ Schema ở dạng 3NF. Các chỗ cố ý denormalize:
 
 Nếu tiến độ gấp, hai chỗ có thể cắt mà không phá kiến trúc: bỏ `permissions`/`role_permissions` (dùng tạm role code) và bỏ `rate_overrides` (chỉ dùng `base_price`/`price_override`, `booking_room_nights` vẫn ghi giá từng đêm nên thêm lại sau không cần migration dữ liệu).
 
-**Không được cắt**: `EXCLUDE` trên `booking_rooms`, `booking_room_nights`, `room_status_blocks`, `bookings.hold_expires_at`, `payments.verified_at`, và các cột snapshot. Thiếu bất kỳ thứ nào trong số này là lỗi tiền hoặc lỗi trùng phòng, và khắc phục sau đòi hỏi backfill dữ liệu không thể tái tạo.
+**Không được cắt**: trigger BR-002 trên `booking_rooms`, `booking_room_nights`, `room_status_blocks`, `bookings.hold_expires_at`, `payments.verified_at`, và các cột snapshot. Thiếu bất kỳ thứ nào trong số này là lỗi tiền hoặc lỗi trùng phòng, và khắc phục sau đòi hỏi backfill dữ liệu không thể tái tạo.
 
-### 11.5. Nếu buộc dùng MySQL 8
+### 11.5. MySQL Compatibility Notes
 
-| PostgreSQL                                                      | MySQL 8                                                                                                                                                                                            |
-| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `EXCLUDE USING gist` cho BR-002                               | `SELECT ... FOR UPDATE` trên hàng `rooms` (khóa bi quan) rồi mới kiểm overlap và INSERT trong cùng transaction. Bắt buộc, vì không có ràng buộc khai báo                       |
-| `daterange` + `&&`                                          | Hai cột DATE + điều kiện`NOT (existing.check_out <= $in OR existing.check_in >= $out)`                                                                                                       |
-| `CITEXT`                                                      | Collation`utf8mb4_0900_ai_ci` trên cột email                                                                                                                                                   |
-| Partial UNIQUE`WHERE deleted_at IS NULL`                      | Cột sinh`room_number_active` = `IF(deleted_at IS NULL, room_number, NULL)` rồi UNIQUE trên cột đó                                                                                        |
-| Partial unique`(source_id, external_reference)`               | Tương tự: cột sinh gộp hai giá trị, NULL khi`external_reference` NULL                                                                                                                     |
-| `ENUM` type dùng chung (`room_view`, `booking_status`…) | `ENUM(...)` trên từng cột (khó sửa) hoặc bảng lookup                                                                                                                                      |
-| `JSONB` (snapshot policy)                                     | `JSON` — vẫn đọc được bằng `JSON_EXTRACT`, không có index GIN nên tra cứu trong JSON chậm hơn. Với snapshot policy thì không ảnh hưởng vì luôn đọc theo `booking_id` |
-| Composite FK cho`booking_guests`                              | Hỗ trợ đầy đủ, không cần thay thế                                                                                                                                                         |
-| `EXCLUDE` cho `room_status_blocks`                          | Khóa bi quan tương tự BR-002                                                                                                                                                                   |
+Các PostgreSQL features dưới đây đã được thay thế bằng MySQL equivalents để đảm bảo tương thích:
 
-Đánh giá: chọn PostgreSQL cho dự án này. Khóa bi quan trên MySQL làm giảm thông lượng lúc cao điểm và dễ viết sai ở endpoint mới, trong khi `EXCLUDE` là một dòng DDL bảo vệ toàn hệ thống.
+| PostgreSQL feature                                      | MySQL 8 equivalent used in this design                                                                                                                                                                    |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EXCLUDE USING gist` cho BR-002                       | Trigger `BEFORE INSERT/UPDATE` trên `booking_rooms` kiểm tra overlap bằng điều kiện trên DATE columns + `SIGNAL SQLSTATE '45000'` để từ chối. Không dùng pessimistic lock ở table-level |
+| `daterange` + `&&` overlap operator                   | Hai cột DATE riêng (`check_in_date`, `check_out_date`) + điều kiện overlap `NOT (existing.check_out <= NEW.check_in_date OR existing.check_in_date >= NEW.check_out_date)`                               |
+| `CITEXT` case-insensitive text                        | Collation`utf8mb4_0900_ai_ci` trên cột email                                                                                                                                                             |
+| Partial UNIQUE `WHERE deleted_at IS NULL`             | Generated column `room_number_active` = `IF(deleted_at IS NULL, room_number, NULL)` rồi UNIQUE trên cột sinh đó                                                                                           |
+| Partial unique `(source_id, external_reference)`        | Tương tự: generated column gộp hai giá trị, NULL khi `external_reference` NULL                                                                                                                            |
+| `ENUM` type dùng chung (`room_view`, `booking_status`…) | `ENUM(...)` trên từng cột (ít linh hoạt hơn; thay đổi giá trị enum cần ALTER TABLE) hoặc bảng lookup                                                                                              |
+| `JSONB` (snapshot policy)                             | `JSON` — `JSON_EXTRACT`/`JSON_UNQUOTE` để đọc. Không có index GIN nhưng snapshot policy luôn tra theo `booking_id` nên không ảnh hưởng performance                                               |
+| Composite FK cho `booking_guests`                      | Hỗ trợ đầy đủ, không cần thay thế                                                                                                                                                                         |
+| `EXCLUDE` trên `room_status_blocks`                  | Trigger `BEFORE INSERT/UPDATE` trên `room_status_blocks` tương tự BR-002 (8.3)                                                                                                                            |
+
+**Không dùng pessimistic lock (`SELECT ... FOR UPDATE`) ở table-level** vì làm giảm throughput. Thay vào đó, tất cả overlap check được đặt trong trigger body với `SIGNAL` error — đảm bảo chặn ở DB mà không cần giữ lock lâu.
+
+**Không dùng**: `EXCLUDE USING gist`, `daterange`, `LANGUAGE plpgsql`, `CREATE FUNCTION ... RETURNS trigger`.
 
 ---
 
@@ -1683,7 +1795,7 @@ Thay đổi schema so với bản đầu, theo nhóm.
 | Bảng                         | Lý do                                                                                                     |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `shifts`                    | Quản lý ca trực (dòng 168-173, 268-271): tạo ca, gán Staff, xem lịch. Chuẩn bị sẵn cho phase sau |
-| `shift_assignments`         | Gán Staff vào ca theo ngày. BR-015:`EXCLUDE USING gist` chặn Staff có 2 ca trùng giờ              |
+| `shift_assignments`         | Gán Staff vào ca theo ngày. BR-015: trigger `BEFORE INSERT/UPDATE` chặn Staff có 2 ca trùng giờ              |
 | `cancellation_policy_rules` | Thay cặp cột một-mốc`free_cancel_hours` + `refund_percent_after` bằng mô hình nhiều bậc (5.3) |
 
 **Bỏ bảng**
@@ -1720,13 +1832,13 @@ Thay đổi schema so với bản đầu, theo nhóm.
 | Thay đổi                                                    | Chi tiết                                                                                                                                                     |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Bỏ`room_rate_snapshot`                                     | Giá khác nhau từng đêm nên không có một con số đại diện. Nguồn giá là`booking_room_nights.price`                                            |
-| Bỏ`is_active`                                              | EXCLUDE dùng trực tiếp`status`; cột derived song song chỉ gây lệch                                                                                   |
+| Bỏ`is_active`                                              | Trigger BR-002 dùng trực tiếp`status`; cột derived song song chỉ gây lệch                                                                                   |
 | Thêm`COMPLETED` vào enum status                           | 5 giá trị:`RESERVED / OCCUPIED / COMPLETED / RELEASED / MOVED_OUT`. Bản trước để dòng đã checkout ở `OCCUPIED` nên vẫn chặn phòng vô ích |
 | Thêm`room_type_code_snapshot`, `room_type_name_snapshot` | `room_type_id` chỉ là reference, không phải snapshot                                                                                                    |
 | Thêm`moved_from_booking_room_id`                           | Truy vết chuỗi đổi phòng giữa kỳ (6.3)                                                                                                                 |
 | Thêm UNIQUE`(id, booking_id)`                              | Làm đích cho composite FK từ`booking_guests`                                                                                                            |
 | Đổi FK`booking_id` sang RESTRICT                          | Không cho CASCADE xóa mất lịch sử (6.7)                                                                                                                  |
-| Bỏ GiST index tự khai báo                                  | EXCLUDE đã sinh backing index cùng cấu trúc                                                                                                              |
+| Thêm trigger BR-002 + index`(room_id, check_in_date, check_out_date, status)` | Trigger BEFORE INSERT/UPDATE chống overlap thay cho `EXCLUDE USING gist`; index B-tree phục vụ trigger và query 9.1                                                                                                              |
 | Thêm index`(check_in_date, status)`                        | Danh sách khách đến hôm nay                                                                                                                              |
 
 **`booking_room_nights`**
