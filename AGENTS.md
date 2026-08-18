@@ -20,6 +20,14 @@ Before implementing, modifying, or fixing any feature:
 - The implementation must follow the documented business logic and database design.
 - If the requested implementation conflicts with the documented business rules, report the conflict before making changes.
 
+## Project Plan
+
+**Stack:** MySQL 8.0 + Docker + Spring Boot (Java 21) + MinIO + Next.js
+
+**Implementation phases:** Follow the 8-day plan in `docs/PROJECT_PLAN.md`. Each backend task is ≤ 8 hours. Priority order: Foundation → Auth → Inventory → Pricing → Booking → Billing → Payment → Polish.
+
+**Task management:** All work must be tracked in Redmine. Read `REDMINE.md` for workflow conventions (ticket creation, estimation, PR linking).
+
 ## Git Workflow
 
 Before starting development:
