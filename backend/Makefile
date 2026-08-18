@@ -85,27 +85,38 @@ db-seed: ## Seed database with test data
 # Docker
 # =============================================================================
 
-.PHONY: docker-build docker-up docker-down docker-restart docker-logs
+.PHONY: env-init docker-build docker-pull docker-config docker-up docker-down docker-restart docker-logs docker-status docker-clean
 
-DOCKER_COMPOSE := docker-compose -f docker/docker-compose.yml
+DOCKER_COMPOSE := docker compose --env-file .env -f docker-compose.yml
 
-docker-build: ## Build Docker images
-	docker compose -f docker/docker-compose.yml build
+env-init: ## Create .env from .env.example when it does not exist
+	@test -f .env || cp .env.example .env
 
-docker-up: ## Start Docker containers
-	docker compose -f docker/docker-compose.yml up -d
+docker-build: docker-pull ## Pull service images (all services use prebuilt images)
 
-docker-down: ## Stop Docker containers
-	docker compose -f docker/docker-compose.yml down
+docker-pull: env-init ## Pull Docker service images
+	$(DOCKER_COMPOSE) pull
 
-docker-restart: ## Restart Docker containers
-	docker compose -f docker/docker-compose.yml restart
+docker-config: env-init ## Validate the Docker Compose configuration
+	$(DOCKER_COMPOSE) config --quiet
 
-docker-logs: ## View Docker container logs
-	docker compose -f docker/docker-compose.yml logs -f
+docker-up: env-init ## Start Docker containers
+	$(DOCKER_COMPOSE) up -d
 
-docker-clean: ## Remove Docker containers, volumes, and images
-	docker compose -f docker/docker-compose.yml down -v --rmi all
+docker-down: env-init ## Stop Docker containers
+	$(DOCKER_COMPOSE) down
+
+docker-restart: env-init ## Restart Docker containers
+	$(DOCKER_COMPOSE) restart
+
+docker-logs: env-init ## View Docker container logs
+	$(DOCKER_COMPOSE) logs -f
+
+docker-status: env-init ## Show Docker container status
+	$(DOCKER_COMPOSE) ps
+
+docker-clean: env-init ## Remove Docker containers and data volumes
+	$(DOCKER_COMPOSE) down -v --remove-orphans
 
 # =============================================================================
 # Development

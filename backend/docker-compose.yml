@@ -1,0 +1,73 @@
+name: hotel-management
+
+services:
+  mysql:
+    image: ${MYSQL_IMAGE}
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?MYSQL_DATABASE is required}
+      MYSQL_USER: ${MYSQL_USER:?MYSQL_USER is required}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "${HOST_BIND_ADDRESS:?HOST_BIND_ADDRESS is required}:${MYSQL_PORT:?MYSQL_PORT is required}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h 127.0.0.1 -u root --silent
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - hotel-network
+
+  minio:
+    image: ${MINIO_IMAGE}
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    ports:
+      - "${HOST_BIND_ADDRESS:?HOST_BIND_ADDRESS is required}:${MINIO_API_PORT:?MINIO_API_PORT is required}:9000"
+      - "${HOST_BIND_ADDRESS:?HOST_BIND_ADDRESS is required}:${MINIO_CONSOLE_PORT:?MINIO_CONSOLE_PORT is required}:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - hotel-network
+
+  redis:
+    image: ${REDIS_IMAGE}
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command: >-
+      sh -c 'exec redis-server --requirepass "$$REDIS_PASSWORD"'
+    ports:
+      - "${HOST_BIND_ADDRESS:?HOST_BIND_ADDRESS is required}:${REDIS_PORT:?REDIS_PORT is required}:6379"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep PONG
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hotel-network
+
+volumes:
+  mysql-data:
+    name: hotel-mysql-data
+  minio-data:
+    name: hotel-minio-data
+
+networks:
+  hotel-network:
+    name: hotel-network
+    driver: bridge
