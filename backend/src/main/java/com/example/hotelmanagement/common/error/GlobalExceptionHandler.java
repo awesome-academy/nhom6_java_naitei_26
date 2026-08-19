@@ -1,10 +1,11 @@
 package com.example.hotelmanagement.common.error;
 
+import com.example.hotelmanagement.exceptions.AuthException;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
-import com.example.hotelmanagement.exceptions.AuthException;
 import com.example.hotelmanagement.exceptions.ShiftOverlapException;
+import com.example.hotelmanagement.exceptions.StorageUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -81,6 +83,19 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
     }
 
+    @ExceptionHandler(StorageUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleStorageUnavailable(
+        StorageUnavailableException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.SERVICE_UNAVAILABLE;
+        log.error("Object storage request failed method={} path={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()), exception);
+        return ResponseEntity.status(status).body(
+            toError(status, "Image storage is temporarily unavailable", request, Map.of())
+        );
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiErrorResponse> handleValidationException(
         MethodArgumentNotValidException exception,
@@ -106,6 +121,20 @@ public class GlobalExceptionHandler {
             request.getMethod(), sanitizeForLog(request.getRequestURI()));
         return ResponseEntity.status(status).body(
             toError(status, "Request body is malformed or contains unsupported values", request, Map.of())
+        );
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiErrorResponse> handleArgumentTypeMismatch(
+        MethodArgumentTypeMismatchException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.BAD_REQUEST;
+        log.warn("Invalid request parameter method={} path={} parameter={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()),
+            sanitizeForLog(exception.getName()));
+        return ResponseEntity.status(status).body(
+            toError(status, "Request parameter has an unsupported value", request, Map.of())
         );
     }
 
