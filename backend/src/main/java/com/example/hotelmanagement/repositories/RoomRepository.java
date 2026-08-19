@@ -18,6 +18,9 @@ import java.util.Optional;
 @Repository
 public interface RoomRepository extends JpaRepository<Room, Long>, JpaSpecificationExecutor<Room> {
 
+    @EntityGraph(attributePaths = {"roomType"})
+    Optional<Room> findByIdAndDeletedAtIsNull(Long id);
+
     @EntityGraph(attributePaths = {"roomType", "roomType.amenities", "amenities", "images"})
     Optional<Room> findByRoomNumberIgnoreCaseAndDeletedAtIsNull(String roomNumber);
 
