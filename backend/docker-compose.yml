@@ -12,6 +12,7 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
+      - --log-bin-trust-function-creators=1
     ports:
       - "${HOST_BIND_ADDRESS:?HOST_BIND_ADDRESS is required}:${MYSQL_PORT:?MYSQL_PORT is required}:3306"
     volumes:

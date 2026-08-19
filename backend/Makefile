@@ -37,31 +37,31 @@ lint-impact: ## Run sunlint impact analysis on changed files
 .PHONY: build test clean compile package install verify
 
 build: ## Compile the project
-	./mvnw compile
+	mvn compile
 
 compile: ## Compile the project (alias)
-	./mvnw compile
+	mvn compile
 
 test: ## Run unit tests
-	./mvnw test
+	mvn test
 
 test-integration: ## Run integration tests
-	./mvnw verify -DskipUnitTests
+	mvn verify -DskipUnitTests
 
 test-report: ## Run tests with coverage report
-	./mvnw test jacoco:report
+	mvn test jacoco:report
 
 clean: ## Clean build artifacts
-	./mvnw clean
+	mvn clean
 
 package: ## Package the application (JAR)
-	./mvnw package -DskipTests
+	mvn package -DskipTests
 
 install: ## Install dependencies
-	./mvnw install -DskipTests
+	mvn install -DskipTests
 
 verify: ## Verify the project
-	./mvnw verify
+	mvn verify
 
 # =============================================================================
 # Database
@@ -70,16 +70,16 @@ verify: ## Verify the project
 .PHONY: db-migrate db-rollback db-reset db-seed
 
 db-migrate: ## Run database migrations (Flyway)
-	./mvnw flyway:migrate
+	mvn flyway:migrate
 
 db-rollback: ## Rollback last database migration
-	./mvnw flyway:rollback
+	mvn flyway:rollback
 
 db-reset: ## Reset database (clean + migrate)
-	./mvnw flyway:clean flyway:migrate
+	mvn flyway:clean flyway:migrate
 
 db-seed: ## Seed database with test data
-	./mvnw spring-boot:run -Dspring-boot.run.arguments="--spring.profiles.active=seed"
+	mvn spring-boot:run -Dspring-boot.run.arguments="--spring.profiles.active=seed"
 
 # =============================================================================
 # Docker
@@ -125,13 +125,13 @@ docker-clean: env-init ## Remove Docker containers and data volumes
 .PHONY: run dev spring-boot stop
 
 run: ## Run the Spring Boot application
-	./mvnw spring-boot:run
+	mvn spring-boot:run
 
 dev: ## Run in development mode with live reload
-	./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+	mvn spring-boot:run -Dspring-boot.run.profiles=dev
 
 spring-boot: ## Run Spring Boot application
-	./mvnw spring-boot:run
+	mvn spring-boot:run
 
 stop: ## Stop running Spring Boot application
 	@pkill -f "hotel-management" 2>/dev/null || true
@@ -143,19 +143,19 @@ stop: ## Stop running Spring Boot application
 .PHONY: fmt format checkstyle pmd
 
 fmt: ## Format code (Spotless)
-	./mvnw spotless:apply
+	mvn spotless:apply
 
 format: ## Format code (alias for fmt)
-	./mvnw spotless:apply
+	mvn spotless:apply
 
 checkstyle: ## Run Checkstyle
-	./mvnw checkstyle:check
+	mvn checkstyle:check
 
 pmd: ## Run PMD static analysis
-	./mvnw pmd:check
+	mvn pmd:check
 
 pmd-report: ## Generate PMD HTML report
-	./mvnw pmd:pmd
+	mvn pmd:pmd
 
 # =============================================================================
 # Utilities
@@ -164,19 +164,19 @@ pmd-report: ## Generate PMD HTML report
 .PHONY: deps保险 docs swagger openapi
 
 deps: ## Check/update dependencies
-	./mvnw dependency:tree
+	mvn dependency:tree
 
 deps-analyze: ## Analyze dependencies for conflicts
-	./mvnw dependency:analyze
+	mvn dependency:analyze
 
 docs: ## Generate API documentation
-	./mvnw springdoc-openapi:generate
+	mvn springdoc-openapi:generate
 
 swagger: ## Generate Swagger/OpenAPI docs
-	./mvnw springdoc-openapi:generate -Dspringdoc.apiDocs.path=/api-docs.json
+	mvn springdoc-openapi:generate -Dspringdoc.apiDocs.path=/api-docs.json
 
 openapi: ## Generate OpenAPI spec
-	./mvnw springdoc-openapi:generate-api
+	mvn springdoc-openapi:generate-api
 
 # =============================================================================
 # Git / CI
