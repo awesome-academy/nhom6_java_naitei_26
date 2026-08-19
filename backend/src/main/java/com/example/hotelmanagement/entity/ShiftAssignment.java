@@ -21,7 +21,7 @@ import java.time.OffsetDateTime;
 @Builder
 public class ShiftAssignment extends BaseEntity {
 
-    @Column(name = "public_id", nullable = false, unique = true, length = 36)
+    @Column(name = "public_id", nullable = false, unique = true, columnDefinition = "CHAR(36)")
     private String publicId;
 
     @ManyToOne(fetch = FetchType.LAZY)
