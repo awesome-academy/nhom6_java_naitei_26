@@ -1,14 +1,20 @@
 package com.example.hotelmanagement.services;
 
+import com.example.hotelmanagement.dto.auth.AuthMessageResponse;
 import com.example.hotelmanagement.dto.auth.AuthResponse;
+import com.example.hotelmanagement.dto.auth.EmailVerificationRequest;
 import com.example.hotelmanagement.dto.auth.LoginRequest;
 import com.example.hotelmanagement.dto.auth.OAuthGoogleRequest;
+import com.example.hotelmanagement.dto.auth.PasswordResetConfirmRequest;
+import com.example.hotelmanagement.dto.auth.PasswordResetEmailRequest;
 import com.example.hotelmanagement.dto.auth.RegisterRequest;
 import com.example.hotelmanagement.exceptions.AuthException;
+import com.example.hotelmanagement.entity.AuthToken;
 import com.example.hotelmanagement.entity.Role;
 import com.example.hotelmanagement.entity.User;
 import com.example.hotelmanagement.entity.UserRole;
 import com.example.hotelmanagement.entity.UserSocialAccount;
+import com.example.hotelmanagement.entity.enums.AuthTokenType;
 import com.example.hotelmanagement.entity.enums.OAuthProvider;
 import com.example.hotelmanagement.entity.enums.UserStatus;
 import com.example.hotelmanagement.repositories.RoleRepository;
@@ -25,6 +31,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -41,11 +48,13 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    private final AuthTokenService authTokenService;
+    private final EmailService emailService;
     private final com.example.hotelmanagement.config.AuthProperties authProperties;
     private final Clock clock;
 
     @Transactional
-    public AuthResponse register(RegisterRequest request) {
+    public AuthMessageResponse register(RegisterRequest request) {
         String email = normalizeEmail(request.email());
         if (userRepository.existsByEmailIgnoreCaseAndDeletedAtIsNull(email)) {
             throw new AuthException(HttpStatus.CONFLICT, "Email đã được sử dụng");
@@ -63,7 +72,58 @@ public class AuthService {
         assignCustomerRole(user);
 
         User savedUser = userRepository.save(user);
-        return issueTokens(savedUser);
+        
+        AuthTokenService.IssuedAuthToken token = authTokenService.createToken(savedUser, AuthTokenType.EMAIL_VERIFICATION, null);
+        emailService.sendVerificationEmail(savedUser.getEmail(), token.value());
+
+        return new AuthMessageResponse("Đăng ký thành công. Vui lòng kiểm tra email để xác thực tài khoản.");
+    }
+
+    @Transactional
+    public AuthMessageResponse verifyEmail(EmailVerificationRequest request) {
+        AuthToken authToken = authTokenService.consumeToken(request.token(), AuthTokenType.EMAIL_VERIFICATION);
+        User user = authToken.getUser();
+        
+        if (user.getStatus() == UserStatus.SUSPENDED || user.getStatus() == UserStatus.DEACTIVATED) {
+            throw new AuthException(HttpStatus.FORBIDDEN, "Tài khoản không khả dụng");
+        }
+        
+        if (user.getEmailVerifiedAt() == null) {
+            user.setEmailVerifiedAt(now());
+        }
+        if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
+            user.setStatus(UserStatus.ACTIVE);
+        }
+        
+        return new AuthMessageResponse("Xác thực email thành công");
+    }
+
+    @Transactional
+    public AuthMessageResponse requestPasswordReset(PasswordResetEmailRequest request) {
+        String email = normalizeEmail(request.email());
+        Optional<User> optionalUser = userRepository.findByEmailIgnoreCaseAndDeletedAtIsNull(email);
+        
+        if (optionalUser.isPresent()) {
+            User user = optionalUser.get();
+            if (user.getStatus() != UserStatus.SUSPENDED && user.getStatus() != UserStatus.DEACTIVATED) {
+                AuthTokenService.IssuedAuthToken token = authTokenService.createToken(user, AuthTokenType.PASSWORD_RESET, null);
+                emailService.sendPasswordResetEmail(user.getEmail(), token.value());
+            }
+        }
+        
+        return new AuthMessageResponse("Nếu email hợp lệ, hướng dẫn khôi phục mật khẩu đã được gửi.");
+    }
+
+    @Transactional
+    public AuthMessageResponse resetPassword(PasswordResetConfirmRequest request) {
+        AuthToken authToken = authTokenService.consumeToken(request.token(), AuthTokenType.PASSWORD_RESET);
+        User user = authToken.getUser();
+        
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.setFailedLoginCount(0);
+        user.setLockedUntil(null);
+        
+        return new AuthMessageResponse("Mật khẩu đã được đặt lại thành công");
     }
 
     @Transactional
@@ -161,6 +221,9 @@ public class AuthService {
         OffsetDateTime lockedUntil = user.getLockedUntil();
         if (lockedUntil != null && lockedUntil.isAfter(now())) {
             throw new AuthException(HttpStatus.LOCKED, "Tài khoản đang bị khóa tạm thời");
+        }
+        if (user.getStatus() == UserStatus.PENDING_VERIFICATION || user.getEmailVerifiedAt() == null) {
+            throw new AuthException(HttpStatus.FORBIDDEN, "Vui lòng xác thực email trước khi đăng nhập");
         }
         if (user.getStatus() == UserStatus.SUSPENDED || user.getStatus() == UserStatus.DEACTIVATED) {
             throw new AuthException(HttpStatus.FORBIDDEN, "Tài khoản không khả dụng");

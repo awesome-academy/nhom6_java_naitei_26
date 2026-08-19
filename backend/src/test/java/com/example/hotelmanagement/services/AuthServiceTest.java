@@ -1,5 +1,6 @@
 package com.example.hotelmanagement.services;
 
+import com.example.hotelmanagement.dto.auth.AuthMessageResponse;
 import com.example.hotelmanagement.dto.auth.AuthResponse;
 import com.example.hotelmanagement.dto.auth.LoginRequest;
 import com.example.hotelmanagement.dto.auth.OAuthGoogleRequest;
@@ -29,6 +30,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
 
+import static com.example.hotelmanagement.entity.enums.AuthTokenType.EMAIL_VERIFICATION;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -60,6 +62,12 @@ class AuthServiceTest {
     @Mock
     private RefreshTokenService refreshTokenService;
 
+    @Mock
+    private AuthTokenService authTokenService;
+
+    @Mock
+    private EmailService emailService;
+
     private PasswordEncoder passwordEncoder;
     private AuthService authService;
     private Role customerRole;
@@ -74,7 +82,16 @@ class AuthServiceTest {
             passwordEncoder,
             jwtService,
             refreshTokenService,
-            new AuthProperties(5, Duration.ofMinutes(15)),
+            authTokenService,
+            emailService,
+            new AuthProperties(
+                5,
+                Duration.ofMinutes(15),
+                Duration.ofHours(24),
+                Duration.ofMinutes(30),
+                "http://localhost:3000/auth/verify-email",
+                "http://localhost:3000/auth/reset-password"
+            ),
             FIXED_CLOCK
         );
         customerRole = Role.builder().code("CUSTOMER").name("Customer").build();
@@ -86,8 +103,10 @@ class AuthServiceTest {
         when(userRepository.existsByEmailIgnoreCaseAndDeletedAtIsNull("guest@example.com")).thenReturn(false);
         when(roleRepository.findByCode("CUSTOMER")).thenReturn(Optional.of(customerRole));
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(authTokenService.createToken(any(User.class), any(), any()))
+            .thenReturn(new AuthTokenService.IssuedAuthToken("verification-token", OffsetDateTime.now(FIXED_CLOCK).plusHours(24)));
 
-        AuthResponse response = authService.register(new RegisterRequest(
+        AuthMessageResponse response = authService.register(new RegisterRequest(
             "Guest@Example.com",
             "very-secure-password",
             "Nguyen Van A",
@@ -103,7 +122,9 @@ class AuthServiceTest {
         assertThat(passwordEncoder.matches("very-secure-password", savedUser.getPasswordHash())).isTrue();
         assertThat(savedUser.getStatus()).isEqualTo(UserStatus.PENDING_VERIFICATION);
         assertThat(savedUser.getUserRoles()).hasSize(1);
-        assertThat(response.user().roles()).containsExactly("CUSTOMER");
+        assertThat(response.message()).isNotBlank();
+        verify(authTokenService).createToken(savedUser, EMAIL_VERIFICATION, null);
+        verify(emailService).sendVerificationEmail("guest@example.com", "verification-token");
     }
 
     @Test
@@ -113,6 +134,7 @@ class AuthServiceTest {
             .email("guest@example.com")
             .fullName("Guest")
             .passwordHash(passwordEncoder.encode("correct-password"))
+            .emailVerifiedAt(OffsetDateTime.now(FIXED_CLOCK))
             .status(UserStatus.ACTIVE)
             .failedLoginCount(4)
             .build();
@@ -137,6 +159,7 @@ class AuthServiceTest {
             .publicId("public-id")
             .email("guest@example.com")
             .fullName("Guest")
+            .emailVerifiedAt(OffsetDateTime.now(FIXED_CLOCK))
             .status(UserStatus.ACTIVE)
             .failedLoginCount(0)
             .build();
