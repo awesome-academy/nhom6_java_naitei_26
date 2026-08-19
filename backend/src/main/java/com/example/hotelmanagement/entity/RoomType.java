@@ -52,10 +52,6 @@ public class RoomType extends BaseEntity {
     @Column(name = "extra_bed_price", precision = 14, scale = 2)
     private BigDecimal extraBedPrice;
 
-    @Column(name = "has_air_conditioner", nullable = false)
-    @Builder.Default
-    private Boolean hasAirConditioner = true;
-
     @Column(name = "size_sqm", precision = 6, scale = 2)
     private BigDecimal sizeSqm;
 
@@ -74,7 +70,7 @@ public class RoomType extends BaseEntity {
     @Builder.Default
     private Set<RoomTypeBed> beds = new HashSet<>();
 
-    @ManyToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+    @ManyToMany
     @JoinTable(
             name = "room_type_amenities",
             joinColumns = @JoinColumn(name = "room_type_id"),
