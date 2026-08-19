@@ -16,7 +16,7 @@ import java.time.LocalDate;
 @Builder
 public class RoomStatusBlock extends BaseEntity {
 
-    @Column(name = "public_id", nullable = false, unique = true, length = 36)
+    @Column(name = "public_id", nullable = false, unique = true, columnDefinition = "CHAR(36)")
     private String publicId;
 
     @ManyToOne(fetch = FetchType.LAZY)
