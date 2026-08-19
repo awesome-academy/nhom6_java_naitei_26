@@ -1,8 +1,8 @@
 package com.example.hotelmanagement.common.error;
 
-import com.example.hotelmanagement.exception.BusinessValidationException;
-import com.example.hotelmanagement.exception.DuplicateResourceException;
-import com.example.hotelmanagement.exception.ResourceNotFoundException;
+import com.example.hotelmanagement.exceptions.BusinessValidationException;
+import com.example.hotelmanagement.exceptions.DuplicateResourceException;
+import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.exceptions.AuthException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;

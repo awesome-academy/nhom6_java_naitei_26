@@ -1,4 +1,4 @@
-package com.example.hotelmanagement.controller;
+package com.example.hotelmanagement.controllers;
 
 import com.example.hotelmanagement.dto.roomtype.RoomTypeAmenitiesRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeBedsRequest;
@@ -6,7 +6,7 @@ import com.example.hotelmanagement.dto.roomtype.RoomTypeCreateRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeResponse;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeUpdateRequest;
 import com.example.hotelmanagement.security.PermissionExpressions;
-import com.example.hotelmanagement.service.RoomTypeService;
+import com.example.hotelmanagement.services.RoomTypeService;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;

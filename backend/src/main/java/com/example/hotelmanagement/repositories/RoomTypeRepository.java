@@ -1,4 +1,4 @@
-package com.example.hotelmanagement.repository;
+package com.example.hotelmanagement.repositories;
 
 import com.example.hotelmanagement.entity.RoomType;
 import org.springframework.data.jpa.repository.EntityGraph;

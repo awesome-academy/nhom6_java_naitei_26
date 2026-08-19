@@ -1,7 +1,7 @@
 package com.example.hotelmanagement.security;
 
 import com.example.hotelmanagement.dto.roomtype.RoomTypeResponse;
-import com.example.hotelmanagement.service.RoomTypeService;
+import com.example.hotelmanagement.services.RoomTypeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
