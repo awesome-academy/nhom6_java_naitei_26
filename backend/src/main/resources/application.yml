@@ -100,3 +100,7 @@ app:
   auth:
     max-failed-login-attempts: ${AUTH_MAX_FAILED_LOGIN_ATTEMPTS:5}
     lock-duration: ${AUTH_LOCK_DURATION:15m}
+    email-verification-token-ttl: ${AUTH_EMAIL_VERIFICATION_TOKEN_TTL:24h}
+    password-reset-token-ttl: ${AUTH_PASSWORD_RESET_TOKEN_TTL:30m}
+    frontend-verify-url: ${FRONTEND_VERIFY_URL:http://localhost:3000/auth/verify-email}
+    frontend-reset-url: ${FRONTEND_RESET_URL:http://localhost:3000/auth/reset-password}

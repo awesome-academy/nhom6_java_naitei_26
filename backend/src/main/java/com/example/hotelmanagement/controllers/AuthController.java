@@ -1,9 +1,13 @@
 package com.example.hotelmanagement.controllers;
 
 import com.example.hotelmanagement.dto.auth.AuthResponse;
+import com.example.hotelmanagement.dto.auth.AuthMessageResponse;
+import com.example.hotelmanagement.dto.auth.EmailVerificationRequest;
 import com.example.hotelmanagement.dto.auth.LoginRequest;
 import com.example.hotelmanagement.dto.auth.LogoutRequest;
 import com.example.hotelmanagement.dto.auth.OAuthGoogleRequest;
+import com.example.hotelmanagement.dto.auth.PasswordResetConfirmRequest;
+import com.example.hotelmanagement.dto.auth.PasswordResetEmailRequest;
 import com.example.hotelmanagement.dto.auth.RefreshTokenRequest;
 import com.example.hotelmanagement.dto.auth.RegisterRequest;
 import com.example.hotelmanagement.common.error.ApiErrorResponse;
@@ -39,15 +43,66 @@ public class AuthController {
     )
     @ApiResponses({
         @ApiResponse(responseCode = "201", description = "Account created",
-            content = @Content(schema = @Schema(implementation = AuthResponse.class))),
+            content = @Content(schema = @Schema(implementation = AuthMessageResponse.class))),
         @ApiResponse(responseCode = "400", description = "Invalid request body",
             content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))),
         @ApiResponse(responseCode = "409", description = "Email already exists",
             content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
     })
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
+    public ResponseEntity<AuthMessageResponse> register(@Valid @RequestBody RegisterRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(request));
+    }
+
+    @Operation(
+        summary = "Verify registered email",
+        description = "Accepts a one-time email verification token from the request body."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Email verified",
+            content = @Content(schema = @Schema(implementation = AuthMessageResponse.class))),
+        @ApiResponse(responseCode = "400", description = "Invalid request body or token",
+            content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))),
+        @ApiResponse(responseCode = "410", description = "Token expired or already used",
+            content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
+    })
+    @PostMapping("/verify-email")
+    public AuthMessageResponse verifyEmail(@Valid @RequestBody EmailVerificationRequest request) {
+        return authService.verifyEmail(request);
+    }
+
+    @Operation(
+        summary = "Request password reset",
+        description = "Accepts an account email and sends a one-time reset token when the account is eligible."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "202", description = "Password reset request accepted",
+            content = @Content(schema = @Schema(implementation = AuthMessageResponse.class))),
+        @ApiResponse(responseCode = "400", description = "Invalid request body",
+            content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
+    })
+    @PostMapping("/password-reset/request")
+    public ResponseEntity<AuthMessageResponse> requestPasswordReset(
+        @Valid @RequestBody PasswordResetEmailRequest request
+    ) {
+        return ResponseEntity.accepted().body(authService.requestPasswordReset(request));
+    }
+
+    @Operation(
+        summary = "Confirm password reset",
+        description = "Accepts a one-time password reset token and a new password from the request body."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Password reset completed",
+            content = @Content(schema = @Schema(implementation = AuthMessageResponse.class))),
+        @ApiResponse(responseCode = "400", description = "Invalid request body or token",
+            content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))),
+        @ApiResponse(responseCode = "410", description = "Token expired or already used",
+            content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
+    })
+    @PostMapping("/password-reset/confirm")
+    public AuthMessageResponse resetPassword(@Valid @RequestBody PasswordResetConfirmRequest request) {
+        return authService.resetPassword(request);
     }
 
     @Operation(
