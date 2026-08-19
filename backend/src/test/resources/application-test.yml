@@ -23,3 +23,12 @@ spring:
   mail:
     host: localhost
     port: 1025
+
+app:
+  jwt:
+    secret: test-jwt-secret-for-auth-service-tests-32-bytes-minimum
+    access-token-ttl: 1h
+    refresh-token-ttl: 7d
+  auth:
+    max-failed-login-attempts: 5
+    lock-duration: 15m
