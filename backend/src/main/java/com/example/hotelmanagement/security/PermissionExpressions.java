@@ -9,6 +9,7 @@ public final class PermissionExpressions {
     public static final String SHIFT_MANAGE = "hasAuthority('shift:manage')";
     public static final String RBAC_READ = "hasAuthority('rbac:read')";
     public static final String RBAC_MANAGE = "hasAuthority('rbac:manage')";
+    public static final String STAFF_MANAGE = "hasAuthority('staff:manage')";
 
     private PermissionExpressions() {
     }
