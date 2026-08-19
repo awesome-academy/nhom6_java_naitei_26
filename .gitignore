@@ -1,2 +1,6 @@
 .metals/
 .vscode/
+
+# Maven
+target/
+backend/target/
