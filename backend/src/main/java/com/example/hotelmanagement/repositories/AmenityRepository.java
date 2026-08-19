@@ -1,4 +1,4 @@
-package com.example.hotelmanagement.repository;
+package com.example.hotelmanagement.repositories;
 
 import com.example.hotelmanagement.entity.Amenity;
 import org.springframework.data.jpa.repository.JpaRepository;

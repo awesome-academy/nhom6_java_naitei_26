@@ -1,4 +1,4 @@
-package com.example.hotelmanagement.service;
+package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.roomtype.RoomTypeAmenitiesRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeBedRequest;
@@ -9,10 +9,10 @@ import com.example.hotelmanagement.entity.Amenity;
 import com.example.hotelmanagement.entity.RoomType;
 import com.example.hotelmanagement.entity.enums.AmenityCategory;
 import com.example.hotelmanagement.entity.enums.BedType;
-import com.example.hotelmanagement.exception.BusinessValidationException;
-import com.example.hotelmanagement.exception.ResourceNotFoundException;
-import com.example.hotelmanagement.repository.AmenityRepository;
-import com.example.hotelmanagement.repository.RoomTypeRepository;
+import com.example.hotelmanagement.exceptions.BusinessValidationException;
+import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
+import com.example.hotelmanagement.repositories.AmenityRepository;
+import com.example.hotelmanagement.repositories.RoomTypeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

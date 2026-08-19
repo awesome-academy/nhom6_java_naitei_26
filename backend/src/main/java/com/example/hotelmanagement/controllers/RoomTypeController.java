@@ -1,14 +1,16 @@
-package com.example.hotelmanagement.controller;
+package com.example.hotelmanagement.controllers;
 
 import com.example.hotelmanagement.dto.roomtype.RoomTypeAmenitiesRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeBedsRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeCreateRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeResponse;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeUpdateRequest;
-import com.example.hotelmanagement.service.RoomTypeService;
+import com.example.hotelmanagement.security.PermissionExpressions;
+import com.example.hotelmanagement.services.RoomTypeService;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,16 +34,19 @@ public class RoomTypeController {
     }
 
     @GetMapping
+    @PreAuthorize(PermissionExpressions.ROOM_READ)
     public ResponseEntity<List<RoomTypeResponse>> getRoomTypes() {
         return ResponseEntity.ok(roomTypeService.getRoomTypes());
     }
 
     @GetMapping("/{code}")
+    @PreAuthorize(PermissionExpressions.ROOM_READ)
     public ResponseEntity<RoomTypeResponse> getRoomType(@PathVariable String code) {
         return ResponseEntity.ok(roomTypeService.getRoomType(code));
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize(PermissionExpressions.ROOM_CREATE)
     public ResponseEntity<RoomTypeResponse> createRoomType(
             @Valid @RequestBody RoomTypeCreateRequest request
     ) {
@@ -51,6 +56,7 @@ public class RoomTypeController {
     }
 
     @PutMapping(value = "/{code}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomTypeResponse> updateRoomType(
             @PathVariable String code,
             @Valid @RequestBody RoomTypeUpdateRequest request
@@ -59,12 +65,14 @@ public class RoomTypeController {
     }
 
     @DeleteMapping("/{code}")
+    @PreAuthorize(PermissionExpressions.ROOM_DELETE)
     public ResponseEntity<Void> deleteRoomType(@PathVariable String code) {
         roomTypeService.deleteRoomType(code);
         return ResponseEntity.noContent().build();
     }
 
     @PutMapping(value = "/{code}/beds", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomTypeResponse> replaceRoomTypeBeds(
             @PathVariable String code,
             @Valid @RequestBody RoomTypeBedsRequest request
@@ -73,6 +81,7 @@ public class RoomTypeController {
     }
 
     @PutMapping(value = "/{code}/amenities", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomTypeResponse> replaceRoomTypeAmenities(
             @PathVariable String code,
             @Valid @RequestBody RoomTypeAmenitiesRequest request

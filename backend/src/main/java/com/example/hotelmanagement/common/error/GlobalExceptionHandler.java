@@ -1,11 +1,17 @@
 package com.example.hotelmanagement.common.error;
 
+import com.example.hotelmanagement.exceptions.BusinessValidationException;
+import com.example.hotelmanagement.exceptions.DuplicateResourceException;
+import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.exceptions.AuthException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -19,6 +25,7 @@ import java.util.Map;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private static final int MAX_LOG_VALUE_LENGTH = 200;
 
     @ExceptionHandler(AuthException.class)
     public ResponseEntity<ApiErrorResponse> handleAuthException(
@@ -26,6 +33,39 @@ public class GlobalExceptionHandler {
         HttpServletRequest request
     ) {
         HttpStatus status = exception.getStatus();
+        return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleResourceNotFound(
+        ResourceNotFoundException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.NOT_FOUND;
+        log.warn("Resource was not found method={} path={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()));
+        return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
+    }
+
+    @ExceptionHandler(DuplicateResourceException.class)
+    public ResponseEntity<ApiErrorResponse> handleDuplicateResource(
+        DuplicateResourceException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.CONFLICT;
+        log.warn("Duplicate resource request method={} path={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()));
+        return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
+    }
+
+    @ExceptionHandler(BusinessValidationException.class)
+    public ResponseEntity<ApiErrorResponse> handleBusinessValidation(
+        BusinessValidationException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.BAD_REQUEST;
+        log.warn("Business validation failed method={} path={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()));
         return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
     }
 
@@ -44,12 +84,52 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiErrorResponse> handleUnreadableMessage(
+        HttpMessageNotReadableException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.BAD_REQUEST;
+        log.warn("Unreadable request body method={} path={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()));
+        return ResponseEntity.status(status).body(
+            toError(status, "Request body is malformed or contains unsupported values", request, Map.of())
+        );
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleDataIntegrityViolation(
+        DataIntegrityViolationException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.CONFLICT;
+        log.warn("Database constraint rejected request method={} path={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()), exception);
+        return ResponseEntity.status(status).body(
+            toError(status, "The request conflicts with existing data", request, Map.of())
+        );
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiErrorResponse> handleAccessDenied(
+        AccessDeniedException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.FORBIDDEN;
+        log.warn("Access denied method={} path={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()));
+        return ResponseEntity.status(status).body(
+            toError(status, "Bạn không có quyền thực hiện thao tác này", request, Map.of())
+        );
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleUnexpectedException(
         Exception exception,
         HttpServletRequest request
     ) {
-        log.error("Unexpected request failure path={}", request.getRequestURI(), exception);
+        log.error("Unexpected request failure method={} path={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()), exception);
         HttpStatus status = HttpStatus.INTERNAL_SERVER_ERROR;
         return ResponseEntity.status(status).body(
             toError(status, "Có lỗi hệ thống, vui lòng thử lại sau", request, Map.of())
@@ -70,5 +150,15 @@ public class GlobalExceptionHandler {
             request.getRequestURI(),
             fieldErrors
         );
+    }
+
+    private String sanitizeForLog(String value) {
+        if (value == null) {
+            return "";
+        }
+        String sanitized = value.replace('\r', '_').replace('\n', '_');
+        return sanitized.length() <= MAX_LOG_VALUE_LENGTH
+            ? sanitized
+            : sanitized.substring(0, MAX_LOG_VALUE_LENGTH);
     }
 }

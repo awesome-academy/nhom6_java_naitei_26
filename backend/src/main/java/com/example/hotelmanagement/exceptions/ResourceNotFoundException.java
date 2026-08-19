@@ -1,4 +1,4 @@
-package com.example.hotelmanagement.exception;
+package com.example.hotelmanagement.exceptions;
 
 public class ResourceNotFoundException extends RuntimeException {
 

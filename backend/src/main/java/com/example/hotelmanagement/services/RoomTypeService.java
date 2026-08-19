@@ -1,4 +1,4 @@
-package com.example.hotelmanagement.service;
+package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.roomtype.AmenityResponse;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeAmenitiesRequest;
@@ -12,11 +12,11 @@ import com.example.hotelmanagement.entity.Amenity;
 import com.example.hotelmanagement.entity.RoomType;
 import com.example.hotelmanagement.entity.RoomTypeBed;
 import com.example.hotelmanagement.entity.enums.BedType;
-import com.example.hotelmanagement.exception.BusinessValidationException;
-import com.example.hotelmanagement.exception.DuplicateResourceException;
-import com.example.hotelmanagement.exception.ResourceNotFoundException;
-import com.example.hotelmanagement.repository.AmenityRepository;
-import com.example.hotelmanagement.repository.RoomTypeRepository;
+import com.example.hotelmanagement.exceptions.BusinessValidationException;
+import com.example.hotelmanagement.exceptions.DuplicateResourceException;
+import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
+import com.example.hotelmanagement.repositories.AmenityRepository;
+import com.example.hotelmanagement.repositories.RoomTypeRepository;
 import jakarta.validation.Valid;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

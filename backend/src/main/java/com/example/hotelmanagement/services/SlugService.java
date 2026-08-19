@@ -1,7 +1,7 @@
-package com.example.hotelmanagement.service;
+package com.example.hotelmanagement.services;
 
-import com.example.hotelmanagement.exception.BusinessValidationException;
-import com.example.hotelmanagement.repository.RoomTypeRepository;
+import com.example.hotelmanagement.exceptions.BusinessValidationException;
+import com.example.hotelmanagement.repositories.RoomTypeRepository;
 import org.springframework.stereotype.Service;
 
 import java.text.Normalizer;
