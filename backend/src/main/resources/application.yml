@@ -80,6 +80,8 @@ management:
       show-details: when_authorized
 
 app:
+  hotel:
+    time-zone: ${HOTEL_TIME_ZONE:Asia/Ho_Chi_Minh}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   jwt:

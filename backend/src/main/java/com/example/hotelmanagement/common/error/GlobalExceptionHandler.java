@@ -4,6 +4,7 @@ import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.exceptions.AuthException;
+import com.example.hotelmanagement.exceptions.ShiftOverlapException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +55,17 @@ public class GlobalExceptionHandler {
     ) {
         HttpStatus status = HttpStatus.CONFLICT;
         log.warn("Duplicate resource request method={} path={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()));
+        return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
+    }
+
+    @ExceptionHandler(ShiftOverlapException.class)
+    public ResponseEntity<ApiErrorResponse> handleShiftOverlap(
+        ShiftOverlapException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.CONFLICT;
+        log.warn("Shift assignment overlap method={} path={}",
             request.getMethod(), sanitizeForLog(request.getRequestURI()));
         return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
     }
