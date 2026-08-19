@@ -5,7 +5,6 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 
 @Entity
 @Table(name = "room_status_blocks",
@@ -16,6 +15,9 @@ import java.time.OffsetDateTime;
 @AllArgsConstructor
 @Builder
 public class RoomStatusBlock extends BaseEntity {
+
+    @Column(name = "public_id", nullable = false, unique = true, length = 36)
+    private String publicId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "room_id", nullable = false)
