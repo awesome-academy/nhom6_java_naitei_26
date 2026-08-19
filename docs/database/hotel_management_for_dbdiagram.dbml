@@ -408,7 +408,7 @@ Logic tính shift_period (service/trigger):
 
 Table amenities {
   id int [pk, increment]
-  code varchar(40) [not null, unique, note: 'WIFI, TV, MINIBAR, BALCONY']
+  code varchar(40) [not null, unique, note: 'WIFI, TV, MINIBAR, AC, BALCONY, POOL, SPA']
   name varchar(100) [not null]
   icon varchar(60)
   category varchar(30) [note: 'ROOM / BATHROOM / TECH / SERVICE']
@@ -430,7 +430,6 @@ Table room_types {
   base_price decimal(14,2) [not null, note: 'Giá NIÊM YẾT hiện tại 1 đêm. CHECK >= 0']
   currency char(3) [not null, default: 'VND']
   extra_bed_price decimal(14,2)
-  has_air_conditioner boolean [not null, default: true, note: 'Cố ý denormalize để lọc nhanh (dòng 66). Nguồn duy nhất cho lọc AC']
   size_sqm decimal(6,2)
   is_active boolean [not null, default: true]
   sort_order smallint [not null, default: 0]

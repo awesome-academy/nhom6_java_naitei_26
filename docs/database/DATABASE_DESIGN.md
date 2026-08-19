@@ -366,7 +366,6 @@ Nếu bỏ shift management, hai bảng này có thể để trống mà không 
 | `base_price`                                   | NUMERIC(14,2) | NOT NULL, CHECK`>= 0`                      | Giá niêm yết 1 đêm, dòng 115                                                                                              |
 | `currency`                                     | CHAR(3)       | NOT NULL default`VND`                      | P2                                                                                                                              |
 | `extra_bed_price`                              | NUMERIC(14,2) | NULL, CHECK`>= 0`                          | Vượt sức chứa cơ bản                                                                                                      |
-| `has_air_conditioner`                          | BOOLEAN       | NOT NULL default true                        | Dòng 66: lọc có/không điều hòa là filter cố định trên UI. Cố tình denormalize khỏi`amenities` — xem mục 11.1 |
 | `size_sqm`                                     | NUMERIC(6,2)  | NULL                                         |                                                                                                                                 |
 | `is_active`                                    | BOOLEAN       | NOT NULL default true                        | Ngừng bán loại phòng mà không xóa                                                                                        |
 | `sort_order`                                   | SMALLINT      | NOT NULL default 0                           | Dòng 199 phòng nổi bật                                                                                                      |
@@ -1395,7 +1394,8 @@ Cả hai trigger nên dùng `SELECT ... FROM rooms WHERE id = NEW.room_id FOR UP
 
 ```sql
 -- $1 check_in, $2 check_out, $3 số khách, $4 số giường tối thiểu,
--- $5 cần điều hòa, $6 view codes, $7 room_type_ids, $8 giá min, $9 giá max
+-- $5 cần điều hòa, $6 view codes, $7 room_type_ids, $8 giá min, $9 giá max.
+-- Điều hòa được biểu diễn duy nhất bởi amenity code AC.
 SELECT r.id, r.room_number, r.view_type, rt.name AS room_type,
        COALESCE(r.price_override, rt.base_price) AS price_per_night
 FROM rooms r
@@ -1406,7 +1406,21 @@ WHERE r.deleted_at IS NULL
   AND rt.is_active
   AND COALESCE(r.max_occupancy_override, rt.max_occupancy) >= $3
   AND rt.bed_count >= $4
-  AND ($5 IS NULL OR rt.has_air_conditioner = $5)
+  AND (
+        $5 IS NULL
+        OR ($5 = TRUE AND EXISTS (
+              SELECT 1
+              FROM room_type_amenities rta
+              JOIN amenities a ON a.id = rta.amenity_id
+              WHERE rta.room_type_id = rt.id AND a.code = 'AC'
+            ))
+        OR ($5 = FALSE AND NOT EXISTS (
+              SELECT 1
+              FROM room_type_amenities rta
+              JOIN amenities a ON a.id = rta.amenity_id
+              WHERE rta.room_type_id = rt.id AND a.code = 'AC'
+            ))
+      )
   AND ($6 IS NULL OR JSON_CONTAINS($6, CONCAT('"', r.view_type, '"')))
   AND ($7 IS NULL OR rt.id = ANY($7))
   AND COALESCE(r.price_override, rt.base_price) BETWEEN $8 AND $9
@@ -1721,12 +1735,13 @@ Schema ở dạng 3NF. Các chỗ cố ý denormalize:
 
 | Chỗ denormalize                                                                                           | Lý do                                                                                            | Giữ nhất quán bằng                                                                                                                      |
 | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `room_types.has_air_conditioner` (khái niệm cũng có trong `amenities`)                             | Dòng 66 là filter cố định trên UI; join bảng nối cho một checkbox là không cần thiết | Coi cột này là nguồn duy nhất cho việc lọc điều hòa và**không** đưa AC vào `amenities`, tránh hai nguồn lệch nhau |
 | `bookings.rooms_total`, `services_total`, `total_amount`, `paid_amount`, `refunded_amount`       | Tránh SUM nhiều bảng ở mọi lần hiển thị danh sách booking                                | `trg_booking_totals` / `trg_payment_ledger` + job đối soát (11.1)                                                                    |
 | `booking_rooms.room_type_code_snapshot`, `room_type_name_snapshot`                                     | Snapshot theo P7 —**bắt buộc**, không phải tối ưu                                    | Không đồng bộ; cố ý đứng yên                                                                                                       |
 | `bookings.contact_*`, `invoices.buyer_*`, `folio_charges.description`, `invoice_items.description` | Snapshot theo P7                                                                                  | Không đồng bộ; cố ý đứng yên                                                                                                       |
 
 Điểm khác biệt cần nhớ: hai nhóm cuối **không phải** denormalize để tối ưu — chúng là dữ liệu độc lập, trùng giá trị với master data chỉ tại thời điểm tạo.
+
+Điều hòa có đúng một source of truth là amenity code `AC`. Loại phòng có điều hòa khi tồn tại dòng tương ứng trong `room_type_amenities`; không lưu thêm cột boolean trên `room_types`.
 
 ### 11.3. Bảo mật dữ liệu
 
