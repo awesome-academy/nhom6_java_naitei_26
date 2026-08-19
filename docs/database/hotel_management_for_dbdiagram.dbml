@@ -3,7 +3,7 @@
 // Dán toàn bộ file này vào https://dbdiagram.io
 // Docs: https://dbml.dbdiagram.io/docs
 //
-// 39 bảng, 27 enum. Chi tiết giải thích: DATABASE_DESIGN.md
+// 40 bảng, 27 enum. Chi tiết giải thích: DATABASE_DESIGN.md
 //
 // Ba tầng dữ liệu (P7):
 //   master/config  : room_types, rate_overrides, service_items,
@@ -347,6 +347,22 @@ Table auth_tokens {
 
   indexes {
     (user_id, token_type)
+    expires_at
+  }
+}
+
+Table auth_refresh_tokens {
+  id bigint [pk, increment]
+  user_id bigint [not null]
+  jwt_id varchar(36) [not null, unique, note: 'Claim jti của refresh JWT. Không lưu raw JWT']
+  expires_at timestamptz [not null]
+  revoked_at timestamptz [note: 'Có giá trị khi logout hoặc rotate']
+  rotated_to_jti varchar(36) [note: 'jti của refresh token mới khi rotate']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (user_id, revoked_at, expires_at)
     expires_at
   }
 }
@@ -1160,6 +1176,7 @@ Ref: customer_profiles.user_id - users.id [delete: restrict]
 Ref: staff_profiles.user_id - users.id [delete: restrict]
 Ref: user_social_accounts.user_id > users.id [delete: cascade]
 Ref: auth_tokens.user_id > users.id [delete: cascade]
+Ref: auth_refresh_tokens.user_id > users.id [delete: cascade]
 
 // Inventory
 Ref: room_type_beds.room_type_id > room_types.id [delete: cascade]

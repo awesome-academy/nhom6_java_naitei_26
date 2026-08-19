@@ -6,7 +6,7 @@ Nguồn yêu cầu: `Hotel_Management_Project_Specification.docx` (mục 2 Chứ
 
 DBMS mục tiêu: **MySQL 8.0+**. Lý do: cộng đồng yêu cầu MySQL ( PROJECT_PLAN.md ), dễ triển khai trong môi trường học tập. BR-002 (chống overlap booking) được thực thi bằng trigger kiểm tra tại application layer; BR-004/BR-015 tương tự. `JSON` (MySQL 8) thay thế `JSONB` cho snapshot policy. Không dùng `daterange`/`EXCLUDE USING gist`/`CITEXT`/partial index — xem chi tiết từng feature ở mục 11.4.
 
-File DBML để dán vào https://dbdiagram.io: [`hotel_management.dbml`](./hotel_management.dbml)
+File DBML để dán vào https://dbdiagram.io: [`hotel_management_for_dbdiagram.dbml`](./hotel_management_for_dbdiagram.dbml)
 
 Bản này được review theo ba mục tiêu: **tách rõ master/config data với transaction snapshot**, **mỗi giá trị có đúng một source of truth**, và **thay đổi giá/chính sách trong tương lai không hồi tố xuống giao dịch đã chốt**. Danh sách thay đổi ở mục 13, các điểm xung đột với requirement gốc ở mục 14.
 
@@ -271,7 +271,29 @@ Dùng chung cho activation (dòng 179-181) và reset password (dòng 42-45, 182-
 
 Index: `(user_id, token_type)` với điều kiện `used_at IS NULL`. Job xóa token hết hạn quá 30 ngày.
 
-### 3.7. `shifts` và `shift_assignments`
+### 3.7. `auth_refresh_tokens`
+
+Lưu trạng thái refresh token cho JWT session. Bảng này tách khỏi `auth_tokens` vì `auth_tokens` là token một lần cho email verification/reset password, còn refresh token có vòng đời đăng nhập: phát hành → dùng để rotate → revoke/logout → hết hạn.
+
+| Cột               | Kiểu        | Ràng buộc                 | Giải thích                                                                                                        |
+| ------------------ | ------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `id`             | BIGINT       | PK                          |                                                                                                                     |
+| `user_id`        | BIGINT       | NOT NULL, FK→users CASCADE | User sở hữu refresh token                                                                                          |
+| `jwt_id`         | VARCHAR(36)  | NOT NULL, UNIQUE            | Giá trị claim `jti` trong refresh JWT. **Không lưu raw JWT**, nên DB lộ cũng không có token gốc để dùng lại |
+| `expires_at`     | TIMESTAMPTZ  | NOT NULL                    | Hết hạn theo `app.jwt.refresh-token-ttl`                                                                           |
+| `revoked_at`     | TIMESTAMPTZ  | NULL                        | Có giá trị khi logout hoặc khi token bị rotate                                                                      |
+| `rotated_to_jti` | VARCHAR(36)  | NULL                        | Khi refresh token cũ được rotate, lưu `jti` của refresh token mới để audit/debug                                  |
+| `created_at` / `updated_at` | TIMESTAMPTZ | NOT NULL default now() |                                                                                                                     |
+
+Index:
+
+- UNIQUE(`jwt_id`) — một refresh JWT chỉ có một trạng thái trong DB.
+- `(user_id, revoked_at, expires_at)` — tìm token còn hiệu lực của một user.
+- `(expires_at)` — job dọn token hết hạn.
+
+Luồng kiểm tra hợp lệ: parse refresh JWT bằng secret → lấy `sub` và `jti` → lock dòng `auth_refresh_tokens.jwt_id` → hợp lệ khi `user.public_id = sub`, `revoked_at IS NULL`, `expires_at > now()`.
+
+### 3.8. `shifts` và `shift_assignments`
 
 Hai bảng phục vụ **quản lý ca trực** (dòng 168-173, dòng 268-271). Đây là phần "có thể triển khai thêm" trong spec, nhưng schema cần chuẩn bị sẵn để thêm sau không phải thiết kế lại.
 
@@ -1795,9 +1817,9 @@ Các PostgreSQL features dưới đây đã được thay thế bằng MySQL equ
 
 ## 12. DBML cho dbdiagram.io
 
-Xem file [`hotel_management.dbml`](./hotel_management.dbml) — dán trực tiếp vào https://dbdiagram.io.
+Xem file [`hotel_management_for_dbdiagram.dbml`](./hotel_management_for_dbdiagram.dbml) — dán trực tiếp vào https://dbdiagram.io.
 
-Tổng: **39 bảng**, 27 enum. File DBML gồm seed data tối thiểu (roles, booking_sources, cancellation_policies + rules, room_types, shifts) để dán vào là thấy được ngay.
+Tổng: **40 bảng**, 27 enum. File DBML gồm seed data tối thiểu (roles, booking_sources, cancellation_policies + rules, room_types, shifts) để dán vào là thấy được ngay.
 
 ---
 
