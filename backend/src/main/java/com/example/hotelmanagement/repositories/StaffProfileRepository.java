@@ -12,4 +12,9 @@ public interface StaffProfileRepository extends JpaRepository<StaffProfile, Long
 
     @EntityGraph(attributePaths = "user")
     Optional<StaffProfile> findByEmployeeCodeIgnoreCase(String employeeCode);
+
+    @EntityGraph(attributePaths = "user")
+    Optional<StaffProfile> findByUser_Id(Long userId);
+
+    boolean existsByUser_Id(Long userId);
 }
