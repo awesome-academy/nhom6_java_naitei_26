@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.common.error;
 
 import com.example.hotelmanagement.exceptions.AuthException;
+import com.example.hotelmanagement.exceptions.BookingRoomConflictException;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
 import com.example.hotelmanagement.exceptions.RateOverrideConflictException;
@@ -82,6 +83,17 @@ public class GlobalExceptionHandler {
     ) {
         HttpStatus status = HttpStatus.CONFLICT;
         log.warn("Room status conflict method={} path={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()));
+        return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
+    }
+
+    @ExceptionHandler(BookingRoomConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleBookingRoomConflict(
+        BookingRoomConflictException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.CONFLICT;
+        log.warn("Booking room conflict method={} path={}",
             request.getMethod(), sanitizeForLog(request.getRequestURI()));
         return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
     }
