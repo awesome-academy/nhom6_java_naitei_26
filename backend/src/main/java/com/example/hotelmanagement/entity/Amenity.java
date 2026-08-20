@@ -31,7 +31,7 @@ public class Amenity extends BaseEntity {
 
     @Column(name = "is_filterable", nullable = false)
     @Builder.Default
-    private Boolean isFilterable = false;
+    private Boolean isFilterable = true;
 
     @Column(name = "sort_order", nullable = false)
     @Builder.Default
