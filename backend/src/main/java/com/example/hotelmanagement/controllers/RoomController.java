@@ -2,6 +2,8 @@ package com.example.hotelmanagement.controllers;
 
 import com.example.hotelmanagement.dto.room.HousekeepingStatusUpdateRequest;
 import com.example.hotelmanagement.dto.room.RoomCreateRequest;
+import com.example.hotelmanagement.dto.room.RoomOperationalStatusResponse;
+import com.example.hotelmanagement.dto.room.RoomOperationalStatusUpdateRequest;
 import com.example.hotelmanagement.dto.room.RoomResponse;
 import com.example.hotelmanagement.dto.room.RoomUpdateRequest;
 import com.example.hotelmanagement.dto.roomimage.RoomImageConfirmRequest;
@@ -14,6 +16,7 @@ import com.example.hotelmanagement.security.PermissionExpressions;
 import com.example.hotelmanagement.security.UserPrincipal;
 import com.example.hotelmanagement.services.RoomImageService;
 import com.example.hotelmanagement.services.RoomService;
+import com.example.hotelmanagement.services.RoomStatusBlockService;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -39,10 +42,16 @@ public class RoomController {
 
     private final RoomService roomService;
     private final RoomImageService roomImageService;
+    private final RoomStatusBlockService roomStatusBlockService;
 
-    public RoomController(RoomService roomService, RoomImageService roomImageService) {
+    public RoomController(
+            RoomService roomService,
+            RoomImageService roomImageService,
+            RoomStatusBlockService roomStatusBlockService
+    ) {
         this.roomService = roomService;
         this.roomImageService = roomImageService;
+        this.roomStatusBlockService = roomStatusBlockService;
     }
 
     @GetMapping
@@ -95,6 +104,15 @@ public class RoomController {
             @Valid @RequestBody HousekeepingStatusUpdateRequest request
     ) {
         return ResponseEntity.ok(roomService.updateHousekeepingStatus(roomNumber, request));
+    }
+
+    @PatchMapping(value = "/{roomNumber}/operational-status", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
+    public ResponseEntity<RoomOperationalStatusResponse> updateOperationalStatus(
+            @PathVariable String roomNumber,
+            @Valid @RequestBody RoomOperationalStatusUpdateRequest request
+    ) {
+        return ResponseEntity.ok(roomStatusBlockService.updateOperationalStatus(roomNumber, request));
     }
 
     @PostMapping(value = "/{roomNumber}/images/upload-url", consumes = MediaType.APPLICATION_JSON_VALUE)

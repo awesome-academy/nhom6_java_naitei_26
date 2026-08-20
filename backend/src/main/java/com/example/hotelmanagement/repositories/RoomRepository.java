@@ -33,6 +33,14 @@ public interface RoomRepository extends JpaRepository<Room, Long>, JpaSpecificat
             """)
     Optional<Room> findForUpdateByRoomNumber(@Param("roomNumber") String roomNumber);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT room FROM Room room
+            WHERE UPPER(room.roomNumber) = UPPER(:roomNumber)
+              AND room.deletedAt IS NULL
+            """)
+    Optional<Room> findOperationalForUpdateByRoomNumber(@Param("roomNumber") String roomNumber);
+
     boolean existsByRoomNumberIgnoreCaseAndDeletedAtIsNull(String roomNumber);
 
     @Override
