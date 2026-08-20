@@ -3,7 +3,9 @@ package com.example.hotelmanagement.common.error;
 import com.example.hotelmanagement.exceptions.AuthException;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
+import com.example.hotelmanagement.exceptions.RateOverrideConflictException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
+import com.example.hotelmanagement.exceptions.RoomStatusConflictException;
 import com.example.hotelmanagement.exceptions.ShiftOverlapException;
 import com.example.hotelmanagement.exceptions.StorageUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,6 +18,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -68,6 +71,17 @@ public class GlobalExceptionHandler {
     ) {
         HttpStatus status = HttpStatus.CONFLICT;
         log.warn("Shift assignment overlap method={} path={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()));
+        return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
+    }
+
+    @ExceptionHandler(RoomStatusConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleRoomStatusConflict(
+        RoomStatusConflictException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.CONFLICT;
+        log.warn("Room status conflict method={} path={}",
             request.getMethod(), sanitizeForLog(request.getRequestURI()));
         return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
     }
@@ -135,6 +149,20 @@ public class GlobalExceptionHandler {
             sanitizeForLog(exception.getName()));
         return ResponseEntity.status(status).body(
             toError(status, "Request parameter has an unsupported value", request, Map.of())
+        );
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiErrorResponse> handleMissingRequestParameter(
+        MissingServletRequestParameterException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.BAD_REQUEST;
+        log.warn("Missing request parameter method={} path={} parameter={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()),
+            sanitizeForLog(exception.getParameterName()));
+        return ResponseEntity.status(status).body(
+            toError(status, "A required request parameter is missing", request, Map.of())
         );
     }
 

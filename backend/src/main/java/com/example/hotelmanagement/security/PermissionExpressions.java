@@ -13,6 +13,7 @@ public final class PermissionExpressions {
     public static final String POLICY_MANAGE = "hasAuthority('policy:manage')";
     public static final String POLICY_USE_FOR_BOOKING =
             "hasAnyAuthority('booking:create', 'policy:manage')";
+    public static final String PRICING_MANAGE = "hasAuthority('pricing:manage')";
 
     private PermissionExpressions() {
     }
