@@ -1,40 +1,22 @@
-import React from 'react'
-import { cn } from '@/lib/utils'
+import * as React from "react"
 
-export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  label?: string
-  error?: string
-  helperText?: string
-}
+import { cn } from "@/lib/utils"
 
-const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type = 'text', label, error, helperText, ...props }, ref) => (
-    <div className="w-full">
-      {label && (
-        <label className="block text-sm font-medium text-neutral-700 mb-2">
-          {label}
-          {props.required && <span className="text-error-600 ml-1">*</span>}
-        </label>
-      )}
+const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
+  ({ className, type, ...props }, ref) => {
+    return (
       <input
         type={type}
         className={cn(
-          'flex h-10 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-base',
-          'placeholder:text-neutral-400 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500',
-          'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent',
-          'transition-colors duration-200',
-          error && 'border-error-500 focus:ring-error-500',
+          "flex h-12 w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] transition-all duration-200 file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:border-[var(--foreground)] focus-visible:bg-[var(--background)] disabled:cursor-not-allowed disabled:opacity-50",
           className
         )}
         ref={ref}
         {...props}
       />
-      {error && <p className="text-error-600 text-sm mt-1">{error}</p>}
-      {helperText && !error && <p className="text-neutral-500 text-sm mt-1">{helperText}</p>}
-    </div>
-  )
+    )
+  }
 )
-
-Input.displayName = 'Input'
+Input.displayName = "Input"
 
 export { Input }

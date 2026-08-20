@@ -6,9 +6,18 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface AmenityRepository extends JpaRepository<Amenity, Long> {
 
     List<Amenity> findAllByCodeIn(Collection<String> codes);
+
+    Optional<Amenity> findByCodeIgnoreCase(String code);
+
+    boolean existsByCodeIgnoreCase(String code);
+
+    List<Amenity> findAllByOrderByCategoryAscSortOrderAscNameAscCodeAsc();
+
+    List<Amenity> findAllByIsFilterableTrueOrderByCategoryAscSortOrderAscNameAscCodeAsc();
 }
