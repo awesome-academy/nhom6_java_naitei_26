@@ -3,6 +3,7 @@ package com.example.hotelmanagement.common.error;
 import com.example.hotelmanagement.exceptions.AuthException;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
+import com.example.hotelmanagement.exceptions.RateOverrideConflictException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.exceptions.ShiftOverlapException;
 import com.example.hotelmanagement.exceptions.StorageUnavailableException;
@@ -69,6 +70,18 @@ public class GlobalExceptionHandler {
         HttpStatus status = HttpStatus.CONFLICT;
         log.warn("Shift assignment overlap method={} path={}",
             request.getMethod(), sanitizeForLog(request.getRequestURI()));
+        return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
+    }
+
+    @ExceptionHandler(RateOverrideConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleRateOverrideConflict(
+        RateOverrideConflictException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.CONFLICT;
+        log.warn("Rate override conflict method={} path={} conflictingRateOverrideId={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()),
+            exception.getConflictingRateOverrideId());
         return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
     }
 

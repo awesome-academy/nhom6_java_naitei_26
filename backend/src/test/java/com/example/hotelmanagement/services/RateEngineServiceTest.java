@@ -48,7 +48,7 @@ class RateEngineServiceTest {
         rateEngineService = new RateEngineService(
                 roomRepository,
                 rateOverrideRepository,
-                new ObjectMapper()
+                new RateOverrideWeekdayCodec(new ObjectMapper())
         );
     }
 

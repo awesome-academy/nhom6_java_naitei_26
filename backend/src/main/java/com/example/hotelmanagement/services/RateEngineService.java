@@ -8,18 +8,12 @@ import com.example.hotelmanagement.exceptions.PricingConfigurationException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.RateOverrideRepository;
 import com.example.hotelmanagement.repositories.RoomRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -28,22 +22,18 @@ import java.util.Set;
 @Transactional(readOnly = true)
 public class RateEngineService {
 
-    private static final Logger log = LoggerFactory.getLogger(RateEngineService.class);
-    private static final TypeReference<List<Integer>> WEEKDAY_LIST_TYPE = new TypeReference<>() {
-    };
-
     private final RoomRepository roomRepository;
     private final RateOverrideRepository rateOverrideRepository;
-    private final ObjectMapper objectMapper;
+    private final RateOverrideWeekdayCodec weekdayCodec;
 
     public RateEngineService(
             RoomRepository roomRepository,
             RateOverrideRepository rateOverrideRepository,
-            ObjectMapper objectMapper
+            RateOverrideWeekdayCodec weekdayCodec
     ) {
         this.roomRepository = roomRepository;
         this.rateOverrideRepository = rateOverrideRepository;
-        this.objectMapper = objectMapper;
+        this.weekdayCodec = weekdayCodec;
     }
 
     public List<DailyRateResponse> calculateDailyRates(
@@ -96,7 +86,10 @@ public class RateEngineService {
 
     private ResolvedRateOverride resolveRateOverride(RateOverride rateOverride) {
         validateRateOverride(rateOverride);
-        return new ResolvedRateOverride(rateOverride, parseWeekdays(rateOverride));
+        return new ResolvedRateOverride(
+                rateOverride,
+                weekdayCodec.decodeWeekdays(rateOverride.getWeekdays(), rateOverride.getId())
+        );
     }
 
     private void validateRateOverride(RateOverride rateOverride) {
@@ -124,40 +117,6 @@ public class RateEngineService {
                     "Rate override " + rateOverrideId + " has no priority"
             );
         }
-    }
-
-    private Set<Integer> parseWeekdays(RateOverride rateOverride) {
-        if (rateOverride.getWeekdays() == null) {
-            return null;
-        }
-
-        List<Integer> weekdays;
-        try {
-            weekdays = objectMapper.readValue(rateOverride.getWeekdays(), WEEKDAY_LIST_TYPE);
-        } catch (JsonProcessingException exception) {
-            log.error("Cannot parse weekdays for rateOverrideId={}", rateOverride.getId(), exception);
-            throw new PricingConfigurationException(
-                    "Rate override " + rateOverride.getId() + " has malformed weekdays",
-                    exception
-            );
-        }
-        if (weekdays == null) {
-            throw new PricingConfigurationException(
-                    "Rate override " + rateOverride.getId() + " weekdays must be a JSON array"
-            );
-        }
-
-        Set<Integer> normalizedWeekdays = new LinkedHashSet<>();
-        for (Integer weekday : weekdays) {
-            if (weekday == null || weekday < 1 || weekday > 7) {
-                throw new PricingConfigurationException(
-                        "Rate override " + rateOverride.getId()
-                                + " has a weekday outside the supported range 1-7"
-                );
-            }
-            normalizedWeekdays.add(weekday);
-        }
-        return Set.copyOf(normalizedWeekdays);
     }
 
     private Optional<RateOverride> selectRateOverride(
