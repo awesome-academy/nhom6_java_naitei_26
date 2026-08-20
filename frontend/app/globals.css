@@ -1,26 +1,103 @@
 @import "tailwindcss";
 
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+}
+
+:root {
+  --radius: 0.5rem;
+
+  /* Background & Foreground */
+  --background: #fafafa;
+  --foreground: #18181b;
+
+  /* Card */
+  --card: #ffffff;
+  --card-foreground: #18181b;
+
+  /* Popover */
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+
+  /* Primary - Charcoal dark theme */
+  --primary: #232323;
+  --primary-foreground: #fafafa;
+
+  /* Secondary */
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+
+  /* Muted */
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+
+  /* Accent - Blue for CTAs */
+  --accent: #2563eb;
+  --accent-foreground: #ffffff;
+
+  /* Destructive */
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+
+  /* Border & Input */
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #2563eb;
+
+  /* Status Colors */
+  --success: #16a34a;
+  --warning: #ca8a04;
+  --info: #0284c7;
+
+  color-scheme: light;
+}
+
 @layer base {
-  :root {
-    color-scheme: light;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root {
-      color-scheme: dark;
-    }
-  }
-
   body {
-    background-color: rgb(255 255 255);
-    color: rgb(17 24 39);
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
 
-  @media (prefers-color-scheme: dark) {
-    body {
-      background-color: rgb(15 23 42);
-      color: rgb(241 245 249);
-    }
+  * {
+    border-color: var(--border);
+  }
+
+  .font-serif {
+    font-family: var(--font-playfair), Georgia, "Times New Roman", serif;
+  }
+
+  .font-mono {
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
   }
 
   h1 {
@@ -48,14 +125,14 @@
   }
 
   a {
-    color: rgb(2 132 199);
+    color: var(--accent);
     text-decoration-line: none;
     transition-property: color;
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   a:hover {
-    color: rgb(3 105 161);
+    color: var(--primary);
   }
 }
 
@@ -69,14 +146,37 @@ html {
 }
 
 ::-webkit-scrollbar-track {
-  background-color: rgb(243 244 246);
+  background-color: #f4f4f5;
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: rgb(209 213 219);
+  background-color: #d4d4d8;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: rgb(156 163 175);
+  background-color: #a1a1aa;
+}
+
+/* Utility classes */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .container-narrow {
+    max-width: 1120px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+
+  .container-wide {
+    max-width: 1280px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
 }
