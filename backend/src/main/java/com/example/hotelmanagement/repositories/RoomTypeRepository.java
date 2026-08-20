@@ -11,6 +11,8 @@ import java.util.Optional;
 @Repository
 public interface RoomTypeRepository extends JpaRepository<RoomType, Long> {
 
+    Optional<RoomType> findByIdAndDeletedAtIsNull(Long id);
+
     @EntityGraph(attributePaths = {"beds", "amenities"})
     List<RoomType> findAllByDeletedAtIsNullOrderBySortOrderAscNameAsc();
 

@@ -3,6 +3,7 @@ package com.example.hotelmanagement.common.error;
 import com.example.hotelmanagement.exceptions.AuthException;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
+import com.example.hotelmanagement.exceptions.RateOverrideConflictException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.exceptions.RoomStatusConflictException;
 import com.example.hotelmanagement.exceptions.ShiftOverlapException;
