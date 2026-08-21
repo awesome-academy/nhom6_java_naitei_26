@@ -241,6 +241,7 @@ public class BookingStateMachineService {
 
     private BookingRoomResponse mapRoomResponse(BookingRoom bookingRoom) {
         return new BookingRoomResponse(
+                bookingRoom.getId(),
                 bookingRoom.getRoom().getRoomNumber(),
                 bookingRoom.getRoomTypeCodeSnapshot(),
                 bookingRoom.getRoomTypeNameSnapshot(),
@@ -249,6 +250,8 @@ public class BookingStateMachineService {
                 bookingRoom.getStatus(),
                 bookingRoom.getGuestCount(),
                 bookingRoom.getRoomSubtotal(),
+                bookingRoom.getAssignedAt(),
+                bookingRoom.getAssignedBy(),
                 bookingRoom.getBookingRoomNights().stream()
                         .sorted(Comparator.comparing(BookingRoomNight::getStayDate))
                         .map(night -> new BookingRoomNightResponse(night.getStayDate(), night.getPrice()))
