@@ -100,7 +100,7 @@ class StaffProfileServiceTest {
         assertThat(response.employeeCode()).isEqualTo("EMP-0001");
         assertThat(response.employmentStatus()).isEqualTo(EmploymentStatus.ACTIVE);
         assertThat(response.hiredAt()).isEqualTo(LocalDate.now(FIXED_CLOCK));
-        verify(emailService).sendPasswordResetEmail("newstaff@example.com", "raw-token");
+        verify(emailService).sendPasswordResetEmail("newstaff@example.com", "New Staff", "raw-token");
     }
 
     @Test

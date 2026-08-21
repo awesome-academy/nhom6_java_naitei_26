@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 @Service
@@ -68,6 +69,21 @@ public class AuthTokenService {
         AuthToken authToken = validateToken(rawToken, expectedType);
         authToken.setUsedAt(now());
         return authToken;
+    }
+
+    /**
+     * Find token by raw value, returns Optional.
+     * Does not throw exceptions - returns empty if token is invalid.
+     */
+    @Transactional(readOnly = true)
+    public Optional<AuthToken> findTokenForVerification(String rawToken) {
+        try {
+            String tokenHash = hashToken(requireTokenValue(rawToken));
+            return authTokenRepository.findByTokenHash(tokenHash)
+                .filter(token -> token.getTokenType() == AuthTokenType.EMAIL_VERIFICATION);
+        } catch (AuthException e) {
+            return Optional.empty();
+        }
     }
 
     private String generateTokenValue() {

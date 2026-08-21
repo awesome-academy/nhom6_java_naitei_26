@@ -22,6 +22,7 @@ import com.example.hotelmanagement.repositories.UserRepository;
 import com.example.hotelmanagement.repositories.UserSocialAccountRepository;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -37,6 +38,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
 
     private static final String CUSTOMER_ROLE_CODE = "CUSTOMER";
@@ -74,28 +76,56 @@ public class AuthService {
         User savedUser = userRepository.save(user);
         
         AuthTokenService.IssuedAuthToken token = authTokenService.createToken(savedUser, AuthTokenType.EMAIL_VERIFICATION, null);
-        emailService.sendVerificationEmail(savedUser.getEmail(), token.value());
+        emailService.sendVerificationEmail(savedUser.getEmail(), savedUser.getFullName(), token.value());
 
         return new AuthMessageResponse("Đăng ký thành công. Vui lòng kiểm tra email để xác thực tài khoản.");
     }
 
     @Transactional
     public AuthMessageResponse verifyEmail(EmailVerificationRequest request) {
-        AuthToken authToken = authTokenService.consumeToken(request.token(), AuthTokenType.EMAIL_VERIFICATION);
-        User user = authToken.getUser();
-        
-        if (user.getStatus() == UserStatus.SUSPENDED || user.getStatus() == UserStatus.DEACTIVATED) {
-            throw new AuthException(HttpStatus.FORBIDDEN, "Tài khoản không khả dụng");
+        // First, try to find the token - if it's already used, we still want to check user status
+        Optional<AuthToken> existingToken = authTokenService.findTokenForVerification(request.token());
+        User user;
+
+        if (existingToken.isPresent()) {
+            AuthToken token = existingToken.get();
+            user = token.getUser();
+
+            // If token is not yet used, consume it and activate user
+            if (token.getUsedAt() == null) {
+                token.setUsedAt(now());
+                if (user.getEmailVerifiedAt() == null) {
+                    user.setEmailVerifiedAt(now());
+                }
+                if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
+                    user.setStatus(UserStatus.ACTIVE);
+                }
+                return new AuthMessageResponse("Xác thực email thành công");
+            }
+
+            // Token was already used - check if user is already active
+            if (user.getStatus() == UserStatus.ACTIVE && user.getEmailVerifiedAt() != null) {
+                // User was already verified - return success instead of error
+                return new AuthMessageResponse("Email đã được xác thực trước đó. Bạn có thể đăng nhập ngay.");
+            }
+
+            // User is not active for some reason
+            if (user.getStatus() == UserStatus.SUSPENDED || user.getStatus() == UserStatus.DEACTIVATED) {
+                throw new AuthException(HttpStatus.FORBIDDEN, "Tài khoản không khả dụng");
+            }
+
+            // Token used but user not active - try to activate
+            if (user.getEmailVerifiedAt() == null) {
+                user.setEmailVerifiedAt(now());
+            }
+            if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
+                user.setStatus(UserStatus.ACTIVE);
+            }
+            return new AuthMessageResponse("Xác thực email thành công");
         }
-        
-        if (user.getEmailVerifiedAt() == null) {
-            user.setEmailVerifiedAt(now());
-        }
-        if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
-            user.setStatus(UserStatus.ACTIVE);
-        }
-        
-        return new AuthMessageResponse("Xác thực email thành công");
+
+        // Token not found at all
+        throw new AuthException(HttpStatus.BAD_REQUEST, "Token xác thực không hợp lệ");
     }
 
     @Transactional
@@ -107,7 +137,7 @@ public class AuthService {
             User user = optionalUser.get();
             if (user.getStatus() != UserStatus.SUSPENDED && user.getStatus() != UserStatus.DEACTIVATED) {
                 AuthTokenService.IssuedAuthToken token = authTokenService.createToken(user, AuthTokenType.PASSWORD_RESET, null);
-                emailService.sendPasswordResetEmail(user.getEmail(), token.value());
+                emailService.sendPasswordResetEmail(user.getEmail(), user.getFullName(), token.value());
             }
         }
         
@@ -173,11 +203,65 @@ public class AuthService {
             .orElseGet(() -> createOrLinkGoogleUser(request));
     }
 
+    /**
+     * Real Google OAuth login - creates or links user account
+     */
+    @Transactional
+    public AuthResponse loginWithGoogle(String providerUserId, String email, String fullName) {
+        // Try to find existing social account
+        return userSocialAccountRepository.findByProviderAndProviderUserId(
+                OAuthProvider.GOOGLE,
+                providerUserId
+            )
+            .map(UserSocialAccount::getUser)
+            .map(this::activateOAuthUserIfAllowed)
+            .map(this::issueTokens)
+            .orElseGet(() -> createOrLinkGoogleUser(providerUserId, email, fullName));
+    }
+
+    private AuthResponse createOrLinkGoogleUser(String providerUserId, String email, String fullName) {
+        String normalizedEmail = normalizeEmail(email);
+
+        // Find existing user by email or create new one
+        User user = userRepository.findByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)
+            .map(this::activateOAuthUserIfAllowed)
+            .orElseGet(() -> createOAuthUserFromOAuth(normalizedEmail, fullName));
+
+        // Check if social account already linked
+        if (userSocialAccountRepository.findByProviderAndProviderUserId(OAuthProvider.GOOGLE, providerUserId).isEmpty()) {
+            UserSocialAccount socialAccount = UserSocialAccount.builder()
+                .user(user)
+                .provider(OAuthProvider.GOOGLE)
+                .providerUserId(providerUserId)
+                .providerEmail(normalizedEmail)
+                .rawProfile("{\"provider\":\"google\"}")
+                .linkedAt(now())
+                .build();
+            userSocialAccountRepository.save(socialAccount);
+        }
+
+        return issueTokens(user);
+    }
+
+    private User createOAuthUserFromOAuth(String email, String fullName) {
+        User user = User.builder()
+            .publicId(UUID.randomUUID().toString())
+            .email(email)
+            .emailVerifiedAt(now())
+            .fullName(fullName != null ? fullName.trim() : email.split("@")[0])
+            .status(UserStatus.ACTIVE)
+            .failedLoginCount(0)
+            .build();
+        assignCustomerRole(user);
+        return userRepository.save(user);
+    }
+
+    // Stub method for development/testing
     private AuthResponse createOrLinkGoogleUser(OAuthGoogleRequest request) {
         String email = normalizeEmail(request.email());
         User user = userRepository.findByEmailIgnoreCaseAndDeletedAtIsNull(email)
             .map(this::activateOAuthUserIfAllowed)
-            .orElseGet(() -> createOAuthUser(request, email));
+            .orElseGet(() -> createOAuthUserFromOAuth(email, request.fullName()));
 
         UserSocialAccount socialAccount = UserSocialAccount.builder()
             .user(user)

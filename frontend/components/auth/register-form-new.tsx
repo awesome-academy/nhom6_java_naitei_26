@@ -71,7 +71,8 @@ export function RegisterFormNew() {
         phone: data.phone,
       })
       toast.success("Tạo tài khoản thành công! Vui lòng kiểm tra email để xác thực.")
-      router.push("/login")
+      // Pass email as query param to login page so it can show pending verification message
+      router.push(`/login?email=${encodeURIComponent(data.email)}&pending=1`)
     } catch (err: unknown) {
       const error = err as { status?: number; message?: string }
       if (error.status === 409) {

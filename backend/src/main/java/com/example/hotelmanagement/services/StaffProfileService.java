@@ -144,7 +144,7 @@ public class StaffProfileService {
 
         AuthTokenService.IssuedAuthToken token =
                 authTokenService.createToken(savedUser, AuthTokenType.PASSWORD_RESET, null);
-        emailService.sendPasswordResetEmail(savedUser.getEmail(), token.value());
+        emailService.sendPasswordResetEmail(savedUser.getEmail(), savedUser.getFullName(), token.value());
 
         return savedUser;
     }
