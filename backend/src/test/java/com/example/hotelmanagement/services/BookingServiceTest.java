@@ -1,0 +1,408 @@
+package com.example.hotelmanagement.services;
+
+import com.example.hotelmanagement.dto.booking.BookingCreateRequest;
+import com.example.hotelmanagement.dto.booking.BookingPriceCalculationRequest;
+import com.example.hotelmanagement.dto.booking.BookingPriceCalculationResponse;
+import com.example.hotelmanagement.dto.booking.BookingResponse;
+import com.example.hotelmanagement.dto.booking.BookingRoomCreateItem;
+import com.example.hotelmanagement.dto.pricing.DailyRateResponse;
+import com.example.hotelmanagement.entity.Booking;
+import com.example.hotelmanagement.entity.BookingSource;
+import com.example.hotelmanagement.entity.CustomerProfile;
+import com.example.hotelmanagement.entity.Room;
+import com.example.hotelmanagement.entity.RoomType;
+import com.example.hotelmanagement.entity.User;
+import com.example.hotelmanagement.entity.enums.ActorType;
+import com.example.hotelmanagement.entity.enums.BookingStatus;
+import com.example.hotelmanagement.entity.enums.StatusChangeSource;
+import com.example.hotelmanagement.entity.enums.UserStatus;
+import com.example.hotelmanagement.exceptions.BookingRoomConflictException;
+import com.example.hotelmanagement.exceptions.BusinessValidationException;
+import com.example.hotelmanagement.repositories.BookingRepository;
+import com.example.hotelmanagement.repositories.BookingRoomRepository;
+import com.example.hotelmanagement.repositories.BookingSourceRepository;
+import com.example.hotelmanagement.repositories.CustomerProfileRepository;
+import com.example.hotelmanagement.repositories.RoomRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class BookingServiceTest {
+
+    private static final Clock FIXED_CLOCK = Clock.fixed(
+            Instant.parse("2026-08-20T08:00:00Z"),
+            ZoneOffset.UTC
+    );
+    private static final Long USER_ID = 42L;
+
+    @Mock
+    private BookingRepository bookingRepository;
+    @Mock
+    private BookingRoomRepository bookingRoomRepository;
+    @Mock
+    private BookingSourceRepository bookingSourceRepository;
+    @Mock
+    private CustomerProfileRepository customerProfileRepository;
+    @Mock
+    private RoomRepository roomRepository;
+    @Mock
+    private BookingCalculatorService bookingCalculatorService;
+    @Mock
+    private CancellationPolicyService cancellationPolicyService;
+
+    private BookingService bookingService;
+
+    @BeforeEach
+    void setUp() {
+        bookingService = new BookingService(
+                bookingRepository,
+                bookingRoomRepository,
+                bookingSourceRepository,
+                customerProfileRepository,
+                roomRepository,
+                bookingCalculatorService,
+                cancellationPolicyService,
+                FIXED_CLOCK
+        );
+    }
+
+    @Test
+    void createBookingBuildsPendingBookingWithSnapshots() {
+        CustomerProfile customerProfile = createCustomerProfile();
+        BookingSource source = createSource();
+        Room room = createRoom(10L, "A101", "DLX", "Deluxe");
+        LocalDate checkIn = LocalDate.of(2026, 9, 1);
+        LocalDate checkOut = LocalDate.of(2026, 9, 3);
+        BookingPriceCalculationResponse priceCalculation = new BookingPriceCalculationResponse(
+                10L, 5L, checkIn, checkOut, 2,
+                2, 0,
+                List.of(
+                        new DailyRateResponse(checkIn, money("1000000.00")),
+                        new DailyRateResponse(checkIn.plusDays(1), money("1000000.00"))
+                ),
+                money("2000000.00"), money("10.00"), money("200000.00"), money("2200000.00"), "VND"
+        );
+
+        when(customerProfileRepository.findByUser_Id(USER_ID)).thenReturn(Optional.of(customerProfile));
+        when(bookingSourceRepository.findByCodeIgnoreCaseAndIsActiveTrue("WEBSITE"))
+                .thenReturn(Optional.of(source));
+        when(bookingRoomRepository.existsOverlappingBooking(eq(10L), any(), eq(checkIn), eq(checkOut)))
+                .thenReturn(false);
+        when(bookingCalculatorService.calculatePrice(any(BookingPriceCalculationRequest.class)))
+                .thenReturn(priceCalculation);
+        when(roomRepository.findByIdAndDeletedAtIsNull(10L)).thenReturn(Optional.of(room));
+        when(bookingRepository.existsByBookingCode(anyString())).thenReturn(false);
+        when(bookingRepository.saveAndFlush(any(Booking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        BookingCreateRequest request = new BookingCreateRequest(
+                "FLEXIBLE", null, null, null, null,
+                List.of(new BookingRoomCreateItem(10L, checkIn, checkOut, 2, 0))
+        );
+
+        BookingResponse response = bookingService.createBooking(request, USER_ID);
+
+        assertThat(response.status()).isEqualTo(BookingStatus.PENDING);
+        assertThat(response.bookingCode()).matches("^BK-\\d{4}-\\d{6}$");
+        assertThat(response.contactName()).isEqualTo("Nguyen Van A");
+        assertThat(response.contactEmail()).isEqualTo("guest@example.com");
+        assertThat(response.contactPhone()).isEqualTo("0900000000");
+        assertThat(response.adults()).isEqualTo(2);
+        assertThat(response.children()).isEqualTo(0);
+        assertThat(response.roomsTotal()).isEqualByComparingTo("2000000.00");
+        assertThat(response.taxTotal()).isEqualByComparingTo("200000.00");
+        assertThat(response.roomTaxPercentSnapshot()).isEqualByComparingTo("10.00");
+        assertThat(response.totalAmount()).isEqualByComparingTo("2200000.00");
+        assertThat(response.currency()).isEqualTo("VND");
+        assertThat(response.holdExpiresAt()).isEqualTo(OffsetDateTime.now(FIXED_CLOCK).plusMinutes(15));
+        assertThat(response.rooms()).hasSize(1);
+        assertThat(response.rooms().getFirst().roomNumber()).isEqualTo("A101");
+        assertThat(response.rooms().getFirst().nights()).hasSize(2);
+        assertThat(response.rooms().getFirst().nights().getFirst().price()).isEqualByComparingTo("1000000.00");
+
+        ArgumentCaptor<Booking> captor = ArgumentCaptor.forClass(Booking.class);
+        verify(bookingRepository).saveAndFlush(captor.capture());
+        Booking savedBooking = captor.getValue();
+        assertThat(savedBooking.getCreatedBy()).isEqualTo(USER_ID);
+        assertThat(savedBooking.getStatusHistory()).hasSize(1);
+        var historyEntry = savedBooking.getStatusHistory().iterator().next();
+        assertThat(historyEntry.getFromStatus()).isNull();
+        assertThat(historyEntry.getToStatus()).isEqualTo(BookingStatus.PENDING);
+        assertThat(historyEntry.getActorType()).isEqualTo(ActorType.USER);
+        assertThat(historyEntry.getChangedBy()).isEqualTo(USER_ID);
+        assertThat(historyEntry.getSource()).isEqualTo(StatusChangeSource.MANUAL);
+
+        verify(cancellationPolicyService).applyPolicySnapshot(any(Booking.class), eq("FLEXIBLE"));
+    }
+
+    @Test
+    void createBookingAggregatesTotalsAcrossMultipleRooms() {
+        CustomerProfile customerProfile = createCustomerProfile();
+        BookingSource source = createSource();
+        Room roomA = createRoom(10L, "A101", "DLX", "Deluxe");
+        Room roomB = createRoom(20L, "B202", "STD", "Standard");
+        LocalDate checkIn = LocalDate.of(2026, 9, 1);
+        LocalDate checkOut = LocalDate.of(2026, 9, 2);
+
+        BookingPriceCalculationResponse calcA = new BookingPriceCalculationResponse(
+                10L, 5L, checkIn, checkOut, 1, 2, 0,
+                List.of(new DailyRateResponse(checkIn, money("1000000.00"))),
+                money("1000000.00"), money("10.00"), money("100000.00"), money("1100000.00"), "VND"
+        );
+        BookingPriceCalculationResponse calcB = new BookingPriceCalculationResponse(
+                20L, 6L, checkIn, checkOut, 1, 1, 1,
+                List.of(new DailyRateResponse(checkIn, money("500000.00"))),
+                money("500000.00"), money("10.00"), money("50000.00"), money("550000.00"), "VND"
+        );
+
+        when(customerProfileRepository.findByUser_Id(USER_ID)).thenReturn(Optional.of(customerProfile));
+        when(bookingSourceRepository.findByCodeIgnoreCaseAndIsActiveTrue("WEBSITE"))
+                .thenReturn(Optional.of(source));
+        when(bookingRoomRepository.existsOverlappingBooking(any(), any(), any(), any())).thenReturn(false);
+        when(bookingCalculatorService.calculatePrice(argThat(r -> r != null && r.roomId().equals(10L))))
+                .thenReturn(calcA);
+        when(bookingCalculatorService.calculatePrice(argThat(r -> r != null && r.roomId().equals(20L))))
+                .thenReturn(calcB);
+        when(roomRepository.findByIdAndDeletedAtIsNull(10L)).thenReturn(Optional.of(roomA));
+        when(roomRepository.findByIdAndDeletedAtIsNull(20L)).thenReturn(Optional.of(roomB));
+        when(bookingRepository.existsByBookingCode(anyString())).thenReturn(false);
+        when(bookingRepository.saveAndFlush(any(Booking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        BookingCreateRequest request = new BookingCreateRequest(
+                "FLEXIBLE", null, null, null, null,
+                List.of(
+                        new BookingRoomCreateItem(10L, checkIn, checkOut, 2, 0),
+                        new BookingRoomCreateItem(20L, checkIn, checkOut, 1, 1)
+                )
+        );
+
+        BookingResponse response = bookingService.createBooking(request, USER_ID);
+
+        assertThat(response.adults()).isEqualTo(3);
+        assertThat(response.children()).isEqualTo(1);
+        assertThat(response.roomsTotal()).isEqualByComparingTo("1500000.00");
+        assertThat(response.taxTotal()).isEqualByComparingTo("150000.00");
+        assertThat(response.totalAmount()).isEqualByComparingTo("1650000.00");
+        assertThat(response.rooms()).hasSize(2);
+    }
+
+    @Test
+    void createBookingRejectsWhenCustomerProfileMissing() {
+        when(customerProfileRepository.findByUser_Id(USER_ID)).thenReturn(Optional.empty());
+
+        BookingCreateRequest request = new BookingCreateRequest(
+                "FLEXIBLE", null, null, null, null,
+                List.of(new BookingRoomCreateItem(10L, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2), 1, 0))
+        );
+
+        assertThatThrownBy(() -> bookingService.createBooking(request, USER_ID))
+                .isInstanceOf(BusinessValidationException.class);
+        verify(bookingSourceRepository, never()).findByCodeIgnoreCaseAndIsActiveTrue(anyString());
+    }
+
+    @Test
+    void createBookingRejectsOverlappingRoom() {
+        CustomerProfile customerProfile = createCustomerProfile();
+        BookingSource source = createSource();
+        LocalDate checkIn = LocalDate.of(2026, 9, 1);
+        LocalDate checkOut = LocalDate.of(2026, 9, 2);
+
+        when(customerProfileRepository.findByUser_Id(USER_ID)).thenReturn(Optional.of(customerProfile));
+        when(bookingSourceRepository.findByCodeIgnoreCaseAndIsActiveTrue("WEBSITE"))
+                .thenReturn(Optional.of(source));
+        when(bookingRoomRepository.existsOverlappingBooking(eq(10L), any(), eq(checkIn), eq(checkOut)))
+                .thenReturn(true);
+
+        BookingCreateRequest request = new BookingCreateRequest(
+                "FLEXIBLE", null, null, null, null,
+                List.of(new BookingRoomCreateItem(10L, checkIn, checkOut, 1, 0))
+        );
+
+        assertThatThrownBy(() -> bookingService.createBooking(request, USER_ID))
+                .isInstanceOf(BookingRoomConflictException.class);
+        verify(bookingCalculatorService, never()).calculatePrice(any());
+        verify(bookingRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createBookingRejectsInvalidDateRange() {
+        CustomerProfile customerProfile = createCustomerProfile();
+        BookingSource source = createSource();
+        LocalDate checkIn = LocalDate.of(2026, 9, 5);
+        LocalDate checkOut = LocalDate.of(2026, 9, 1);
+
+        when(customerProfileRepository.findByUser_Id(USER_ID)).thenReturn(Optional.of(customerProfile));
+        when(bookingSourceRepository.findByCodeIgnoreCaseAndIsActiveTrue("WEBSITE"))
+                .thenReturn(Optional.of(source));
+
+        BookingCreateRequest request = new BookingCreateRequest(
+                "FLEXIBLE", null, null, null, null,
+                List.of(new BookingRoomCreateItem(10L, checkIn, checkOut, 1, 0))
+        );
+
+        assertThatThrownBy(() -> bookingService.createBooking(request, USER_ID))
+                .isInstanceOf(BusinessValidationException.class);
+        verify(bookingCalculatorService, never()).calculatePrice(any());
+    }
+
+    @Test
+    void createBookingWrapsDatabaseConflictAsBookingRoomConflict() {
+        CustomerProfile customerProfile = createCustomerProfile();
+        BookingSource source = createSource();
+        Room room = createRoom(10L, "A101", "DLX", "Deluxe");
+        LocalDate checkIn = LocalDate.of(2026, 9, 1);
+        LocalDate checkOut = LocalDate.of(2026, 9, 2);
+        BookingPriceCalculationResponse priceCalculation = new BookingPriceCalculationResponse(
+                10L, 5L, checkIn, checkOut, 1, 1, 0,
+                List.of(new DailyRateResponse(checkIn, money("1000000.00"))),
+                money("1000000.00"), money("10.00"), money("100000.00"), money("1100000.00"), "VND"
+        );
+
+        when(customerProfileRepository.findByUser_Id(USER_ID)).thenReturn(Optional.of(customerProfile));
+        when(bookingSourceRepository.findByCodeIgnoreCaseAndIsActiveTrue("WEBSITE"))
+                .thenReturn(Optional.of(source));
+        when(bookingRoomRepository.existsOverlappingBooking(any(), any(), any(), any())).thenReturn(false);
+        when(bookingCalculatorService.calculatePrice(any())).thenReturn(priceCalculation);
+        when(roomRepository.findByIdAndDeletedAtIsNull(10L)).thenReturn(Optional.of(room));
+        when(bookingRepository.existsByBookingCode(anyString())).thenReturn(false);
+        when(bookingRepository.saveAndFlush(any(Booking.class)))
+                .thenThrow(new DataIntegrityViolationException("trigger rejected"));
+
+        BookingCreateRequest request = new BookingCreateRequest(
+                "FLEXIBLE", null, null, null, null,
+                List.of(new BookingRoomCreateItem(10L, checkIn, checkOut, 1, 0))
+        );
+
+        assertThatThrownBy(() -> bookingService.createBooking(request, USER_ID))
+                .isInstanceOf(BookingRoomConflictException.class);
+    }
+
+    @Test
+    void createBookingRetriesBookingCodeGenerationOnCollision() {
+        CustomerProfile customerProfile = createCustomerProfile();
+        BookingSource source = createSource();
+        Room room = createRoom(10L, "A101", "DLX", "Deluxe");
+        LocalDate checkIn = LocalDate.of(2026, 9, 1);
+        LocalDate checkOut = LocalDate.of(2026, 9, 2);
+        BookingPriceCalculationResponse priceCalculation = new BookingPriceCalculationResponse(
+                10L, 5L, checkIn, checkOut, 1, 1, 0,
+                List.of(new DailyRateResponse(checkIn, money("1000000.00"))),
+                money("1000000.00"), money("10.00"), money("100000.00"), money("1100000.00"), "VND"
+        );
+
+        when(customerProfileRepository.findByUser_Id(USER_ID)).thenReturn(Optional.of(customerProfile));
+        when(bookingSourceRepository.findByCodeIgnoreCaseAndIsActiveTrue("WEBSITE"))
+                .thenReturn(Optional.of(source));
+        when(bookingRoomRepository.existsOverlappingBooking(any(), any(), any(), any())).thenReturn(false);
+        when(bookingCalculatorService.calculatePrice(any())).thenReturn(priceCalculation);
+        when(roomRepository.findByIdAndDeletedAtIsNull(10L)).thenReturn(Optional.of(room));
+        when(bookingRepository.existsByBookingCode(anyString())).thenReturn(true, true, false);
+        when(bookingRepository.saveAndFlush(any(Booking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        BookingCreateRequest request = new BookingCreateRequest(
+                "FLEXIBLE", null, null, null, null,
+                List.of(new BookingRoomCreateItem(10L, checkIn, checkOut, 1, 0))
+        );
+
+        BookingResponse response = bookingService.createBooking(request, USER_ID);
+
+        assertThat(response.bookingCode()).matches("^BK-\\d{4}-\\d{6}$");
+    }
+
+    @Test
+    void createBookingFailsWhenBookingCodeAlwaysCollides() {
+        CustomerProfile customerProfile = createCustomerProfile();
+        BookingSource source = createSource();
+
+        when(customerProfileRepository.findByUser_Id(USER_ID)).thenReturn(Optional.of(customerProfile));
+        when(bookingSourceRepository.findByCodeIgnoreCaseAndIsActiveTrue("WEBSITE"))
+                .thenReturn(Optional.of(source));
+        when(bookingRepository.existsByBookingCode(anyString())).thenReturn(true);
+
+        BookingCreateRequest request = new BookingCreateRequest(
+                "FLEXIBLE", null, null, null, null,
+                List.of(new BookingRoomCreateItem(
+                        10L, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2), 1, 0
+                ))
+        );
+
+        assertThatThrownBy(() -> bookingService.createBooking(request, USER_ID))
+                .isInstanceOf(BusinessValidationException.class);
+        verify(bookingRepository, never()).saveAndFlush(any());
+    }
+
+    private CustomerProfile createCustomerProfile() {
+        User user = User.builder()
+                .publicId("user-public-id")
+                .email("guest@example.com")
+                .fullName("Nguyen Van A")
+                .phone("0900000000")
+                .status(UserStatus.ACTIVE)
+                .failedLoginCount(0)
+                .build();
+        return CustomerProfile.builder().user(user).build();
+    }
+
+    private BookingSource createSource() {
+        return BookingSource.builder()
+                .code("WEBSITE")
+                .name("Website")
+                .isExternal(false)
+                .requiresAccount(true)
+                .commissionPercent(BigDecimal.ZERO)
+                .isActive(true)
+                .build();
+    }
+
+    private Room createRoom(Long roomId, String roomNumber, String roomTypeCode, String roomTypeName) {
+        RoomType roomType = RoomType.builder()
+                .code(roomTypeCode)
+                .name(roomTypeName)
+                .slug(roomTypeCode.toLowerCase())
+                .bedCount(1)
+                .maxOccupancy(2)
+                .maxAdults(2)
+                .maxChildren(1)
+                .basePrice(money("1000000.00"))
+                .isActive(true)
+                .build();
+        roomType.setId(roomId + 100);
+        Room room = Room.builder()
+                .roomType(roomType)
+                .roomNumber(roomNumber)
+                .isActive(true)
+                .build();
+        room.setId(roomId);
+        return room;
+    }
+
+    private static BigDecimal money(String value) {
+        return new BigDecimal(value);
+    }
+}

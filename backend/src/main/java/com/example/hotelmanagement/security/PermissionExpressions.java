@@ -12,6 +12,13 @@ public final class PermissionExpressions {
     public static final String RBAC_MANAGE = "hasAuthority('rbac:manage')";
     public static final String STAFF_MANAGE = "hasAuthority('staff:manage')";
     public static final String PRICING_MANAGE = "hasAuthority('pricing:manage')";
+    public static final String POLICY_MANAGE = "hasAuthority('policy:manage')";
+    public static final String POLICY_USE_FOR_BOOKING =
+            "hasAnyAuthority('booking:create', 'policy:manage')";
+    public static final String BOOKING_CANCEL =
+            "hasAnyAuthority('booking:cancel_own', 'booking:cancel_any')";
+    public static final String BOOKING_CHECK_IN = "hasAuthority('booking:check_in')";
+    public static final String BOOKING_CHECK_OUT = "hasAuthority('booking:check_out')";
 
     private PermissionExpressions() {
     }
