@@ -7,6 +7,7 @@ import com.example.hotelmanagement.dto.roomtype.RoomTypeBedResponse;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeBedsRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeCreateRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeResponse;
+import com.example.hotelmanagement.dto.roomtype.RoomTypeStatsResponse;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeUpdateRequest;
 import com.example.hotelmanagement.entity.Amenity;
 import com.example.hotelmanagement.entity.RoomType;
@@ -17,7 +18,9 @@ import com.example.hotelmanagement.exceptions.DuplicateResourceException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.AmenityRepository;
 import com.example.hotelmanagement.repositories.RoomTypeRepository;
+import com.example.hotelmanagement.security.PermissionExpressions;
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -46,18 +49,22 @@ public class RoomTypeService {
     private final RoomTypeRepository roomTypeRepository;
     private final AmenityRepository amenityRepository;
     private final SlugService slugService;
+    private final RoomTypeImageService roomTypeImageService;
 
     public RoomTypeService(
             RoomTypeRepository roomTypeRepository,
             AmenityRepository amenityRepository,
-            SlugService slugService
+            SlugService slugService,
+            RoomTypeImageService roomTypeImageService
     ) {
         this.roomTypeRepository = roomTypeRepository;
         this.amenityRepository = amenityRepository;
         this.slugService = slugService;
+        this.roomTypeImageService = roomTypeImageService;
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.ROOM_READ)
     public List<RoomTypeResponse> getRoomTypes() {
         return roomTypeRepository.findAllByDeletedAtIsNullOrderBySortOrderAscNameAsc()
                 .stream()
@@ -66,10 +73,22 @@ public class RoomTypeService {
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.ROOM_READ)
     public RoomTypeResponse getRoomType(String code) {
         return mapRoomTypeResponse(getExistingRoomType(code));
     }
 
+    @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.ROOM_READ)
+    public RoomTypeStatsResponse getRoomTypeStats() {
+        return new RoomTypeStatsResponse(
+                roomTypeRepository.count(),
+                roomTypeRepository.countByDeletedAtIsNullAndIsActiveTrue(),
+                roomTypeRepository.countByIsActiveFalse()
+        );
+    }
+
+    @PreAuthorize(PermissionExpressions.ROOM_CREATE)
     public RoomTypeResponse createRoomType(@Valid RoomTypeCreateRequest request) {
         String normalizedCode = normalizeCode(request.code());
         if (roomTypeRepository.existsByCodeIgnoreCase(normalizedCode)) {
@@ -89,6 +108,7 @@ public class RoomTypeService {
         return mapRoomTypeResponse(roomTypeRepository.save(roomType));
     }
 
+    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public RoomTypeResponse updateRoomType(String code, @Valid RoomTypeUpdateRequest request) {
         RoomType roomType = getExistingRoomType(code);
         int maxChildren = getValueOrDefault(request.maxChildren(), 0);
@@ -100,6 +120,7 @@ public class RoomTypeService {
         return mapRoomTypeResponse(roomTypeRepository.save(roomType));
     }
 
+    @PreAuthorize(PermissionExpressions.ROOM_DELETE)
     public void deleteRoomType(String code) {
         RoomType roomType = getExistingRoomType(code);
         roomType.setIsActive(false);
@@ -107,16 +128,18 @@ public class RoomTypeService {
         roomTypeRepository.save(roomType);
     }
 
+    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public RoomTypeResponse replaceRoomTypeBeds(String code, @Valid RoomTypeBedsRequest request) {
         RoomType roomType = getExistingRoomType(code);
         replaceBedConfiguration(roomType, request.beds());
-        return mapRoomTypeResponse(roomTypeRepository.save(roomType));
+        return mapRoomTypeResponse(roomTypeRepository.saveAndFlush(roomType));
     }
 
+    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public RoomTypeResponse replaceRoomTypeAmenities(String code, @Valid RoomTypeAmenitiesRequest request) {
         RoomType roomType = getExistingRoomType(code);
         replaceAmenityConfiguration(roomType, request.amenityCodes());
-        return mapRoomTypeResponse(roomTypeRepository.save(roomType));
+        return mapRoomTypeResponse(roomTypeRepository.saveAndFlush(roomType));
     }
 
     private RoomType getExistingRoomType(String code) {
@@ -183,21 +206,47 @@ public class RoomTypeService {
             throw new BusinessValidationException("Total bed count must be between 1 and 10");
         }
 
-        roomType.getBeds().clear();
-        quantitiesByType.forEach((bedType, quantity) -> roomType.getBeds().add(
-                RoomTypeBed.builder()
-                        .roomType(roomType)
-                        .bedType(bedType)
-                        .quantity(quantity)
-                        .build()
-        ));
+        Map<BedType, RoomTypeBed> existingBeds = roomType.getBeds().stream()
+                .collect(Collectors.toMap(
+                        RoomTypeBed::getBedType,
+                        bed -> bed,
+                        (first, duplicate) -> first,
+                        () -> new EnumMap<>(BedType.class)
+                ));
+        roomType.getBeds().removeIf(bed -> !quantitiesByType.containsKey(bed.getBedType()));
+        quantitiesByType.forEach((bedType, quantity) -> {
+            RoomTypeBed existingBed = existingBeds.get(bedType);
+            if (existingBed != null) {
+                existingBed.setQuantity(quantity);
+                return;
+            }
+            roomType.getBeds().add(
+                    RoomTypeBed.builder()
+                            .roomType(roomType)
+                            .bedType(bedType)
+                            .quantity(quantity)
+                            .build()
+            );
+        });
         roomType.setBedCount(totalBeds);
     }
 
     private void replaceAmenityConfiguration(RoomType roomType, Set<String> amenityCodes) {
         Set<Amenity> amenities = resolveAmenities(amenityCodes);
-        roomType.getAmenities().clear();
-        roomType.getAmenities().addAll(amenities);
+        Set<String> requestedCodes = amenities.stream()
+                .map(Amenity::getCode)
+                .map(this::normalizeCode)
+                .collect(Collectors.toSet());
+        roomType.getAmenities().removeIf(
+                amenity -> !requestedCodes.contains(normalizeCode(amenity.getCode()))
+        );
+        Set<String> existingCodes = roomType.getAmenities().stream()
+                .map(Amenity::getCode)
+                .map(this::normalizeCode)
+                .collect(Collectors.toSet());
+        amenities.stream()
+                .filter(amenity -> !existingCodes.contains(normalizeCode(amenity.getCode())))
+                .forEach(roomType.getAmenities()::add);
     }
 
     private Set<Amenity> resolveAmenities(Set<String> amenityCodes) {
@@ -270,6 +319,7 @@ public class RoomTypeService {
                 roomType.getSortOrder(),
                 beds,
                 amenities,
+                roomTypeImageService.getImageResponses(roomType),
                 roomType.getCreatedAt(),
                 roomType.getUpdatedAt()
         );

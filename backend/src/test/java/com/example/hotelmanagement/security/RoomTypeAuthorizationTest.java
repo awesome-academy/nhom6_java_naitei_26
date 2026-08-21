@@ -1,7 +1,9 @@
 package com.example.hotelmanagement.security;
 
 import com.example.hotelmanagement.dto.roomtype.RoomTypeResponse;
+import com.example.hotelmanagement.dto.roomtype.RoomTypeStatsResponse;
 import com.example.hotelmanagement.services.RoomTypeService;
+import com.example.hotelmanagement.services.RoomTypeImageService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -66,6 +68,8 @@ class RoomTypeAuthorizationTest {
 
     @MockBean
     private RoomTypeService roomTypeService;
+    @MockBean
+    private RoomTypeImageService roomTypeImageService;
 
     @Test
     void roomTypeEndpointRequiresAuthentication() throws Exception {
@@ -85,6 +89,38 @@ class RoomTypeAuthorizationTest {
             .andExpect(status().isOk());
 
         verify(roomTypeService).getRoomTypes();
+    }
+
+    @Test
+    @WithMockUser(authorities = "room:read")
+    void roomReadPermissionAllowsReadingPersistentRoomTypeStats() throws Exception {
+        when(roomTypeService.getRoomTypeStats()).thenReturn(new RoomTypeStatsResponse(5, 3, 2));
+
+        mockMvc.perform(get("/api/room-types/stats"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.total").value(5))
+            .andExpect(jsonPath("$.active").value(3))
+            .andExpect(jsonPath("$.deactivated").value(2));
+
+        verify(roomTypeService).getRoomTypeStats();
+    }
+
+    @Test
+    @WithMockUser(authorities = "room:create")
+    void roomTypeStatsRequiresRoomReadPermission() throws Exception {
+        mockMvc.perform(get("/api/room-types/stats"))
+            .andExpect(status().isForbidden());
+
+        verifyNoInteractions(roomTypeService);
+    }
+
+    @Test
+    void roomTypeStatsEndpointRequiresAuthentication() throws Exception {
+        mockMvc.perform(get("/api/room-types/stats"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.status").value(401));
+
+        verifyNoInteractions(roomTypeService);
     }
 
     @Test
@@ -167,6 +203,32 @@ class RoomTypeAuthorizationTest {
     }
 
     @Test
+    @WithMockUser(authorities = "room:update")
+    void roomUpdatePermissionAllowsRoomTypeImageUploadFlow() throws Exception {
+        mockMvc.perform(post("/api/room-types/{code}/images/upload-url", ROOM_TYPE_CODE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fileName":"deluxe.jpg","contentType":"image/jpeg","fileSize":1024}
+                    """))
+            .andExpect(status().isOk());
+
+        verify(roomTypeImageService).createUploadUrl(eq(ROOM_TYPE_CODE), any());
+    }
+
+    @Test
+    @WithMockUser(authorities = "room:read")
+    void missingRoomUpdatePermissionBlocksRoomTypeImageUploadFlow() throws Exception {
+        mockMvc.perform(post("/api/room-types/{code}/images/upload-url", ROOM_TYPE_CODE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fileName":"deluxe.jpg","contentType":"image/jpeg","fileSize":1024}
+                    """))
+            .andExpect(status().isForbidden());
+
+        verifyNoInteractions(roomTypeImageService);
+    }
+
+    @Test
     @WithMockUser(authorities = "room:delete")
     void roomDeletePermissionAllowsSoftDeletingRoomType() throws Exception {
         mockMvc.perform(delete("/api/room-types/{code}", ROOM_TYPE_CODE))
@@ -200,6 +262,7 @@ class RoomTypeAuthorizationTest {
             null,
             true,
             10,
+            List.of(),
             List.of(),
             List.of(),
             null,

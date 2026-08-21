@@ -3,6 +3,7 @@ package com.example.hotelmanagement.controllers;
 import com.example.hotelmanagement.dto.pricing.RateOverrideCreateRequest;
 import com.example.hotelmanagement.dto.pricing.RateOverrideResponse;
 import com.example.hotelmanagement.dto.pricing.RateOverrideUpdateRequest;
+import com.example.hotelmanagement.dto.pricing.RoomTypeRateOverrideCreateRequest;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import com.example.hotelmanagement.services.RateOverrideService;
 import jakarta.validation.Valid;
@@ -47,6 +48,20 @@ public class RateOverrideController {
             @Valid @RequestBody RateOverrideCreateRequest request
     ) {
         RateOverrideResponse response = rateOverrideService.createRateOverride(request);
+        return ResponseEntity.created(
+                URI.create("/api/rate-overrides/" + response.id())
+        ).body(response);
+    }
+
+    @PostMapping(value = "/room-types/{roomTypeCode}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<RateOverrideResponse> createRoomTypeRateOverride(
+            @PathVariable String roomTypeCode,
+            @Valid @RequestBody RoomTypeRateOverrideCreateRequest request
+    ) {
+        RateOverrideResponse response = rateOverrideService.createRoomTypeRateOverride(
+                roomTypeCode,
+                request
+        );
         return ResponseEntity.created(
                 URI.create("/api/rate-overrides/" + response.id())
         ).body(response);

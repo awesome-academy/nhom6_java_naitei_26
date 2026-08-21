@@ -7,8 +7,9 @@ import java.util.List;
 
 public record RateOverrideResponse(
         Long id,
-        Long roomTypeId,
-        Long roomId,
+        String roomTypeCode,
+        String roomTypeName,
+        String roomNumber,
         String name,
         LocalDate startDate,
         LocalDate endDate,
