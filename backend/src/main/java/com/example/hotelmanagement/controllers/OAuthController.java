@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
 
@@ -123,9 +124,9 @@ public class OAuthController {
                 )
             );
 
-            // Encode as JSON with proper UTF-8 and URL encoding
+            // Encode as JSON with Base64 (URL-safe)
             String jsonData = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(authData);
-            String encoded = java.net.URLEncoder.encode(jsonData, java.nio.charset.StandardCharsets.UTF_8);
+            String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(jsonData.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
             String redirectUrl = frontendCallbackUrl + "?data=" + encoded;
             response.sendRedirect(redirectUrl);

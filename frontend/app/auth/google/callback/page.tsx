@@ -8,6 +8,23 @@ import { storeTokens } from "@/lib/api/auth"
 import { useAuth } from "@/lib/auth-context"
 import { useRouter } from "next/navigation"
 
+// Decode URL-safe base64 with proper UTF-8 support
+function decodeBase64Url(str: string): string {
+  // Convert URL-safe base64 to standard base64
+  let base64 = str.replace(/-/g, '+').replace(/_/g, '/')
+  // Add padding if needed
+  while (base64.length % 4) {
+    base64 += '='
+  }
+  // Decode
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return new TextDecoder('utf-8').decode(bytes)
+}
+
 function GoogleOAuthCallbackContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -36,8 +53,8 @@ function GoogleOAuthCallbackContent() {
       }
 
       try {
-        // Parse auth data from URL (Next.js auto-decodes URL params)
-        const decoded = JSON.parse(data)
+        // Decode base64 URL-safe auth data
+        const decoded = JSON.parse(decodeBase64Url(data))
 
         if (!decoded.accessToken || !decoded.refreshToken || !decoded.user) {
           throw new Error("Invalid auth data format")
