@@ -103,6 +103,7 @@
   - `Card`, `Modal`, `Table`, `Dropdown`
 
 **Checkpoint cuối ngày 1:**
+
 - `curl localhost:8080/actuator/health` → UP
 - `curl localhost:3000` → Next.js welcome
 - Flyway migrate thành công
@@ -208,6 +209,7 @@
 - Avatar upload (→ MinIO)
 
 **Checkpoint cuối ngày 2:**
+
 - Staff đăng nhập → redirect `/dashboard`
 - Customer đăng nhập → redirect `/my-bookings`
 - Không có quyền → 403
@@ -296,6 +298,7 @@
   - Validate: không cho tạo block trùng ngày trên cùng phòng
 
 **Checkpoint cuối ngày 3:**
+
 - Admin tạo loại phòng Deluxe → gán 10 phòng → upload ảnh → đặt bảo trì phòng 301 ngày 25-27/08
 
 ---
@@ -337,7 +340,7 @@
 #### BE-4.4 | Booking Price Calculator API | Priority: Urgent | 21/08 | Est: 4h
 
 - `BookingCalculatorService`
-- Nhận `{room_type_id, check_in, check_out, adults, children}`
+- Nhận `{room_id, check_in, check_out, adults, children}`
 - Gọi RateEngine
 - Tính rooms_total
 - Áp dụng `room_tax_percent_snapshot`
@@ -384,6 +387,7 @@
   - Hiển thị tổng tiền dự kiến
 
 **Checkpoint cuối ngày 4:**
+
 - Chọn Deluxe, 18-21/08 → hiển thị đúng giá cuối tuần 21/08 cao hơn ngày thường
 - Tạo FLEXIBLE policy với 3 bậc hoàn tiền
 
@@ -492,6 +496,7 @@
   - "Gán phòng"
 
 **Checkpoint cuối ngày 5:**
+
 - Customer đặt 2 đêm Deluxe → tạo booking PENDING
 - Staff confirm → gán phòng 301 → check-in
 - Xem invoice
@@ -607,6 +612,7 @@
   - Không cho sửa
 
 **Checkpoint cuối ngày 6:**
+
 - Staff check-out booking
 - Folio hiển thị 2 đêm phòng + 1 khoản minibar
 - Xuất invoice ISSUED → tải PDF → xem đúng số tiền
@@ -733,6 +739,7 @@
   - Filter theo room type, booking source
 
 **Checkpoint cuối ngày 7:**
+
 - Customer đặt → redirect gateway → callback verified → booking CONFIRMED
 - Admin xem dashboard: doanh thu tháng 8 = 850 triệu, ADR = 1.2 triệu
 
@@ -864,6 +871,7 @@
   - keyboard navigation
 
 **Checkpoint cuối ngày 8:**
+
 - Full system smoke test:
   1. Tạo account
   2. Đặt phòng
@@ -881,31 +889,31 @@
 
 ## Tổng kết — Deliverables cuối cùng
 
-| Phase | Ngày | Backend deliverables | Frontend deliverables |
-|-------|------|---------------------|-----------------------|
-| **Foundation** | 1 | Docker compose, Spring Boot project, 39 JPA entities, Flyway migration (MySQL) | Next.js project, base UI components |
-| **Auth & Users** | 2 | JWT auth, RBAC (15+ permissions), User/Staff/Customer CRUD, Shift management | Login, Register, Email verification, Profile |
-| **Inventory** | 3 | RoomType, Room, Amenity CRUD, Room blocks (BR-003/BR-004), HK status | Admin Room Management + Floor map + Maintenance scheduling |
-| **Pricing** | 4 | Rate engine, Cancellation policies (multi-tier), Booking price calculator | Admin Pricing + Policies + Customer room listing + date picker |
-| **Booking** | 5 | Availability engine, Booking creation (snapshot pricing), State machine, Room assignment, Guest ID storage | Customer booking wizard + My Bookings + Staff booking management |
-| **Billing** | 6 | Folio charges, Invoice generation (DRAFT→ISSUED→VOID), PDF generation (MinIO), Hotel settings | Staff folio panel + Invoice issuance + Customer invoice view |
-| **Payment** | 7 | Payment gateway (VNPay/MoMo stub), Callback + verification, Refund engine, Revenue queries | Payment UI + Staff payment management + Dashboard + Revenue reports |
-| **Polish** | 8 | Shift calendar API, Reviews (BR-006/BR-007), Email queue + templates, Audit logs + Jobs | Shift management + Reviews + Polish + Responsive + Accessibility |
+| Phase                  | Ngày | Backend deliverables                                                                                       | Frontend deliverables                                               |
+| ---------------------- | ----- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **Foundation**   | 1     | Docker compose, Spring Boot project, 39 JPA entities, Flyway migration (MySQL)                             | Next.js project, base UI components                                 |
+| **Auth & Users** | 2     | JWT auth, RBAC (15+ permissions), User/Staff/Customer CRUD, Shift management                               | Login, Register, Email verification, Profile                        |
+| **Inventory**    | 3     | RoomType, Room, Amenity CRUD, Room blocks (BR-003/BR-004), HK status                                       | Admin Room Management + Floor map + Maintenance scheduling          |
+| **Pricing**      | 4     | Rate engine, Cancellation policies (multi-tier), Booking price calculator                                  | Admin Pricing + Policies + Customer room listing + date picker      |
+| **Booking**      | 5     | Availability engine, Booking creation (snapshot pricing), State machine, Room assignment, Guest ID storage | Customer booking wizard + My Bookings + Staff booking management    |
+| **Billing**      | 6     | Folio charges, Invoice generation (DRAFT→ISSUED→VOID), PDF generation (MinIO), Hotel settings            | Staff folio panel + Invoice issuance + Customer invoice view        |
+| **Payment**      | 7     | Payment gateway (VNPay/MoMo stub), Callback + verification, Refund engine, Revenue queries                 | Payment UI + Staff payment management + Dashboard + Revenue reports |
+| **Polish**       | 8     | Shift calendar API, Reviews (BR-006/BR-007), Email queue + templates, Audit logs + Jobs                    | Shift management + Reviews + Polish + Responsive + Accessibility    |
 
 ---
 
 ## Kiến trúc MySQL thay thế PostgreSQL
 
-| PostgreSQL feature | MySQL replacement |
-|---|---|
-| `EXCLUDE USING gist` (BR-002) | Trigger `BEFORE INSERT/UPDATE` kiểm tra overlap query |
-| `EXCLUDE` BR-015 (shift) | Trigger kiểm tra `shift_period` overlap |
-| `daterange` / `tstzrange` | 2 cột DATE/TIMESTAMP, query `[)` bằng `WHERE a_in < b_out AND a_out > b_in` |
-| `CITEXT` | `VARCHAR` + `LOWER()` ở application layer hoặc generated column |
-| `JSONB` | `JSON` (MySQL 8+) |
-| `UUID` | `CHAR(36)` hoặc `BINARY(16)` |
-| `GENERATED COLUMN` | MySQL supports `GENERATED ALWAYS AS` — dùng cho `nights`, `stay_range` |
-| GiST index | Trigger-based overlap check (performance acceptable cho < 10k concurrent bookings) |
+| PostgreSQL feature              | MySQL replacement                                                                  |
+| ------------------------------- | ---------------------------------------------------------------------------------- |
+| `EXCLUDE USING gist` (BR-002) | Trigger`BEFORE INSERT/UPDATE` kiểm tra overlap query                            |
+| `EXCLUDE` BR-015 (shift)      | Trigger kiểm tra`shift_period` overlap                                          |
+| `daterange` / `tstzrange`   | 2 cột DATE/TIMESTAMP, query`[)` bằng `WHERE a_in < b_out AND a_out > b_in`   |
+| `CITEXT`                      | `VARCHAR` + `LOWER()` ở application layer hoặc generated column              |
+| `JSONB`                       | `JSON` (MySQL 8+)                                                                |
+| `UUID`                        | `CHAR(36)` hoặc `BINARY(16)`                                                  |
+| `GENERATED COLUMN`            | MySQL supports`GENERATED ALWAYS AS` — dùng cho `nights`, `stay_range`      |
+| GiST index                      | Trigger-based overlap check (performance acceptable cho < 10k concurrent bookings) |
 
 ---
 
@@ -917,12 +925,14 @@
 - User avatars
 
 **Bucket naming:**
+
 - `room-images`
 - `room-type-images`
 - `invoices`
 - `avatars`
 
 **Presigned URLs:**
+
 - TTL 1 giờ cho upload
 - TTL 15 phút cho download
 

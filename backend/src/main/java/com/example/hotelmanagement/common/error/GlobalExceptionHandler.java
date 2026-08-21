@@ -104,8 +104,9 @@ public class GlobalExceptionHandler {
         HttpServletRequest request
     ) {
         HttpStatus status = HttpStatus.BAD_REQUEST;
-        log.warn("Business validation failed method={} path={}",
-            request.getMethod(), sanitizeForLog(request.getRequestURI()));
+        log.warn("Business validation failed method={} path={} reason={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()),
+            sanitizeForLog(exception.getMessage()));
         return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
     }
 

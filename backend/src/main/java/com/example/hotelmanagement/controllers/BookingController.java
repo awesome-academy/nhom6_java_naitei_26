@@ -3,8 +3,12 @@ package com.example.hotelmanagement.controllers;
 import com.example.hotelmanagement.dto.booking.BookingCancelRequest;
 import com.example.hotelmanagement.dto.booking.BookingCreateRequest;
 import com.example.hotelmanagement.dto.booking.BookingResponse;
+import com.example.hotelmanagement.dto.booking.BookingRoomAssignmentResponse;
+import com.example.hotelmanagement.dto.booking.BookingRoomChangeRequest;
+import com.example.hotelmanagement.dto.booking.BookingRoomChangeResponse;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import com.example.hotelmanagement.security.UserPrincipal;
+import com.example.hotelmanagement.services.BookingRoomService;
 import com.example.hotelmanagement.services.BookingService;
 import com.example.hotelmanagement.services.BookingStateMachineService;
 import jakarta.validation.Valid;
@@ -26,13 +30,16 @@ public class BookingController {
 
     private final BookingService bookingService;
     private final BookingStateMachineService bookingStateMachineService;
+    private final BookingRoomService bookingRoomService;
 
     public BookingController(
             BookingService bookingService,
-            BookingStateMachineService bookingStateMachineService
+            BookingStateMachineService bookingStateMachineService,
+            BookingRoomService bookingRoomService
     ) {
         this.bookingService = bookingService;
         this.bookingStateMachineService = bookingStateMachineService;
+        this.bookingRoomService = bookingRoomService;
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -72,6 +79,31 @@ public class BookingController {
     ) {
         return ResponseEntity.ok(
                 bookingStateMachineService.cancel(publicId, principal.getId(), request.reason())
+        );
+    }
+
+    @PostMapping("/{publicId}/rooms/{bookingRoomId}/assign")
+    @PreAuthorize(PermissionExpressions.BOOKING_ASSIGN_ROOM)
+    public ResponseEntity<BookingRoomAssignmentResponse> assignRoom(
+            @PathVariable String publicId,
+            @PathVariable Long bookingRoomId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(
+                bookingRoomService.assignRoom(publicId, bookingRoomId, principal.getId())
+        );
+    }
+
+    @PostMapping(value = "/{publicId}/rooms/{bookingRoomId}/change-room", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize(PermissionExpressions.BOOKING_ASSIGN_ROOM)
+    public ResponseEntity<BookingRoomChangeResponse> changeRoom(
+            @PathVariable String publicId,
+            @PathVariable Long bookingRoomId,
+            @Valid @RequestBody BookingRoomChangeRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(
+                bookingRoomService.changeRoom(publicId, bookingRoomId, request, principal.getId())
         );
     }
 }
