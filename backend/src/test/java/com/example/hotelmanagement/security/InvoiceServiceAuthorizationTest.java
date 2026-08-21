@@ -1,0 +1,58 @@
+package com.example.hotelmanagement.security;
+
+import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
+import com.example.hotelmanagement.repositories.FolioChargeRepository;
+import com.example.hotelmanagement.repositories.InvoiceItemRepository;
+import com.example.hotelmanagement.repositories.InvoiceRepository;
+import com.example.hotelmanagement.services.InvoiceService;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.ActiveProfiles;
+
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+@SpringBootTest
+@ActiveProfiles("test")
+class InvoiceServiceAuthorizationTest {
+
+    private static final String INVOICE_PUBLIC_ID = "22222222-2222-2222-2222-222222222222";
+
+    @Autowired
+    private InvoiceService invoiceService;
+
+    @MockBean
+    private InvoiceRepository invoiceRepository;
+
+    @MockBean
+    private InvoiceItemRepository invoiceItemRepository;
+
+    @MockBean
+    private FolioChargeRepository folioChargeRepository;
+
+    @Test
+    @WithMockUser(authorities = "booking:check_out")
+    void serviceRejectsCallerWithoutInvoicePermission() {
+        assertThatThrownBy(() -> invoiceService.getInvoice(INVOICE_PUBLIC_ID))
+                .isInstanceOf(AccessDeniedException.class);
+        verifyNoInteractions(invoiceRepository, invoiceItemRepository, folioChargeRepository);
+    }
+
+    @Test
+    @WithMockUser(authorities = "invoice:issue")
+    void serviceAllowsCallerWithInvoicePermission() {
+        when(invoiceRepository.findByPublicId(INVOICE_PUBLIC_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> invoiceService.getInvoice(INVOICE_PUBLIC_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(invoiceRepository).findByPublicId(INVOICE_PUBLIC_ID);
+    }
+}

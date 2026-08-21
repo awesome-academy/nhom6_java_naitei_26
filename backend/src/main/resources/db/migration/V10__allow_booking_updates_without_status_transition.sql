@@ -1,5 +1,5 @@
 -- =============================================================================
--- V9: Allow booking updates that do not change status
+-- V10: Allow booking updates that do not change status
 --
 -- trg_booking_state_machine should validate status transitions only when the
 -- status actually changes. Other updates, such as aggregate totals maintained

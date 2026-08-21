@@ -40,15 +40,18 @@ public class BookingStateMachineService {
 
     private final BookingRepository bookingRepository;
     private final StaffProfileRepository staffProfileRepository;
+    private final InvoiceService invoiceService;
     private final Clock clock;
 
     public BookingStateMachineService(
             BookingRepository bookingRepository,
             StaffProfileRepository staffProfileRepository,
+            InvoiceService invoiceService,
             Clock clock
     ) {
         this.bookingRepository = bookingRepository;
         this.staffProfileRepository = staffProfileRepository;
+        this.invoiceService = invoiceService;
         this.clock = clock;
     }
 
@@ -73,7 +76,9 @@ public class BookingStateMachineService {
         applyTransition(booking, BookingStatus.CHECKED_OUT, ActorType.USER, staffUserId, StatusChangeSource.MANUAL, null);
         booking.setCheckedOutBy(staff);
 
-        return mapResponse(bookingRepository.saveAndFlush(booking));
+        Booking checkedOutBooking = bookingRepository.saveAndFlush(booking);
+        invoiceService.createDraftForCheckout(checkedOutBooking);
+        return mapResponse(checkedOutBooking);
     }
 
     @PreAuthorize(PermissionExpressions.BOOKING_CANCEL)

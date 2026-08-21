@@ -18,6 +18,8 @@ public interface FolioChargeRepository extends JpaRepository<FolioCharge, Long> 
     @EntityGraph(attributePaths = {"booking", "serviceItem"})
     List<FolioCharge> findAllByBooking_PublicIdOrderByChargedAtAscIdAsc(String bookingPublicId);
 
+    List<FolioCharge> findAllByBooking_IdAndIsVoidedFalseOrderByChargedAtAscIdAsc(Long bookingId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @EntityGraph(attributePaths = {"booking", "serviceItem"})
     @Query("""
