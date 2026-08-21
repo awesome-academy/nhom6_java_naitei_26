@@ -1,5 +1,5 @@
 -- =============================================================================
--- V8: Fix booking room night aggregate triggers
+-- V9: Fix booking room night aggregate triggers
 --
 -- booking_room_nights.price is the source of truth for sold room revenue.
 -- Recalculate booking-level totals from all room nights in the booking, not only

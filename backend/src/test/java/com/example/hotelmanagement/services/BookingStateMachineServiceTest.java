@@ -18,7 +18,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
@@ -57,12 +56,19 @@ class BookingStateMachineServiceTest {
     private BookingRepository bookingRepository;
     @Mock
     private StaffProfileRepository staffProfileRepository;
+    @Mock
+    private InvoiceService invoiceService;
 
     private BookingStateMachineService service;
 
     @BeforeEach
     void setUp() {
-        service = new BookingStateMachineService(bookingRepository, staffProfileRepository, FIXED_CLOCK);
+        service = new BookingStateMachineService(
+                bookingRepository,
+                staffProfileRepository,
+                invoiceService,
+                FIXED_CLOCK
+        );
     }
 
     private void stubSaveAndFlushReturnsArgument() {
@@ -138,6 +144,7 @@ class BookingStateMachineServiceTest {
         assertThat(booking.getCheckedOutAt()).isEqualTo(OffsetDateTime.now(FIXED_CLOCK));
         assertThat(booking.getCheckedOutBy()).isSameAs(staff);
         assertLastHistoryEntry(booking, BookingStatus.CHECKED_IN, BookingStatus.CHECKED_OUT, STAFF_USER_ID);
+        verify(invoiceService).createDraftForCheckout(booking);
     }
 
     @Test
@@ -147,6 +154,7 @@ class BookingStateMachineServiceTest {
 
         assertThatThrownBy(() -> service.checkOut(BOOKING_PUBLIC_ID, STAFF_USER_ID))
                 .isInstanceOf(BusinessValidationException.class);
+        verify(invoiceService, never()).createDraftForCheckout(any());
     }
 
     // ---- cancel (BR-005: owner or cancel_any) ----
