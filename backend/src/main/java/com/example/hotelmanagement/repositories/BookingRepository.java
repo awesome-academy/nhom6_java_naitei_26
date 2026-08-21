@@ -16,6 +16,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     boolean existsByBookingCode(String bookingCode);
 
+    boolean existsByPublicId(String publicId);
+
     @EntityGraph(attributePaths = {"bookingRooms", "bookingRooms.bookingRoomNights", "bookingRooms.room", "source"})
     Optional<Booking> findByPublicId(String publicId);
 
