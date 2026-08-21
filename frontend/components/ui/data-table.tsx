@@ -1,7 +1,7 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react"
-import { Button } from "./button"
+import { Button } from "./Button"
 
 interface Column<T> {
   key: string
