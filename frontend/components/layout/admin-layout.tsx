@@ -17,6 +17,9 @@ import {
 import {
   LayoutDashboard,
   Hotel,
+  BedDouble,
+  Wrench,
+  BadgeDollarSign,
   Calendar,
   Users,
   UserCog,
@@ -33,6 +36,9 @@ import {
 const adminNav = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/rooms", label: "Phòng", icon: Hotel },
+  { href: "/admin/room-types", label: "Loại phòng", icon: BedDouble },
+  { href: "/admin/maintenance", label: "Lịch bảo trì", icon: Wrench },
+  { href: "/admin/pricing", label: "Quản lý giá", icon: BadgeDollarSign },
   { href: "/admin/bookings", label: "Đặt phòng", icon: Calendar },
   { href: "/admin/guests", label: "Khách hàng", icon: Users },
   { href: "/admin/staff", label: "Nhân viên", icon: UserCog },

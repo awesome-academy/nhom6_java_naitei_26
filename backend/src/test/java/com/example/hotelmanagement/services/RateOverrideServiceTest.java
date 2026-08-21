@@ -3,6 +3,7 @@ package com.example.hotelmanagement.services;
 import com.example.hotelmanagement.dto.pricing.RateOverrideCreateRequest;
 import com.example.hotelmanagement.dto.pricing.RateOverrideResponse;
 import com.example.hotelmanagement.dto.pricing.RateOverrideUpdateRequest;
+import com.example.hotelmanagement.dto.pricing.RoomTypeRateOverrideCreateRequest;
 import com.example.hotelmanagement.entity.RateOverride;
 import com.example.hotelmanagement.entity.Room;
 import com.example.hotelmanagement.entity.RoomType;
@@ -78,8 +79,9 @@ class RateOverrideServiceTest {
 
         assertEquals(1, responses.size());
         assertEquals(List.of(6, 7), responses.getFirst().weekdays());
-        assertEquals(ROOM_TYPE_ID, responses.getFirst().roomTypeId());
-        assertNull(responses.getFirst().roomId());
+        assertEquals("DLX", responses.getFirst().roomTypeCode());
+        assertEquals("Deluxe", responses.getFirst().roomTypeName());
+        assertNull(responses.getFirst().roomNumber());
     }
 
     @Test
@@ -124,9 +126,40 @@ class RateOverrideServiceTest {
 
         RateOverrideResponse response = rateOverrideService.createRateOverride(request);
 
-        assertEquals(ROOM_ID, response.roomId());
-        assertNull(response.roomTypeId());
+        assertEquals("A101", response.roomNumber());
+        assertNull(response.roomTypeCode());
         assertNull(response.weekdays());
+    }
+
+    @Test
+    void createRoomTypeRateOverrideUsesNormalizedPublicCode() {
+        RoomType roomType = createRoomType();
+        RoomTypeRateOverrideCreateRequest request = new RoomTypeRateOverrideCreateRequest(
+                " Public room type rule ",
+                START_DATE,
+                END_DATE,
+                money("1250.00"),
+                Set.of(6, 7),
+                7
+        );
+        when(roomTypeRepository.findByCodeIgnoreCaseAndDeletedAtIsNull("DLX"))
+                .thenReturn(Optional.of(roomType));
+        when(rateOverrideRepository.findActiveConflicts(
+                null, ROOM_TYPE_ID, START_DATE, END_DATE, 7, null
+        )).thenReturn(List.of());
+        when(rateOverrideRepository.save(any(RateOverride.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        RateOverrideResponse response = rateOverrideService.createRoomTypeRateOverride(
+                " dlx ",
+                request
+        );
+
+        assertEquals("DLX", response.roomTypeCode());
+        assertEquals("Deluxe", response.roomTypeName());
+        assertEquals("Public room type rule", response.name());
+        assertEquals(List.of(6, 7), response.weekdays());
+        verify(roomTypeRepository).findByCodeIgnoreCaseAndDeletedAtIsNull("DLX");
     }
 
     @Test

@@ -8,7 +8,6 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { useRouter } from "next/navigation"
 import type { UserSummary } from "@/types/auth"
 import {
   clearTokens,
@@ -52,17 +51,16 @@ function persistUser(user: UserSummary | null) {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const router = useRouter()
   const [user, setUser] = useState<UserSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    initAuthFromStorage()
-    const stored = readStoredUser()
-    if (stored) {
-      setUser(stored)
-    }
-    setIsLoading(false)
+    const timer = window.setTimeout(() => {
+      initAuthFromStorage()
+      setUser(readStoredUser())
+      setIsLoading(false)
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [])
 
   const setAuth = useCallback(

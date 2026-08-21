@@ -4,9 +4,15 @@ import com.example.hotelmanagement.dto.roomtype.RoomTypeAmenitiesRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeBedsRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeCreateRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeResponse;
+import com.example.hotelmanagement.dto.roomtype.RoomTypeStatsResponse;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeUpdateRequest;
+import com.example.hotelmanagement.dto.roomimage.RoomImageConfirmRequest;
+import com.example.hotelmanagement.dto.roomimage.RoomImageResponse;
+import com.example.hotelmanagement.dto.roomimage.RoomImageUploadUrlRequest;
+import com.example.hotelmanagement.dto.roomimage.RoomImageUploadUrlResponse;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import com.example.hotelmanagement.services.RoomTypeService;
+import com.example.hotelmanagement.services.RoomTypeImageService;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -28,15 +34,26 @@ import java.util.List;
 public class RoomTypeController {
 
     private final RoomTypeService roomTypeService;
+    private final RoomTypeImageService roomTypeImageService;
 
-    public RoomTypeController(RoomTypeService roomTypeService) {
+    public RoomTypeController(
+            RoomTypeService roomTypeService,
+            RoomTypeImageService roomTypeImageService
+    ) {
         this.roomTypeService = roomTypeService;
+        this.roomTypeImageService = roomTypeImageService;
     }
 
     @GetMapping
     @PreAuthorize(PermissionExpressions.ROOM_READ)
     public ResponseEntity<List<RoomTypeResponse>> getRoomTypes() {
         return ResponseEntity.ok(roomTypeService.getRoomTypes());
+    }
+
+    @GetMapping("/stats")
+    @PreAuthorize(PermissionExpressions.ROOM_READ)
+    public ResponseEntity<RoomTypeStatsResponse> getRoomTypeStats() {
+        return ResponseEntity.ok(roomTypeService.getRoomTypeStats());
     }
 
     @GetMapping("/{code}")
@@ -87,5 +104,25 @@ public class RoomTypeController {
             @Valid @RequestBody RoomTypeAmenitiesRequest request
     ) {
         return ResponseEntity.ok(roomTypeService.replaceRoomTypeAmenities(code, request));
+    }
+
+    @PostMapping(value = "/{code}/images/upload-url", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
+    public ResponseEntity<RoomImageUploadUrlResponse> createRoomTypeImageUploadUrl(
+            @PathVariable String code,
+            @Valid @RequestBody RoomImageUploadUrlRequest request
+    ) {
+        return ResponseEntity.ok(roomTypeImageService.createUploadUrl(code, request));
+    }
+
+    @PostMapping(value = "/{code}/images/confirm", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
+    public ResponseEntity<RoomImageResponse> confirmRoomTypeImageUpload(
+            @PathVariable String code,
+            @Valid @RequestBody RoomImageConfirmRequest request
+    ) {
+        RoomImageResponse response = roomTypeImageService.confirmUpload(code, request);
+        URI location = URI.create("/api/room-types/" + code.strip().toUpperCase(java.util.Locale.ROOT));
+        return ResponseEntity.created(location).body(response);
     }
 }

@@ -35,6 +35,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -94,6 +95,24 @@ class RoomServiceTest {
         assertTrue(savedRoom.getIsActive());
         assertEquals(42L, savedRoom.getCreatedBy());
         assertEquals("A-101", response.roomNumber());
+    }
+
+    @Test
+    void createRoomKeepsBlankPriceOverrideAsNullToInheritRoomTypePrice() {
+        RoomType roomType = createRoomType("DLX", true);
+        RoomCreateRequest request = new RoomCreateRequest("A-102", "DLX", RoomView.NONE, 1, null);
+        when(roomRepository.existsByRoomNumberIgnoreCaseAndDeletedAtIsNull("A-102"))
+                .thenReturn(false);
+        when(roomTypeRepository.findByCodeIgnoreCaseAndDeletedAtIsNull("DLX"))
+                .thenReturn(Optional.of(roomType));
+        when(roomRepository.saveAndFlush(any(Room.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        roomService.createRoom(request, 42L);
+
+        ArgumentCaptor<Room> captor = ArgumentCaptor.forClass(Room.class);
+        verify(roomRepository).saveAndFlush(captor.capture());
+        assertNull(captor.getValue().getPriceOverride());
     }
 
     @Test

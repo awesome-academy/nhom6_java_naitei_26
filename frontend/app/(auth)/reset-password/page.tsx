@@ -1,4 +1,5 @@
 import { Suspense } from "react"
+import Link from "next/link"
 import { AuthLayoutNew } from "@/components/auth/auth-layout-new"
 import { ResetPasswordFormNew } from "@/components/auth/reset-password-form-new"
 
@@ -7,9 +8,9 @@ function ResetPasswordContent() {
     <div className="w-full max-w-md space-y-8">
       {/* Mobile Logo */}
       <div className="lg:hidden text-center">
-        <a href="/" className="text-2xl font-mono font-bold text-[var(--foreground)]">
+        <Link href="/" className="text-2xl font-mono font-bold text-[var(--foreground)]">
           TripStay
-        </a>
+        </Link>
       </div>
 
       {/* Header */}

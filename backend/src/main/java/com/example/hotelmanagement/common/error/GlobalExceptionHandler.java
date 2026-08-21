@@ -98,6 +98,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
     }
 
+    @ExceptionHandler(RateOverrideConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleRateOverrideConflict(
+        RateOverrideConflictException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.CONFLICT;
+        log.warn("Rate override conflict method={} path={} conflictingRateOverrideId={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()),
+            exception.getConflictingRateOverrideId());
+        return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
+    }
+
     @ExceptionHandler(BusinessValidationException.class)
     public ResponseEntity<ApiErrorResponse> handleBusinessValidation(
         BusinessValidationException exception,

@@ -12,15 +12,15 @@ import { AuthLayoutNew } from "@/components/auth/auth-layout-new"
 function VerifyEmailContent() {
   const searchParams = useSearchParams()
   const token = searchParams.get("token")
-  const [status, setStatus] = useState<"loading" | "success" | "error">("loading")
-  const [message, setMessage] = useState("")
+  const [status, setStatus] = useState<"loading" | "success" | "error">(
+    token ? "loading" : "error"
+  )
+  const [message, setMessage] = useState(
+    token ? "" : "Token xác thực không hợp lệ hoặc đã hết hạn."
+  )
 
   useEffect(() => {
-    if (!token) {
-      setStatus("error")
-      setMessage("Token xác thực không hợp lệ hoặc đã hết hạn.")
-      return
-    }
+    if (!token) return
 
     const verify = async () => {
       try {

@@ -7,6 +7,7 @@ import com.example.hotelmanagement.dto.roomtype.RoomTypeCreateRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeResponse;
 import com.example.hotelmanagement.entity.Amenity;
 import com.example.hotelmanagement.entity.RoomType;
+import com.example.hotelmanagement.entity.RoomTypeBed;
 import com.example.hotelmanagement.entity.enums.AmenityCategory;
 import com.example.hotelmanagement.entity.enums.BedType;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
@@ -28,10 +29,12 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -46,12 +49,20 @@ class RoomTypeServiceTest {
 
     @Mock
     private SlugService slugService;
+    @Mock
+    private RoomTypeImageService roomTypeImageService;
 
     private RoomTypeService roomTypeService;
 
     @BeforeEach
     void setUp() {
-        roomTypeService = new RoomTypeService(roomTypeRepository, amenityRepository, slugService);
+        roomTypeService = new RoomTypeService(
+                roomTypeRepository,
+                amenityRepository,
+                slugService,
+                roomTypeImageService
+        );
+        lenient().when(roomTypeImageService.getImageResponses(any())).thenReturn(List.of());
     }
 
     @Test
@@ -111,6 +122,48 @@ class RoomTypeServiceTest {
     }
 
     @Test
+    void getRoomTypeStatsIncludesSoftDeletedRecordsAsDeactivated() {
+        when(roomTypeRepository.count()).thenReturn(5L);
+        when(roomTypeRepository.countByDeletedAtIsNullAndIsActiveTrue()).thenReturn(3L);
+        when(roomTypeRepository.countByIsActiveFalse()).thenReturn(2L);
+
+        var response = roomTypeService.getRoomTypeStats();
+
+        assertEquals(5L, response.total());
+        assertEquals(3L, response.active());
+        assertEquals(2L, response.deactivated());
+    }
+
+    @Test
+    void replaceRoomTypeBedsUpdatesExistingRowsInsteadOfRecreatingThem() {
+        RoomType roomType = createRoomType("DLX");
+        RoomTypeBed existingQueen = RoomTypeBed.builder()
+                .roomType(roomType)
+                .bedType(BedType.QUEEN)
+                .quantity(1)
+                .build();
+        roomType.getBeds().add(existingQueen);
+        when(roomTypeRepository.findByCodeIgnoreCaseAndDeletedAtIsNull("DLX"))
+                .thenReturn(Optional.of(roomType));
+        when(roomTypeRepository.saveAndFlush(roomType)).thenReturn(roomType);
+
+        roomTypeService.replaceRoomTypeBeds("DLX", new RoomTypeBedsRequest(List.of(
+                new RoomTypeBedRequest(BedType.QUEEN, 2),
+                new RoomTypeBedRequest(BedType.KING, 1)
+        )));
+
+        RoomTypeBed updatedQueen = roomType.getBeds().stream()
+                .filter(bed -> bed.getBedType() == BedType.QUEEN)
+                .findFirst()
+                .orElseThrow();
+        assertSame(existingQueen, updatedQueen);
+        assertEquals(2, updatedQueen.getQuantity());
+        assertEquals(3, roomType.getBedCount());
+        assertEquals(2, roomType.getBeds().size());
+        verify(roomTypeRepository).saveAndFlush(roomType);
+    }
+
+    @Test
     void replaceRoomTypeBedsRejectsDuplicateBedTypes() {
         RoomType roomType = createRoomType("DLX");
         RoomTypeBedsRequest request = new RoomTypeBedsRequest(List.of(
@@ -124,7 +177,7 @@ class RoomTypeServiceTest {
                 BusinessValidationException.class,
                 () -> roomTypeService.replaceRoomTypeBeds("DLX", request)
         );
-        verify(roomTypeRepository, never()).save(any(RoomType.class));
+        verify(roomTypeRepository, never()).saveAndFlush(any(RoomType.class));
     }
 
     @Test
@@ -141,7 +194,7 @@ class RoomTypeServiceTest {
                         new RoomTypeAmenitiesRequest(Set.of("UNKNOWN"))
                 )
         );
-        verify(roomTypeRepository, never()).save(any(RoomType.class));
+        verify(roomTypeRepository, never()).saveAndFlush(any(RoomType.class));
     }
 
     private Amenity createAmenity(String code, String name, AmenityCategory category, int sortOrder) {

@@ -3,6 +3,7 @@ package com.example.hotelmanagement.services;
 import com.example.hotelmanagement.dto.pricing.RateOverrideCreateRequest;
 import com.example.hotelmanagement.dto.pricing.RateOverrideResponse;
 import com.example.hotelmanagement.dto.pricing.RateOverrideUpdateRequest;
+import com.example.hotelmanagement.dto.pricing.RoomTypeRateOverrideCreateRequest;
 import com.example.hotelmanagement.entity.RateOverride;
 import com.example.hotelmanagement.entity.Room;
 import com.example.hotelmanagement.entity.RoomType;
@@ -23,6 +24,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 @Service
@@ -73,29 +75,47 @@ public class RateOverrideService {
                 request.priority()
         );
         RateOverrideTarget target = resolveTarget(request.roomTypeId(), request.roomId());
-        validateNoConflict(
+        return createRateOverrideForTarget(
+                target,
                 request.roomTypeId(),
                 request.roomId(),
+                request.name(),
                 request.startDate(),
                 request.endDate(),
+                request.price(),
                 request.weekdays(),
-                request.priority(),
-                null
+                request.priority()
         );
+    }
 
-        RateOverride rateOverride = RateOverride.builder()
-                .roomType(target.roomType())
-                .room(target.room())
-                .name(request.name().strip())
-                .startDate(request.startDate())
-                .endDate(request.endDate())
-                .price(request.price())
-                .weekdays(weekdayCodec.encodeWeekdays(request.weekdays(), null))
-                .priority(request.priority())
-                .isActive(true)
-                .build();
+    public RateOverrideResponse createRoomTypeRateOverride(
+            String roomTypeCode,
+            @Valid RoomTypeRateOverrideCreateRequest request
+    ) {
+        validateRateOverrideFields(
+                request.name(),
+                request.startDate(),
+                request.endDate(),
+                request.price(),
+                request.weekdays(),
+                request.priority()
+        );
+        String normalizedCode = normalizeRoomTypeCode(roomTypeCode);
+        RoomType roomType = roomTypeRepository.findByCodeIgnoreCaseAndDeletedAtIsNull(normalizedCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Room type", normalizedCode));
+        validatePositiveId(roomType.getId(), "Room type id");
 
-        return mapRateOverrideResponse(rateOverrideRepository.save(rateOverride));
+        return createRateOverrideForTarget(
+                new RateOverrideTarget(roomType, null),
+                roomType.getId(),
+                null,
+                request.name(),
+                request.startDate(),
+                request.endDate(),
+                request.price(),
+                request.weekdays(),
+                request.priority()
+        );
     }
 
     public RateOverrideResponse updateRateOverride(
@@ -160,6 +180,40 @@ public class RateOverrideService {
         return new RateOverrideTarget(roomType, null);
     }
 
+    private RateOverrideResponse createRateOverrideForTarget(
+            RateOverrideTarget target,
+            Long roomTypeId,
+            Long roomId,
+            String name,
+            LocalDate startDate,
+            LocalDate endDate,
+            BigDecimal price,
+            Set<Integer> weekdays,
+            Integer priority
+    ) {
+        validateNoConflict(
+                roomTypeId,
+                roomId,
+                startDate,
+                endDate,
+                weekdays,
+                priority,
+                null
+        );
+        RateOverride rateOverride = RateOverride.builder()
+                .roomType(target.roomType())
+                .room(target.room())
+                .name(name.strip())
+                .startDate(startDate)
+                .endDate(endDate)
+                .price(price)
+                .weekdays(weekdayCodec.encodeWeekdays(weekdays, null))
+                .priority(priority)
+                .isActive(true)
+                .build();
+        return mapRateOverrideResponse(rateOverrideRepository.save(rateOverride));
+    }
+
     private void validateRateOverrideData(
             Long roomTypeId,
             Long roomId,
@@ -181,6 +235,17 @@ public class RateOverrideService {
         if (roomId != null) {
             validatePositiveId(roomId, "Room id");
         }
+        validateRateOverrideFields(name, startDate, endDate, price, weekdays, priority);
+    }
+
+    private void validateRateOverrideFields(
+            String name,
+            LocalDate startDate,
+            LocalDate endDate,
+            BigDecimal price,
+            Set<Integer> weekdays,
+            Integer priority
+    ) {
         if (name == null || name.isBlank()) {
             throw new BusinessValidationException("Rate override name cannot be blank");
         }
@@ -194,6 +259,13 @@ public class RateOverrideService {
             throw new BusinessValidationException("Rate override priority is required");
         }
         validateWeekdays(weekdays);
+    }
+
+    private String normalizeRoomTypeCode(String roomTypeCode) {
+        if (roomTypeCode == null || roomTypeCode.isBlank()) {
+            throw new BusinessValidationException("Room type code cannot be blank");
+        }
+        return roomTypeCode.strip().toUpperCase(Locale.ROOT);
     }
 
     private void validatePositiveId(Long id, String fieldName) {
@@ -306,8 +378,9 @@ public class RateOverrideService {
                 : decodedWeekdays.stream().sorted().toList();
         return new RateOverrideResponse(
                 rateOverride.getId(),
-                rateOverride.getRoomType() == null ? null : rateOverride.getRoomType().getId(),
-                rateOverride.getRoom() == null ? null : rateOverride.getRoom().getId(),
+                rateOverride.getRoomType() == null ? null : rateOverride.getRoomType().getCode(),
+                rateOverride.getRoomType() == null ? null : rateOverride.getRoomType().getName(),
+                rateOverride.getRoom() == null ? null : rateOverride.getRoom().getRoomNumber(),
                 rateOverride.getName(),
                 rateOverride.getStartDate(),
                 rateOverride.getEndDate(),
