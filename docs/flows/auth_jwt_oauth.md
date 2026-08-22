@@ -1,21 +1,94 @@
 # Auth JWT + OAuth Flow
 
-Tài liệu này mô tả flow hiện tại của BE-2.1 trong backend. Token được trả về dạng JSON Bearer: frontend lấy `accessToken` để gửi header `Authorization: Bearer <token>`, còn `refreshToken` dùng để xin cặp token mới.
-
-OAuth Google hiện là stub cho môi trường dev: backend chưa gọi Google thật, chỉ nhận dữ liệu giả lập gồm `providerUserId`, `email`, `fullName`.
+Tài liệu này mô tả flow hiện tại của hệ thống authentication. Token được trả về dạng JSON Bearer: frontend lấy `accessToken` để gửi header `Authorization: Bearer <token>`, còn `refreshToken` dùng để xin cặp token mới.
 
 ## Thành phần chính
 
 | Thành phần | Vai trò |
 | --- | --- |
 | `AuthController` | Nhận request `/api/auth/**`, validate DTO và gọi service. |
-| `AuthService` | Xử lý nghiệp vụ register, login, refresh, logout, OAuth stub. |
+| `OAuthController` | Xử lý OAuth flow với Google. |
+| `AuthService` | Xử lý nghiệp vụ register, login, refresh, logout, OAuth. |
+| `OAuthService` | Giao tiếp với Google OAuth API. |
 | `JwtService` | Sinh và verify JWT access/refresh token. |
 | `RefreshTokenService` | Lưu, kiểm tra, revoke refresh token trong DB theo `jti`. |
 | `JwtAuthenticationFilter` | Đọc access token từ header Bearer cho các API protected. |
 | `users` | Lưu tài khoản, password hash, trạng thái, số lần login sai, thời điểm khóa. |
 | `user_roles` / `roles` / `permissions` | Gán role và suy ra permission trả về trong token/user summary. |
 | `user_social_accounts` | Lưu liên kết tài khoản OAuth với user nội bộ. |
+| `OAuthProperties` | Cấu hình Google OAuth credentials từ environment. |
+
+---
+
+## Tại sao cần OAuth?
+
+### Vấn đề không có OAuth
+```
+Người dùng muốn đăng nhập → Phải:
+1. Nhớ thêm username/password mới
+2. Xác minh email
+3. Đặt mật khẩu đủ mạnh
+→ Friction cao → User drop
+
+Nguy hiểm:
+- Lưu password trong database → Rủi ro bảo mật
+- User dùng chung password với site khác → Bị hack 1 lần, hack tất cả
+```
+
+### Lợi ích của OAuth (Đăng nhập Google)
+```
+✓ Không cần tạo password mới
+✓ Không cần xác minh email (Google đã verify)
+✓ 1 click → đăng nhập ngay
+✓ Bảo mật hơn (Google lo phần auth)
+✓ User không cần nhớ thêm tài khoản
+```
+
+### OAuth là gì?
+**OAuth 2.0** (Open Authorization) là một giao thức cho phép ứng dụng của bạn **ủy quyền** để truy cập tài khoản của user trên một dịch vụ khác (VD: Google, Facebook) **mà không cần biết password của họ**.
+
+---
+
+## Cấu hình Google OAuth
+
+### 1. Tạo OAuth Client trong Google Cloud Console
+
+1. Truy cập: https://console.cloud.google.com/
+2. Chọn/tao project
+3. APIs & Services → Credentials
+4. Create Credentials → OAuth client ID
+5. Application type: Web application
+6. Name: TripStay Backend
+7. **Authorized redirect URIs** (quan trọng!):
+   ```
+   http://localhost:8080/api/auth/oauth/google/callback
+   https://your-production-domain.com/api/auth/oauth/google/callback
+   ```
+8. Create → Copy Client ID & Client Secret
+
+### 2. Cấu hình Environment Variables
+
+```bash
+# Backend (.env)
+GOOGLE_CLIENT_ID=123456789-abcdefghijklmnop.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxx
+GOOGLE_REDIRECT_URI=http://localhost:8080/api/auth/oauth/google/callback
+GOOGLE_FRONTEND_CALLBACK_URL=http://localhost:3000/auth/google/callback
+
+# Production thêm:
+# GOOGLE_REDIRECT_URI=https://api.yourdomain.com/api/auth/oauth/google/callback
+# GOOGLE_FRONTEND_CALLBACK_URL=https://yourdomain.com/auth/google/callback
+```
+
+### 3. OAuth Scopes
+
+Scopes quyết định thông tin nào được phép truy cập:
+
+| Scope | Thông tin được truy cập |
+|-------|------------------------|
+| `openid` | OpenID Connect authentication |
+| `email` | Email address |
+| `profile` | Name, profile picture, etc. | |
 
 ## 1. Register
 
@@ -314,9 +387,141 @@ Các bước:
 
 Rẽ nhánh quan trọng:
 
-- Đây là stub dev, chưa verify `id_token` với Google nên không dùng cho production.
-- User tạo bằng OAuth có `password_hash = null`; họ không login bằng password được cho đến khi có flow đặt mật khẩu/reset ở BE-2.2.
+- User tạo bằng OAuth có `password_hash = null`; họ không login bằng password được cho đến khi có flow đặt mật khẩu/reset.
 - Social account unique theo `(provider, provider_user_id)`, nên cùng Google user không link lặp nhiều lần.
+- Nếu xóa `user_social_accounts`, user vẫn đăng nhập được (tìm theo email).
+- Muốn user "chưa từng đăng ký" → phải xóa cả `users` và `user_social_accounts`.
+
+---
+
+## 5b. Google OAuth Flow (Production)
+
+Endpoint: `GET /api/auth/oauth/google/authorize` → redirect → `POST /api/auth/oauth/google/callback`
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Frontend
+    participant Backend
+    participant Google
+
+    User->>Frontend: Click "Login with Google"
+    Frontend->>Backend: GET /api/auth/oauth/google/authorize
+    Backend->>Backend: Generate state (UUID)
+    Backend-->>Frontend: { authorizationUrl, state }
+    Frontend->>Google: Redirect to authorizationUrl
+    User->>Google: Login & Consent
+    Google-->>Frontend: Redirect to /auth/google/callback?code=xxx&state=yyy
+    Frontend->>Backend: POST /api/auth/oauth/google/callback { code, state }
+    Backend->>Google: Exchange code for access_token
+    Google-->>Backend: { access_token, id_token }
+    Backend->>Google: GET /userinfo with access_token
+    Google-->>Backend: { sub, email, name, email_verified }
+    Backend->>Backend: Find/create user in DB
+    Backend->>Backend: Generate JWT tokens
+    Backend-->>Frontend: { accessToken, refreshToken, user }
+    Frontend->>User: Redirect to homepage with logged in
+```
+
+### Chi tiết các bước
+
+**Bước 1: Frontend gọi authorize**
+```bash
+GET /api/auth/oauth/google/authorize
+
+Response:
+{
+  "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?client_id=...&redirect_uri=...",
+  "state": "random-uuid"
+}
+```
+
+**Bước 2: Frontend redirect đến Google**
+```
+https://accounts.google.com/o/oauth2/v2/auth?
+  client_id=xxx&
+  redirect_uri=http://localhost:8080/api/auth/oauth/google/callback&
+  response_type=code&
+  scope=openid%20email%20profile&
+  state=random-uuid&
+  access_type=offline
+```
+
+**Bước 3: User đăng nhập Google**
+
+User thấy:
+- Trang đăng nhập Google
+- Sau đó hỏi: "Allow TripStay to access your email and profile?"
+
+**Bước 4: Google redirect về frontend callback**
+```
+http://localhost:3000/auth/google/callback?code=4/0Adeu...&state=random-uuid
+```
+
+**Bước 5: Frontend gửi code lên backend**
+```bash
+POST /api/auth/oauth/google/callback
+Body: { code: "4/0Adeu...", state: "random-uuid" }
+```
+
+**Bước 6: Backend exchange code**
+```bash
+POST https://oauth2.googleapis.com/token
+Body:
+  code=4/0Adeu...
+  grant_type=authorization_code
+  redirect_uri=http://localhost:8080/api/auth/oauth/google/callback
+
+Response:
+{
+  "access_token": "ya29.xxx",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}
+```
+
+**Bước 7: Backend lấy user info**
+```bash
+GET https://www.googleapis.com/oauth2/v3/userinfo
+Header: Authorization: Bearer ya29.xxx
+
+Response:
+{
+  "sub": "112233445566778899",  ← Google User ID
+  "email": "user@gmail.com",
+  "name": "Nguyen Van A",
+  "email_verified": true
+}
+```
+
+**Bước 8: Backend tạo/link user**
+```
+1. Check user_social_accounts có providerUserId chưa?
+   - Có → Dùng user đó
+   - Không → Check users có email chưa?
+     - Có → Dùng user đó + tạo social link
+     - Không → Tạo user mới + tạo social link
+
+2. Tạo JWT tokens (access + refresh)
+3. Trả về cho frontend
+```
+
+### Redirect URI Mismatch Error
+
+Nếu gặp lỗi `redirect_uri_mismatch`:
+
+**Nguyên nhân:** URI trong code không khớp với Google Cloud Console
+
+**Kiểm tra:**
+| Nơi | URI |
+|-----|-----|
+| Code (`OAuthController`) | `app.oauth.google.redirect-uri` |
+| Google Console | Authorized redirect URIs |
+
+**Giải pháp:**
+1. Thêm `http://localhost:8080/api/auth/oauth/google/callback` vào Google Cloud Console
+2. Hoặc đổi code cho khớp
 
 ## 6. Access Protected API bằng Bearer Token
 
@@ -376,3 +581,173 @@ Các bước:
 - DB row refresh token nằm trong bảng `auth_refresh_tokens`, khóa logic là `jwt_id` tương ứng claim `jti`.
 - `JWT_SECRET` phải dài tối thiểu 32 bytes và lấy từ `.env`, không hardcode trong source.
 - Test profile dùng H2 và tắt Flyway MySQL migration; JWT secret test nằm trong `application-test.yml`.
+
+---
+
+## JWT Structure
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                        JWT Token                            │
+├────────────────┬───────────────────┬────────────────────┤
+│    Header      │      Payload       │      Signature      │
+├────────────────┼───────────────────┼────────────────────┤
+│ {              │ {                  │ HMAC SHA256(        │
+│   "alg":      │   "sub": "uuid",  │   header + "." +    │
+│     "HS256",  │   "email": "...", │   payload,          │
+│   "typ":      │   "roles": [...], │   secret            │
+│     "JWT"     │   "type": "access",│ )                   │
+│               │   "iat": 123...,  │                     │
+│               │   "exp": 456...   │                     │
+│ }             │ }                  │                     │
+└───────────────┴───────────────────┴─────────────────────┘
+```
+
+### Token Types
+
+| Token | Claim `type` | Expiration | Storage |
+|-------|-------------|------------|---------|
+| Access Token | `access` | 1 giờ | Memory (không lưu localStorage) |
+| Refresh Token | `refresh` | 7 ngày | localStorage/HttpOnly Cookie |
+
+---
+
+## Database Schema
+
+### Users Table
+```sql
+CREATE TABLE users (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    public_id VARCHAR(36) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255),  -- NULL nếu đăng nhập bằng OAuth
+    phone VARCHAR(20),
+    full_name VARCHAR(150),
+    status ENUM('PENDING_VERIFICATION', 'ACTIVE', 'SUSPENDED', 'DEACTIVATED'),
+    email_verified_at TIMESTAMP,
+    failed_login_count INT DEFAULT 0,
+    locked_until TIMESTAMP,
+    deleted_at TIMESTAMP,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+```
+
+### User Social Accounts Table
+```sql
+CREATE TABLE user_social_accounts (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    provider ENUM('GOOGLE', 'FACEBOOK', 'APPLE') NOT NULL,
+    provider_user_id VARCHAR(255) NOT NULL,
+    provider_email VARCHAR(255),
+    raw_profile JSON,
+    linked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    UNIQUE KEY unique_provider_user (provider, provider_user_id)
+);
+```
+
+### Auth Tokens Table
+```sql
+CREATE TABLE auth_tokens (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    token_hash VARCHAR(64) NOT NULL,
+    token_type ENUM('EMAIL_VERIFICATION', 'PASSWORD_RESET', 'EMAIL_CHANGE'),
+    expires_at TIMESTAMP NOT NULL,
+    used_at TIMESTAMP,
+    requested_ip VARCHAR(45),
+    created_at TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+```
+
+---
+
+## Troubleshooting
+
+### Lỗi thường gặp
+
+#### 1. `redirect_uri_mismatch`
+- **Nguyên nhân:** Redirect URI trong code không khớp với Google Cloud Console
+- **Giải pháp:** Thêm URI đúng vào Google Cloud Console
+
+#### 2. `invalid_client`
+- **Nguyên nhân:** Client ID/Secret sai hoặc chưa enable OAuth consent screen
+- **Giải pháp:** Kiểm tra lại credentials
+
+#### 3. `access_denied`
+- **Nguyên nhân:** User click Cancel hoặc chưa approve consent screen
+- **Giải pháp:** Thử lại và bấm Allow
+
+#### 4. User đăng nhập Google nhưng không vào được
+- **Nguyên nhân:** Redirect URI mismatch
+- **Kiểm tra:**
+  - URI trong code: `app.oauth.google.redirect-uri`
+  - URI trong Google Console: Authorized redirect URIs
+
+---
+
+## Security Best Practices
+
+### 1. Bảo vệ Client Secret
+```bash
+# Không commit credentials vào git
+.env          ← Có trong .gitignore
+.env.example  ← Template không có giá trị thật
+```
+
+### 2. HTTPS trong Production
+```bash
+# Development: http://localhost
+# Production: https:// bắt buộc
+```
+
+### 3. State Parameter (CSRF Protection)
+```java
+// Luôn tạo random state
+String state = UUID.randomUUID().toString();
+```
+
+### 4. Token Storage
+```javascript
+// Access token: Trong memory (an toàn hơn)
+const accessToken = response.accessToken;
+
+// Refresh token: HttpOnly Cookie (an toàn nhất)
+```
+
+---
+
+## Flow Comparison
+
+### Email/Password Login
+```
+1. User nhập email + password
+2. Backend hash password → compare với DB
+3. Nếu đúng → tạo JWT
+4. Trả về tokens
+```
+
+### Google OAuth Login
+```
+1. User click "Login with Google"
+2. Frontend redirect → Google
+3. User đăng nhập Google (nếu chưa)
+4. User cho phép (consent)
+5. Google redirect về với code
+6. Backend exchange code → access_token
+7. Backend lấy user info từ Google
+8. Backend create/link user trong DB
+9. Backend tạo JWT
+10. Trả về tokens
+```
+
+**Khác nhau:**
+| Aspect | Email/Password | Google OAuth |
+|--------|---------------|--------------|
+| Authen | Password hash | Google tokens |
+| Email verify | Cần verify riêng | Google đã verify |
+| Password | User tạo | Không có |
+| Trust | Trust app | Trust Google |

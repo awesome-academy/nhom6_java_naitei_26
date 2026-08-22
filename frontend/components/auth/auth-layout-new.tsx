@@ -11,6 +11,7 @@ interface AuthLayoutNewProps {
 export function AuthLayoutNew({ children }: AuthLayoutNewProps) {
   const pathname = usePathname()
   const isLogin = pathname.includes("/login")
+  const isVerify = pathname.includes("/verify-email")
 
   return (
     <div className="flex min-h-screen">
@@ -48,13 +49,17 @@ export function AuthLayoutNew({ children }: AuthLayoutNewProps) {
         <div className="relative z-10 space-y-10">
           <div className="space-y-6">
             <h1 className="font-serif text-5xl font-medium text-white leading-tight tracking-tight">
-              {isLogin
+              {isVerify
+                ? "Xác thực email"
+                : isLogin
                 ? "Chào mừng bạn quay trở lại"
                 : "Tạo tài khoản mới"
               }
             </h1>
             <p className="text-lg text-gray-400 max-w-md leading-relaxed">
-              {isLogin
+              {isVerify
+                ? "Hoàn tất xác thực email để kích hoạt tài khoản của bạn."
+                : isLogin
                 ? "Đăng nhập để tiếp tục đặt phòng và quản lý booking của bạn một cách dễ dàng."
                 : "Đăng ký để trải nghiệm đặt phòng khách sạn dễ dàng với nhiều ưu đãi hấp dẫn."
               }

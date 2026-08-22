@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/Avatar"
 import { Badge } from "@/components/ui/status-badge"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"

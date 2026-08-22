@@ -6,11 +6,11 @@ import { useRouter } from "next/navigation"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Button } from "@/components/ui/Button"
+import { Input } from "@/components/ui/Input"
+import { Label } from "@/components/ui/Label"
+import { Checkbox } from "@/components/ui/Checkbox"
+import { Alert, AlertDescription } from "@/components/ui/Alert"
 import { toast } from "sonner"
 import { Loader2, Mail, Lock, User, Phone, Eye, EyeOff } from "lucide-react"
 import { register as registerUser } from "@/lib/api/auth"
@@ -71,7 +71,8 @@ export function RegisterFormNew() {
         phone: data.phone,
       })
       toast.success("Tạo tài khoản thành công! Vui lòng kiểm tra email để xác thực.")
-      router.push("/login")
+      // Pass email as query param to login page so it can show pending verification message
+      router.push(`/login?email=${encodeURIComponent(data.email)}&pending=1`)
     } catch (err: unknown) {
       const error = err as { status?: number; message?: string }
       if (error.status === 409) {

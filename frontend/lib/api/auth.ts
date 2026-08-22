@@ -15,6 +15,7 @@ import type {
 // Token storage helpers
 const ACCESS_TOKEN_KEY = "access_token"
 const REFRESH_TOKEN_KEY = "refresh_token"
+const OAUTH_STATE_KEY = "oauth_google_state"
 
 export function storeTokens(accessToken: string, refreshToken: string) {
   if (typeof window !== "undefined") {
@@ -93,4 +94,46 @@ export async function loginWithGoogle(
   const response = await apiClient.post<AuthResponse>("/api/auth/oauth/google", data)
   storeTokens(response.accessToken, response.refreshToken)
   return response
+}
+
+// OAuth Google functions
+export interface OAuthAuthorizeResponse {
+  authorizationUrl: string
+  state: string
+}
+
+export interface OAuthCallbackData {
+  code: string
+  state?: string
+}
+
+export async function getGoogleOAuthUrl(): Promise<OAuthAuthorizeResponse> {
+  const response = await apiClient.get<OAuthAuthorizeResponse>("/api/auth/oauth/google/authorize")
+  // Store state for CSRF protection
+  if (typeof window !== "undefined") {
+    localStorage.setItem(OAUTH_STATE_KEY, response.state)
+  }
+  return response
+}
+
+export async function handleGoogleOAuthCallback(
+  data: OAuthCallbackData
+): Promise<AuthResponse> {
+  const response = await apiClient.post<AuthResponse>("/api/auth/oauth/google/callback", data)
+  storeTokens(response.accessToken, response.refreshToken)
+  // Clear stored state
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(OAUTH_STATE_KEY)
+  }
+  return response
+}
+
+export async function getOAuthStatus(): Promise<{ configured: boolean; provider: string }> {
+  return apiClient.get<{ configured: boolean; provider: string }>("/api/auth/oauth/google/status")
+}
+
+export function clearOAuthState() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(OAUTH_STATE_KEY)
+  }
 }

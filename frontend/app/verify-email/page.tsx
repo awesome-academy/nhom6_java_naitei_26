@@ -4,10 +4,8 @@ import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { verifyEmail } from "@/lib/api/auth"
-import { Button } from "@/components/ui/button"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, CheckCircle, XCircle } from "lucide-react"
-import { AuthLayoutNew } from "@/components/auth/auth-layout-new"
+import { Button } from "@/components/ui/Button"
+import { Loader2 } from "lucide-react"
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams()
@@ -31,7 +29,7 @@ function VerifyEmailContent() {
         setStatus("error")
         const error = err as { status?: number; message?: string }
         if (error.status === 410) {
-          setMessage("Token đã hết hạn hoặc đã được sử dụng. Vui lòng yêu cầu gửi lại email xác thực.")
+          setMessage("Token đã hết hạn hoặc đã được sử dụng. Vui lòng đăng ký tài khoản mới.")
         } else {
           setMessage(error.message || "Đã xảy ra lỗi khi xác thực email.")
         }
@@ -41,8 +39,67 @@ function VerifyEmailContent() {
     verify()
   }, [token])
 
+  // Loading state
+  if (status === "loading") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-6 text-center">
+        <div className="relative">
+          <Loader2 className="h-20 w-20 animate-spin text-[var(--accent)]" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="font-serif text-2xl font-medium text-[var(--foreground)]">
+            Đang xác thực email...
+          </h2>
+          <p className="text-base text-[var(--muted-foreground)]">
+            Vui lòng đợi trong giây lát
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // Success state - centered success page
+  if (status === "success") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-8 text-center">
+        {/* Success Icon - Centered */}
+        <div className="relative">
+          <div className="absolute inset-0 bg-green-100 rounded-full scale-150 opacity-50 blur-xl" />
+          <div className="relative rounded-full bg-green-100 p-6">
+            <svg className="h-20 w-20 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Success Message */}
+        <div className="space-y-3">
+          <h2 className="font-serif text-3xl font-medium text-[var(--foreground)]">
+            Cảm ơn bạn đã xác nhận email!
+          </h2>
+          <p className="text-lg text-[var(--muted-foreground)]">
+            Tài khoản của bạn đã được kích hoạt thành công.
+          </p>
+          <p className="text-base text-[var(--muted-foreground)]">
+            Bây giờ bạn có thể đăng nhập để trải nghiệm dịch vụ của TripStay.
+          </p>
+        </div>
+
+        {/* Action Button */}
+        <div className="pt-4">
+          <Button asChild className="h-12 px-8 text-base font-medium">
+            <Link href="/login">
+              Đăng nhập ngay
+            </Link>
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
   return (
-    <div className="w-full max-w-md space-y-8">
+    <div className="space-y-8">
       {/* Mobile Logo */}
       <div className="lg:hidden text-center">
         <Link href="/" className="text-2xl font-mono font-bold text-[var(--foreground)]">
@@ -50,60 +107,40 @@ function VerifyEmailContent() {
         </Link>
       </div>
 
-      {/* Content */}
-      <div className="space-y-8 text-center">
-        {status === "loading" && (
-          <>
-            <div className="flex justify-center">
-              <Loader2 className="h-16 w-16 animate-spin text-[var(--accent)]" />
-            </div>
-            <div>
-              <h2 className="font-serif text-3xl font-medium text-[var(--foreground)] sm:text-4xl">Đang xác thực email...</h2>
-              <p className="mt-3 text-base text-[var(--muted-foreground)]">Vui lòng đợi trong giây lát</p>
-            </div>
-          </>
-        )}
+      {/* Error Content */}
+      <div className="text-center lg:text-left">
+        <h2 className="font-serif text-3xl font-medium text-[var(--foreground)] sm:text-4xl">
+          Xác thực thất bại
+        </h2>
+        <p className="mt-3 text-base text-[var(--muted-foreground)]">
+          {message}
+        </p>
+      </div>
 
-        {status === "success" && (
-          <>
-            <div className="flex justify-center">
-              <div className="rounded-full bg-green-100 p-5">
-                <CheckCircle className="h-14 w-14 text-green-600" />
-              </div>
-            </div>
-            <div>
-              <h2 className="font-serif text-3xl font-medium text-[var(--foreground)] sm:text-4xl">Xác thực thành công!</h2>
-              <p className="mt-3 text-base text-[var(--muted-foreground)]">
-                {message}
-              </p>
-            </div>
-            <Button asChild className="w-full h-12 text-base font-medium">
-              <Link href="/login">Đăng nhập ngay</Link>
-            </Button>
-          </>
-        )}
+      {/* Error Icon */}
+      <div className="flex justify-center py-4">
+        <div className="rounded-full bg-red-100 p-5">
+          <svg className="h-14 w-14 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </div>
+      </div>
 
-        {status === "error" && (
-          <>
-            <div className="flex justify-center">
-              <div className="rounded-full bg-red-100 p-5">
-                <XCircle className="h-14 w-14 text-red-600" />
-              </div>
-            </div>
-            <div>
-              <h2 className="font-serif text-3xl font-medium text-[var(--foreground)] sm:text-4xl">Xác thực thất bại</h2>
-              <p className="mt-3 text-base text-[var(--muted-foreground)]">
-                {message}
-              </p>
-            </div>
-            <Alert variant="destructive" className="text-left">
-              <AlertDescription>{message}</AlertDescription>
-            </Alert>
-            <Button asChild variant="outline" className="w-full h-12 text-base font-medium">
-              <Link href="/register">Đăng ký tài khoản mới</Link>
-            </Button>
-          </>
-        )}
+      {/* Error Details */}
+      <div className="rounded-lg bg-red-50 border border-red-200 p-4">
+        <p className="text-sm text-red-800">
+          {message}
+        </p>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="space-y-3">
+        <Button asChild className="w-full h-12 text-base font-medium">
+          <Link href="/login">Quay lại đăng nhập</Link>
+        </Button>
+        <Button asChild variant="outline" className="w-full h-12 text-base font-medium">
+          <Link href="/register">Đăng ký tài khoản mới</Link>
+        </Button>
       </div>
     </div>
   )
@@ -111,26 +148,17 @@ function VerifyEmailContent() {
 
 function VerifyEmailLoading() {
   return (
-    <div className="w-full max-w-md space-y-8">
-      <div className="lg:hidden text-center">
-        <Link href="/" className="text-2xl font-mono font-bold text-[var(--foreground)]">
-          TripStay
-        </Link>
-      </div>
-      <div className="flex flex-col items-center gap-4 py-12">
-        <Loader2 className="h-16 w-16 animate-spin text-[var(--accent)]" />
-        <p className="text-base text-[var(--muted-foreground)]">Đang tải...</p>
-      </div>
+    <div className="flex flex-col items-center justify-center min-h-[400px] space-y-6">
+      <Loader2 className="h-16 w-16 animate-spin text-[var(--accent)]" />
+      <p className="text-base text-[var(--muted-foreground)]">Đang tải...</p>
     </div>
   )
 }
 
 export default function VerifyEmailPage() {
   return (
-    <AuthLayoutNew>
-      <Suspense fallback={<VerifyEmailLoading />}>
-        <VerifyEmailContent />
-      </Suspense>
-    </AuthLayoutNew>
+    <Suspense fallback={<VerifyEmailLoading />}>
+      <VerifyEmailContent />
+    </Suspense>
   )
 }

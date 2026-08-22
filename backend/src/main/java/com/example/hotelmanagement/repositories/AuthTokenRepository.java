@@ -24,6 +24,14 @@ public interface AuthTokenRepository extends JpaRepository<AuthToken, Long> {
         """)
     Optional<AuthToken> findByTokenHashForUpdate(@Param("tokenHash") String tokenHash);
 
+    @Query("""
+        select token
+        from AuthToken token
+        join fetch token.user
+        where token.tokenHash = :tokenHash
+        """)
+    Optional<AuthToken> findByTokenHash(@Param("tokenHash") String tokenHash);
+
     @Modifying
     @Query("""
         update AuthToken token
