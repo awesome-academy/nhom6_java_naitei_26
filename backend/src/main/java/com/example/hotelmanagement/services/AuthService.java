@@ -17,6 +17,8 @@ import com.example.hotelmanagement.entity.UserSocialAccount;
 import com.example.hotelmanagement.entity.enums.AuthTokenType;
 import com.example.hotelmanagement.entity.enums.OAuthProvider;
 import com.example.hotelmanagement.entity.enums.UserStatus;
+import com.example.hotelmanagement.entity.CustomerProfile;
+import com.example.hotelmanagement.repositories.CustomerProfileRepository;
 import com.example.hotelmanagement.repositories.RoleRepository;
 import com.example.hotelmanagement.repositories.UserRepository;
 import com.example.hotelmanagement.repositories.UserSocialAccountRepository;
@@ -47,6 +49,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final UserSocialAccountRepository userSocialAccountRepository;
+    private final CustomerProfileRepository customerProfileRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
@@ -74,7 +77,10 @@ public class AuthService {
         assignCustomerRole(user);
 
         User savedUser = userRepository.save(user);
-        
+
+        // Create customer profile automatically
+        createCustomerProfile(savedUser);
+
         AuthTokenService.IssuedAuthToken token = authTokenService.createToken(savedUser, AuthTokenType.EMAIL_VERIFICATION, null);
         emailService.sendVerificationEmail(savedUser.getEmail(), savedUser.getFullName(), token.value());
 
@@ -253,7 +259,9 @@ public class AuthService {
             .failedLoginCount(0)
             .build();
         assignCustomerRole(user);
-        return userRepository.save(user);
+        User savedUser = userRepository.save(user);
+        createCustomerProfile(savedUser);
+        return savedUser;
     }
 
     // Stub method for development/testing
@@ -285,7 +293,9 @@ public class AuthService {
             .failedLoginCount(0)
             .build();
         assignCustomerRole(user);
-        return userRepository.save(user);
+        User savedUser = userRepository.save(user);
+        createCustomerProfile(savedUser);
+        return savedUser;
     }
 
     private User activateOAuthUserIfAllowed(User user) {
@@ -363,6 +373,13 @@ public class AuthService {
             .assignedAt(now())
             .build();
         user.getUserRoles().add(userRole);
+    }
+
+    private void createCustomerProfile(User user) {
+        CustomerProfile profile = CustomerProfile.builder()
+            .user(user)
+            .build();
+        customerProfileRepository.save(profile);
     }
 
     private Set<String> collectRoles(User user) {

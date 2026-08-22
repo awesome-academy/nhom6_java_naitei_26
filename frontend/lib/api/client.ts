@@ -1,4 +1,5 @@
 import type { ApiErrorResponse } from "@/types/auth"
+import { getStoredTokens, storeTokens, clearTokens } from "./tokens"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"
 
@@ -10,12 +11,47 @@ export class ApiClient {
   }
 
   getAccessToken(): string | null {
-    if (!this.accessToken) {
-      if (typeof window !== "undefined") {
-        this.accessToken = localStorage.getItem("access_token")
+    if (this.accessToken) {
+      return this.accessToken
+    }
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("access_token")
+      if (stored) {
+        this.accessToken = stored
+        return stored
       }
     }
-    return this.accessToken
+    return null
+  }
+
+  private clearAccessToken() {
+    this.accessToken = null
+  }
+
+  private async refreshAccessToken(): Promise<boolean> {
+    const { refreshToken } = getStoredTokens()
+    if (!refreshToken) {
+      return false
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+      })
+
+      if (!response.ok) {
+        return false
+      }
+
+      const data = await response.json()
+      storeTokens(data.accessToken, data.refreshToken)
+      this.accessToken = data.accessToken
+      return true
+    } catch {
+      return false
+    }
   }
 
   private async request<T>(
@@ -45,10 +81,27 @@ export class ApiClient {
       headers.set("Authorization", `Bearer ${token}`)
     }
 
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       ...options,
       headers,
     })
+
+    // Auto-refresh token on 401
+    if (response.status === 401 && token) {
+      const refreshed = await this.refreshAccessToken()
+      if (refreshed) {
+        const newToken = this.getAccessToken()
+        headers.set("Authorization", `Bearer ${newToken}`)
+        response = await fetch(url, {
+          ...options,
+          headers,
+        })
+      } else {
+        // Refresh failed - clear tokens
+        clearTokens()
+        this.clearAccessToken()
+      }
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({
@@ -95,6 +148,13 @@ export class ApiClient {
 
   delete<T>(endpoint: string): Promise<T> {
     return this.request<T>(endpoint, { method: "DELETE" })
+  }
+
+  patch<T>(endpoint: string, body: unknown): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    })
   }
 }
 

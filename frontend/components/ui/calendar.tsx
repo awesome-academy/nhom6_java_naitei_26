@@ -61,7 +61,7 @@ export function Calendar({ selected, onSelect, minDate, maxDate, className }: Ca
           <ChevronLeft className="h-4 w-4" />
         </button>
         <span className="text-sm font-semibold">
-          {format(currentMonth, "MMMM yyyy", { locale: vi })}
+          {format(currentMonth, "MM/yyyy")}
         </span>
         <button
           type="button"

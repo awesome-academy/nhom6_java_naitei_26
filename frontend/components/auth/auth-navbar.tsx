@@ -41,7 +41,7 @@ export function AuthNavbar() {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="font-medium">
+            <Button variant="outline" size="sm" className="font-medium border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white">
               VI · VND
               <ChevronDown className="h-4 w-4" />
             </Button>

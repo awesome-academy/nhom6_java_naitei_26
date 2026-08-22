@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import { ImagePlus, Loader2, Plus, Trash2, Upload } from "lucide-react"
 import { z } from "zod"
 
-import { Badge } from "@/components/ui/status-badge"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {

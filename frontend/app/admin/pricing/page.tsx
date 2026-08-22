@@ -13,7 +13,7 @@ import { formatMoney, formatWeekdays } from "@/components/admin/pricing/pricing-
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { DataTable } from "@/components/ui/data-table"
+import { DataTable } from "@/components/ui/dataTable"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"

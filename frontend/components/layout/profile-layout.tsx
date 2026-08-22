@@ -4,7 +4,9 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/status-badge"
+import { Badge } from "@/components/ui"
+import { Button } from "@/components/ui/button"
+import { UserMenu } from "@/components/auth/user-menu"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { logout, getStoredTokens } from "@/lib/api/auth"
@@ -41,7 +43,7 @@ interface ProfileLayoutProps {
 export function ProfileLayout({ children }: ProfileLayoutProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const { user, clearAuth } = useAuth()
+  const { user, clearAuth, isAuthenticated, isLoading } = useAuth()
 
   const handleLogout = async () => {
     try {
@@ -64,7 +66,7 @@ export function ProfileLayout({ children }: ProfileLayoutProps) {
       <header className="sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[var(--background)]/85 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded bg-[var(--primary)] text-white font-bold text-sm">
+            <div className="flex h-8 w-8 items-center justify-center rounded bg-[var(--accent)] text-white font-bold text-sm">
               T
             </div>
             <span className="text-base font-mono font-bold tracking-wider uppercase text-[var(--foreground)]">
@@ -83,19 +85,18 @@ export function ProfileLayout({ children }: ProfileLayoutProps) {
             </Link>
           </nav>
           <div className="flex items-center gap-3">
-            {user ? (
-              <Link href="/profile" className="flex items-center gap-2">
-                <Avatar className="h-9 w-9">
-                  <AvatarFallback className="bg-[var(--primary)] text-[var(--primary-foreground)] text-sm font-semibold">
-                    {getInitials(user.fullName || user.email)}
-                  </AvatarFallback>
-                </Avatar>
-              </Link>
+            {isLoading ? (
+              <div className="h-10 w-24" />
+            ) : isAuthenticated ? (
+              <UserMenu />
             ) : (
               <>
-                <Link href="/login" className="text-sm font-mono font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-                  Đăng nhập
-                </Link>
+                <Button variant="ghost" asChild className="hidden md:inline-flex">
+                  <Link href="/login">Đăng nhập</Link>
+                </Button>
+                <Button asChild className="bg-[var(--accent)] text-white hover:bg-[var(--accent)]/90">
+                  <Link href="/register">Đăng ký miễn phí</Link>
+                </Button>
               </>
             )}
           </div>

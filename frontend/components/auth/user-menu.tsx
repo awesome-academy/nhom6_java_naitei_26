@@ -22,8 +22,6 @@ import { logout } from "@/lib/api/auth"
 import { getStoredTokens } from "@/lib/api/auth"
 import {
   Calendar,
-  CreditCard,
-  Heart,
   LogOut,
   Settings,
   ShieldCheck,
@@ -75,7 +73,7 @@ export function UserMenu() {
           className="h-10 gap-3 rounded-full px-2 hover:bg-[var(--muted)]"
         >
           <Avatar className="h-8 w-8">
-            <AvatarFallback className="bg-[var(--primary)] text-[var(--primary-foreground)] text-sm font-semibold">
+            <AvatarFallback className="bg-[var(--accent)] text-white text-sm font-semibold">
               {getInitials(user.fullName || user.email)}
             </AvatarFallback>
           </Avatar>
@@ -96,30 +94,30 @@ export function UserMenu() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link href="/profile" className="flex items-center gap-3 px-3 py-2">
-            <User className="h-4 w-4 text-[var(--muted-foreground)]" />
-            <span>Hồ sơ</span>
+          <Link href="/profile" className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] group cursor-pointer">
+            <User className="h-4 w-4 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-bold transition-all" />
+            <span className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-semibold transition-all">Hồ sơ</span>
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link href="/profile/bookings" className="flex items-center gap-3 px-3 py-2">
-            <Calendar className="h-4 w-4 text-[var(--muted-foreground)]" />
-            <span>Đơn đặt phòng</span>
+          <Link href="/profile/bookings" className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] group cursor-pointer">
+            <Calendar className="h-4 w-4 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-bold transition-all" />
+            <span className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-semibold transition-all">Đơn đặt phòng</span>
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link href="/profile/settings" className="flex items-center gap-3 px-3 py-2">
-            <Settings className="h-4 w-4 text-[var(--muted-foreground)]" />
-            <span>Cài đặt</span>
+          <Link href="/profile/settings" className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] group cursor-pointer">
+            <Settings className="h-4 w-4 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-bold transition-all" />
+            <span className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-semibold transition-all">Cài đặt</span>
           </Link>
         </DropdownMenuItem>
         {isStaff && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link href="/admin" className="flex items-center gap-3 px-3 py-2">
-                <ShieldCheck className="h-4 w-4 text-[var(--muted-foreground)]" />
-                <span>Quản trị</span>
+              <Link href="/admin" className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] group cursor-pointer">
+                <ShieldCheck className="h-4 w-4 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-bold transition-all" />
+                <span className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-semibold transition-all">Quản trị</span>
               </Link>
             </DropdownMenuItem>
           </>
@@ -127,10 +125,10 @@ export function UserMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={handleLogout}
-          className="flex cursor-pointer items-center gap-3 px-3 py-2 text-[var(--destructive)] focus:text-[var(--destructive)]"
+          className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] group"
         >
-          <LogOut className="h-4 w-4" />
-          <span>Đăng xuất</span>
+          <LogOut className="h-4 w-4 text-[var(--destructive)] group-hover:font-bold transition-all" />
+          <span className="text-[var(--destructive)] group-hover:font-semibold transition-all">Đăng xuất</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

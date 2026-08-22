@@ -129,7 +129,7 @@ export function ForgotPasswordFormNew({ onSuccess }: ForgotPasswordFormNewProps)
           </p>
         </div>
 
-        <Button type="submit" className="w-full h-12 text-base font-medium" disabled={isLoading}>
+        <Button type="submit" className="w-full h-12 text-base font-medium bg-[var(--accent)] hover:bg-[var(--accent)]/90" disabled={isLoading}>
           {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Gửi hướng dẫn qua email
         </Button>

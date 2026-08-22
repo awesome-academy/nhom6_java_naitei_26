@@ -34,9 +34,9 @@ public class CustomerProfile extends BaseEntity {
     private String addressLine;
 
     @Column(length = 100)
-    private String city;
+    private String province;
 
-    @Column(length = 100)
+    @Column(length = 2)
     private String country;
 
     @Column(name = "loyalty_points", nullable = false)

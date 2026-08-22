@@ -437,7 +437,7 @@ public class InvoiceService {
         }
         String address = Stream.of(
                         customerProfile.getAddressLine(),
-                        customerProfile.getCity(),
+                        customerProfile.getProvince(),
                         customerProfile.getCountry()
                 )
                 .filter(Objects::nonNull)
