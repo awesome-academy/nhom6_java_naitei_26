@@ -2,18 +2,18 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { Button } from "@/components/ui/Button"
+import { Button } from "@/components/ui/button"
 import { Badge, getBookingStatusVariant, getPaymentStatusVariant } from "@/components/ui/status-badge"
 import { DataTable } from "@/components/ui/data-table"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card"
-import { Input } from "@/components/ui/Input"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/Select"
+} from "@/components/ui/select"
 import { Calendar, Search, Plus, Filter, Eye } from "lucide-react"
 
 // Mock data

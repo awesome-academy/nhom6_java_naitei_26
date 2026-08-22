@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { verifyEmail } from "@/lib/api/auth"
-import { Button } from "@/components/ui/Button"
+import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
 
 function VerifyEmailContent() {
