@@ -61,7 +61,7 @@ class CustomerProfileServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         CustomerProfileCreateRequest request = new CustomerProfileCreateRequest(
-                LocalDate.of(1995, 1, 1), Gender.FEMALE, "vn", " 123 Le Loi ", " Da Nang ", " Vietnam ", " VIP "
+                LocalDate.of(1995, 1, 1), Gender.FEMALE, "vn", " 123 Le Loi ", " Hà Nội ", " VN ", " VIP "
         );
 
         CustomerProfileResponse response = customerProfileService.createOwnProfile(1L, request);
@@ -71,8 +71,8 @@ class CustomerProfileServiceTest {
         CustomerProfile saved = captor.getValue();
         assertThat(saved.getNationality()).isEqualTo("VN");
         assertThat(saved.getAddressLine()).isEqualTo("123 Le Loi");
-        assertThat(saved.getCity()).isEqualTo("Da Nang");
-        assertThat(response.userPublicId()).isEqualTo("public-id");
+        assertThat(saved.getProvince()).isEqualTo("Hà Nội");
+        assertThat(response.publicId()).isEqualTo("public-id");
         assertThat(response.email()).isEqualTo("guest@example.com");
     }
 
@@ -95,7 +95,7 @@ class CustomerProfileServiceTest {
         User user = createUser(1L, "public-id", "guest@example.com");
         CustomerProfile profile = CustomerProfile.builder()
                 .user(user)
-                .city("Old City")
+                .province("Hồ Chí Minh")
                 .notes("Old note")
                 .build();
         when(customerProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(profile));
@@ -103,11 +103,11 @@ class CustomerProfileServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         CustomerProfileUpdateRequest request = new CustomerProfileUpdateRequest(
-                null, null, null, null, "New City", null, "   "
+                null, null, null, null, "Hà Nội", null, "   "
         );
         CustomerProfileResponse response = customerProfileService.updateOwnProfile(1L, request);
 
-        assertThat(response.city()).isEqualTo("New City");
+        assertThat(response.province()).isEqualTo("Hà Nội");
         assertThat(response.notes()).isNull();
     }
 

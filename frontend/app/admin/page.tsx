@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Badge, getBookingStatusVariant } from "@/components/ui/status-badge"
-import { StatCard } from "@/components/ui/stat-card"
+import { Badge, getBookingStatusVariant } from "@/components/ui/badge"
+import { StatCard } from "@/components/ui/statCard"
 import {
   Card,
   CardContent,

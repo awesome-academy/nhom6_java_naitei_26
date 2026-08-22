@@ -64,7 +64,7 @@ export default function HomePage() {
 
               {/* CTA */}
               <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
-                <Button size="lg" asChild className="h-11 px-6 bg-[var(--primary)] text-white hover:bg-[var(--primary)]/90">
+                <Button size="lg" asChild className="h-11 px-6 bg-[var(--accent)] text-white hover:bg-[var(--accent)]/90">
                   <Link href="/register">
                     Tìm phòng ngay
                     <ArrowRight className="ml-2 h-4 w-4" />
@@ -347,7 +347,7 @@ export default function HomePage() {
                   ))}
                 </div>
 
-                <Button asChild className="mt-10 bg-[var(--primary)] text-white">
+                <Button asChild className="mt-10 bg-[var(--accent)] text-white hover:bg-[var(--accent)]/90">
                   <Link href="/register">
                     Đăng ký miễn phí
                     <ArrowRight className="ml-2 h-4 w-4" />
@@ -511,7 +511,7 @@ export default function HomePage() {
                     <span className="font-serif text-5xl font-medium">₫0</span>
                     <span className="text-sm text-[var(--muted-foreground)]">/vĩnh viễn</span>
                   </div>
-                  <Button className="mt-6 w-full h-12 bg-[var(--primary)] text-white hover:bg-[var(--primary)]/90" asChild size="lg">
+                  <Button className="mt-6 w-full h-12 bg-[var(--accent)] text-white hover:bg-[var(--accent)]/90" asChild size="lg">
                     <Link href="/register">Bắt đầu đặt phòng miễn phí</Link>
                   </Button>
                 </div>
@@ -627,10 +627,10 @@ export default function HomePage() {
                   <input
                     type="email"
                     placeholder="email@company.com"
-                    className="h-11 w-full rounded-md border border-white/20 bg-white pl-10 pr-4 text-sm text-[#232323] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-white/40"
+                    className="h-11 w-full rounded-md border border-white/20 bg-white pl-10 pr-4 text-sm text-[#18181b] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
                   />
                 </div>
-                <Button className="h-11 bg-white text-[#232323] hover:bg-white/90">
+                <Button className="h-11 bg-[var(--accent)] text-white hover:bg-[var(--accent)]/90">
                   Đăng ký
                 </Button>
               </div>

@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.dto.customerprofile;
 
 import com.example.hotelmanagement.entity.enums.Gender;
+import com.example.hotelmanagement.validation.ValidVietnamProvince;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Pattern;
@@ -25,12 +26,11 @@ public record CustomerProfileCreateRequest(
     @Size(max = 255)
     String addressLine,
 
-    @Schema(description = "City", nullable = true)
-    @Size(max = 100)
-    String city,
+    @Schema(description = "Province/Thành phố. Must be a valid province name from /api/vn/provinces", example = "Hà Nội", nullable = true)
+    @ValidVietnamProvince
+    String province,
 
-    @Schema(description = "Country", nullable = true)
-    @Size(max = 100)
+    @Schema(description = "Country code (currently only VN is supported)", example = "VN", nullable = true)
     String country,
 
     @Schema(description = "Internal notes", nullable = true)
