@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Button } from "@/components/ui/Button"
+import { Button } from "@/components/ui/button"
 import { Badge, getBookingStatusVariant } from "@/components/ui/status-badge"
 import { StatCard } from "@/components/ui/stat-card"
 import {
@@ -8,7 +8,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/Card"
+} from "@/components/ui/card"
 import {
   ArrowUpRight,
   ArrowDownRight,

@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useAuth } from "@/lib/auth-context"
-import { Button } from "@/components/ui/Button"
+import { Button } from "@/components/ui/button"
 import { UserMenu } from "@/components/auth/user-menu"
 
 export function SiteHeader() {

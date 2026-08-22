@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import {
   Avatar,
   AvatarFallback,
-} from "@/components/ui/Avatar"
+} from "@/components/ui/avatar"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,8 +15,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/DropdownMenu"
-import { Button } from "@/components/ui/Button"
+} from "@/components/ui/dropdownMenu"
+import { Button } from "@/components/ui/button"
 import { useAuth } from "@/lib/auth-context"
 import { logout } from "@/lib/api/auth"
 import { getStoredTokens } from "@/lib/api/auth"
