@@ -29,6 +29,7 @@ import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -46,6 +47,7 @@ import java.util.Locale;
 public class InvoicePdfService {
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final ZoneId DEFAULT_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final String[] TABLE_HEADERS = {
             "Type", "Description", "Qty", "Unit Price", "Subtotal", "Discount", "Tax", "Total"
     };
@@ -274,7 +276,19 @@ public class InvoicePdfService {
         if (value == null) {
             return "-";
         }
-        return value.atZoneSameInstant(ZoneId.of("Asia/Ho_Chi_Minh")).format(DATE_FORMAT);
+        return value.atZoneSameInstant(resolveHotelZone()).format(DATE_FORMAT);
+    }
+
+    private ZoneId resolveHotelZone() {
+        String configured = hotelSettingsRepository.getStringValue(HotelSettingsService.TIMEZONE_KEY);
+        if (configured == null || configured.isBlank()) {
+            return DEFAULT_ZONE;
+        }
+        try {
+            return ZoneId.of(configured);
+        } catch (DateTimeException exception) {
+            return DEFAULT_ZONE;
+        }
     }
 
     private String formatMoney(BigDecimal value) {

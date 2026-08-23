@@ -24,6 +24,7 @@ public final class PermissionExpressions {
     public static final String BOOKING_ASSIGN_ROOM = "hasAuthority('booking:assign_room')";
     public static final String BOOKING_GUEST_MANAGE = "hasAuthority('booking:assign_room')";
     public static final String GUEST_READ_ID = "hasAuthority('guest:read_id')";
+    public static final String SETTINGS_MANAGE = "hasAuthority('settings:manage')";
 
     private PermissionExpressions() {
     }
