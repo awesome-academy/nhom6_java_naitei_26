@@ -19,6 +19,8 @@ public record MinioProperties(
         @NotNull Duration uploadUrlTtl,
         @NotNull Duration downloadUrlTtl,
         @Positive long maxImageSizeBytes,
-        @Min(1) int maxImagesPerRoom
+        @Min(1) int maxImagesPerRoom,
+        @NotBlank String invoicesBucket,
+        @NotNull Duration invoicePdfUrlTtl
 ) {
 }

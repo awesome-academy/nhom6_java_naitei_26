@@ -62,7 +62,9 @@ class RoomTypeImageServiceTest {
                 Duration.ofHours(1),
                 Duration.ofMinutes(15),
                 10 * 1024 * 1024,
-                20
+                20,
+                "invoices",
+                Duration.ofHours(1)
         );
         service = new RoomTypeImageService(
                 roomTypeRepository,
