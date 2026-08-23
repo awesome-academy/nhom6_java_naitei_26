@@ -12,7 +12,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[var(--background)]/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
         <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded bg-[var(--primary)] text-white font-bold text-sm">
+          <div className="flex h-8 w-8 items-center justify-center rounded bg-[var(--accent)] text-white font-bold text-sm">
             T
           </div>
           <span className="text-base font-mono font-bold tracking-wider uppercase text-[var(--foreground)]">
@@ -43,7 +43,7 @@ export function SiteHeader() {
               <Button variant="ghost" asChild className="hidden md:inline-flex">
                 <Link href="/login">Đăng nhập</Link>
               </Button>
-              <Button asChild className="bg-[var(--primary)] text-white hover:bg-[var(--primary)]/90">
+              <Button asChild className="bg-[var(--accent)] text-white hover:bg-[var(--accent)]/90">
                 <Link href="/register">Đăng ký miễn phí</Link>
               </Button>
             </>

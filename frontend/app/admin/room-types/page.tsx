@@ -6,10 +6,10 @@ import { BedDouble, ImageIcon, Plus, RefreshCw, Search } from "lucide-react"
 import { toast } from "sonner"
 
 import { RoomTypeFormDialog } from "@/components/admin/room-types/room-type-form-dialog"
-import { Badge } from "@/components/ui/status-badge"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { DataTable } from "@/components/ui/data-table"
+import { DataTable } from "@/components/ui/dataTable"
 import {
   Dialog,
   DialogContent,

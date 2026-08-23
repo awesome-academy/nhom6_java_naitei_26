@@ -6,6 +6,7 @@ import com.example.hotelmanagement.dto.customerprofile.CustomerProfileUpdateRequ
 import com.example.hotelmanagement.entity.CustomerProfile;
 import com.example.hotelmanagement.entity.User;
 import com.example.hotelmanagement.entity.enums.UserStatus;
+import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.CustomerProfileRepository;
@@ -50,8 +51,8 @@ public class CustomerProfileService {
                 .gender(request.gender())
                 .nationality(normalizeUpper(request.nationality()))
                 .addressLine(normalizeOptionalText(request.addressLine()))
-                .city(normalizeOptionalText(request.city()))
-                .country(normalizeOptionalText(request.country()))
+                .province(normalizeOptionalText(request.province()))
+                .country(normalizeUpper(request.country()))
                 .notes(normalizeOptionalText(request.notes()))
                 .build();
 
@@ -73,16 +74,28 @@ public class CustomerProfileService {
             profile.setGender(request.gender());
         }
         if (request.nationality() != null) {
-            profile.setNationality(normalizeUpper(request.nationality()));
+            if (request.nationality().isBlank()) {
+                profile.setNationality(null);
+            } else {
+                profile.setNationality(normalizeUpper(request.nationality()));
+            }
         }
         if (request.addressLine() != null) {
             profile.setAddressLine(normalizeOptionalText(request.addressLine()));
         }
-        if (request.city() != null) {
-            profile.setCity(normalizeOptionalText(request.city()));
+        if (request.province() != null) {
+            if (request.province().isBlank()) {
+                profile.setProvince(null);
+            } else {
+                profile.setProvince(normalizeOptionalText(request.province()));
+            }
         }
         if (request.country() != null) {
-            profile.setCountry(normalizeOptionalText(request.country()));
+            if (request.country().isBlank()) {
+                profile.setCountry(null);
+            } else {
+                profile.setCountry(normalizeUpper(request.country()));
+            }
         }
         if (request.notes() != null) {
             profile.setNotes(normalizeOptionalText(request.notes()));
@@ -129,13 +142,17 @@ public class CustomerProfileService {
         return new CustomerProfileResponse(
                 user.getPublicId(),
                 user.getEmail(),
+                user.getPhone(),
                 user.getFullName(),
                 profile.getDateOfBirth(),
                 profile.getGender(),
                 profile.getNationality(),
+                profile.getProvince(),
                 profile.getAddressLine(),
-                profile.getCity(),
                 profile.getCountry(),
+                user.getAvatarUrl(),
+                user.getEmailVerifiedAt() != null,
+                user.getCreatedAt(),
                 profile.getLoyaltyPoints(),
                 profile.getTotalStays(),
                 profile.getNotes(),

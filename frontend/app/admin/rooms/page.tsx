@@ -7,10 +7,10 @@ import { BedDouble, Building2, FilterX, Plus, RefreshCw, Search } from "lucide-r
 import { FloorMap } from "@/components/admin/rooms/floor-map"
 import { RoomDetailSheet } from "@/components/admin/rooms/room-detail-sheet"
 import { RoomFormDialog, roomViewLabels } from "@/components/admin/rooms/room-form-dialog"
-import { Badge } from "@/components/ui/status-badge"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { DataTable } from "@/components/ui/data-table"
+import { DataTable } from "@/components/ui/dataTable"
 import { Input } from "@/components/ui/input"
 import {
   Select,

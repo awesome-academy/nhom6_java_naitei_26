@@ -13,6 +13,7 @@ import com.example.hotelmanagement.entity.enums.UserStatus;
 import com.example.hotelmanagement.repositories.RoleRepository;
 import com.example.hotelmanagement.repositories.UserRepository;
 import com.example.hotelmanagement.repositories.UserSocialAccountRepository;
+import com.example.hotelmanagement.repositories.CustomerProfileRepository;
 import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,6 +58,9 @@ class AuthServiceTest {
     private UserSocialAccountRepository userSocialAccountRepository;
 
     @Mock
+    private CustomerProfileRepository customerProfileRepository;
+
+    @Mock
     private JwtService jwtService;
 
     @Mock
@@ -79,6 +83,7 @@ class AuthServiceTest {
             userRepository,
             roleRepository,
             userSocialAccountRepository,
+            customerProfileRepository,
             passwordEncoder,
             jwtService,
             refreshTokenService,

@@ -301,7 +301,7 @@ class InvoiceServiceTest {
     private Booking checkedOutBooking() {
         CustomerProfile profile = CustomerProfile.builder()
                 .addressLine("12 Nguyen Trai")
-                .city("Da Nang")
+                .province("Đà Nẵng")
                 .country("VN")
                 .build();
         Booking booking = Booking.builder()

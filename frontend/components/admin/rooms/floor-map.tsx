@@ -1,6 +1,6 @@
 import { BedDouble, Building2, Wrench } from "lucide-react"
 
-import { Badge } from "@/components/ui/status-badge"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import type { HousekeepingStatus, Room } from "@/types/room"

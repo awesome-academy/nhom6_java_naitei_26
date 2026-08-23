@@ -10,13 +10,12 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { Badge } from "@/components/ui/status-badge"
+import { Badge } from "@/components/ui"
 import { toast } from "sonner"
 import {
   Lock,
   Shield,
   Smartphone,
-  Download,
   Trash2,
   Eye,
   EyeOff,
@@ -84,15 +83,13 @@ export default function ProfileSettingsPage() {
       {/* Change Password */}
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <Lock className="h-5 w-5" />
-            <CardTitle className="text-base font-medium">Đổi mật khẩu</CardTitle>
-          </div>
+          <CardTitle className="text-base font-medium text-[var(--accent)]">Đổi mật khẩu</CardTitle>
           <CardDescription>
             Cập nhật mật khẩu để bảo vệ tài khoản của bạn
           </CardDescription>
+          <Separator className="mt-3" />
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           <form
             onSubmit={handlePasswordSubmit(onSavePassword)}
             className="space-y-5"
@@ -157,7 +154,7 @@ export default function ProfileSettingsPage() {
                   </>
                 )}
               </button>
-              <Button type="submit" disabled={!isPasswordDirty || isLoading} className="h-11 px-6 font-medium">
+              <Button type="submit" disabled={!isPasswordDirty || isLoading} className="h-11 px-6 font-medium bg-[var(--accent)] hover:bg-[var(--accent)]/90">
                 {isLoading ? "Đang cập nhật..." : "Đổi mật khẩu"}
               </Button>
             </div>
@@ -168,15 +165,13 @@ export default function ProfileSettingsPage() {
       {/* Two-Factor Authentication */}
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <Shield className="h-5 w-5" />
-            <CardTitle className="text-base font-medium">Xác thực hai yếu tố</CardTitle>
-          </div>
+          <CardTitle className="text-base font-medium text-[var(--accent)]">Xác thực hai yếu tố</CardTitle>
           <CardDescription>
             Thêm lớp bảo mật bổ sung cho tài khoản của bạn
           </CardDescription>
+          <Separator className="mt-3" />
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--muted)]">
@@ -210,15 +205,13 @@ export default function ProfileSettingsPage() {
       {/* Notification Settings */}
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <Smartphone className="h-5 w-5" />
-            <CardTitle className="text-base font-medium">Thông báo</CardTitle>
-          </div>
+          <CardTitle className="text-base font-medium text-[var(--accent)]">Thông báo</CardTitle>
           <CardDescription>
             Quyết định bạn muốn nhận thông báo như thế nào
           </CardDescription>
+          <Separator className="mt-3" />
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 pt-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="font-medium text-[var(--foreground)]">Email thông báo</p>
@@ -263,7 +256,7 @@ export default function ProfileSettingsPage() {
               }
             />
           </div>
-          <Button onClick={onSaveSettings} className="mt-2 h-11 px-6 font-medium">
+          <Button onClick={onSaveSettings} className="mt-2 h-11 px-6 font-medium bg-[var(--accent)] hover:bg-[var(--accent)]/90">
             Lưu cài đặt thông báo
           </Button>
         </CardContent>
@@ -272,15 +265,13 @@ export default function ProfileSettingsPage() {
       {/* Danger Zone */}
       <Card className="border-[var(--destructive)]/50">
         <CardHeader>
-          <div className="flex items-center gap-2 text-[var(--destructive)]">
-            <Trash2 className="h-5 w-5" />
-            <CardTitle className="text-base font-medium">Vùng nguy hiểm</CardTitle>
-          </div>
+          <CardTitle className="text-base font-medium text-[var(--destructive)]">Vùng nguy hiểm</CardTitle>
           <CardDescription>
             Các hành động không thể hoàn tác
           </CardDescription>
+          <Separator className="mt-3" />
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="font-medium text-[var(--foreground)]">Xóa tài khoản</p>

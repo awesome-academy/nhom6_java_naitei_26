@@ -2,7 +2,7 @@ import { differenceInCalendarDays, format, parseISO } from "date-fns"
 import { CalendarDays, DoorOpen, Wrench } from "lucide-react"
 
 import { blockTypeLabels, blockTypeStyles } from "@/components/admin/maintenance/block-config"
-import { Badge } from "@/components/ui/status-badge"
+import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import {
   Sheet,
