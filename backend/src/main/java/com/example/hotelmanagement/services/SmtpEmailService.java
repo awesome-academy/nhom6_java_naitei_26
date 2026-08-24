@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -28,6 +29,7 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 @Slf4j
 @org.springframework.context.annotation.Primary
+@Profile("!dev-email-logging")
 public class SmtpEmailService implements EmailService {
 
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{(\\w+)}}");
@@ -129,7 +131,7 @@ public class SmtpEmailService implements EmailService {
 
             mailSender.send(message);
             log.info("Email sent successfully to: {}, subject: {}", to, subject);
-        } catch (MessagingException e) {
+        } catch (MessagingException | org.springframework.mail.MailException e) {
             log.error("Failed to send email to: {}, error: {}", to, e.getMessage(), e);
         }
     }
