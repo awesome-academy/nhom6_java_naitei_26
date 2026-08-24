@@ -33,19 +33,6 @@ export interface PriceCalculation {
   totalAmount: number;
   currency: string;
 }
-export interface CancellationRule {
-  minHoursBefore: number;
-  refundPercent: number;
-}
-export interface CancellationPolicy {
-  code: string;
-  name: string;
-  description: string | null;
-  noShowChargePercent: number;
-  isDefault: boolean;
-  isActive: boolean;
-  rules: CancellationRule[];
-}
 export interface BookingRoomItem {
   roomId: number;
   checkInDate: string;
@@ -54,7 +41,6 @@ export interface BookingRoomItem {
   children: number;
 }
 export interface BookingCreateRequest {
-  cancellationPolicyCode: string;
   contactName?: string;
   contactEmail?: string;
   contactPhone?: string;
@@ -71,6 +57,8 @@ export interface BookingRoom {
   status: BookingRoomStatus;
   guestCount: number;
   roomSubtotal: number;
+  cancellationPolicyCode: string | null;
+  cancellationPolicyName: string | null;
   nights: { stayDate: string; price: number }[];
 }
 export interface Booking {
@@ -87,7 +75,6 @@ export interface Booking {
   taxTotal: number;
   totalAmount: number;
   currency: string;
-  cancellationPolicyCode: string;
   holdExpiresAt: string;
   rooms: BookingRoom[];
   createdAt: string;

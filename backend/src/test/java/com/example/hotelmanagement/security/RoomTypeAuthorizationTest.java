@@ -262,6 +262,7 @@ class RoomTypeAuthorizationTest {
             null,
             true,
             10,
+            null,
             List.of(),
             List.of(),
             List.of(),

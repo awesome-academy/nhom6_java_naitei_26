@@ -24,7 +24,6 @@ public record BookingResponse(
         BigDecimal roomTaxPercentSnapshot,
         BigDecimal totalAmount,
         String currency,
-        String cancellationPolicyCode,
         OffsetDateTime holdExpiresAt,
         List<BookingRoomResponse> rooms,
         OffsetDateTime createdAt

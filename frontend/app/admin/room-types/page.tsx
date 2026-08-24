@@ -21,7 +21,9 @@ import {
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/lib/auth-context"
+import { getActiveCancellationPolicies } from "@/lib/api/cancellation-policies"
 import { deleteRoomType, getAmenities, getRoomTypeStats, getRoomTypes } from "@/lib/api/room-types"
+import type { CancellationPolicy } from "@/types/cancellation-policy"
 import type { Amenity, RoomType, RoomTypeStats } from "@/types/room-type"
 
 const PAGE_SIZE = 10
@@ -44,6 +46,8 @@ export default function AdminRoomTypesPage() {
   const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth()
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([])
   const [amenities, setAmenities] = useState<Amenity[]>([])
+  const [cancellationPolicies, setCancellationPolicies] = useState<CancellationPolicy[]>([])
+  const [policyLoadError, setPolicyLoadError] = useState<string | null>(null)
   const [stats, setStats] = useState<RoomTypeStats>({ total: 0, active: 0, deactivated: 0 })
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(1)
@@ -73,21 +77,30 @@ export default function AdminRoomTypesPage() {
     }
     setIsLoading(true)
     setLoadError(null)
+    setPolicyLoadError(null)
     try {
-      const [roomTypeData, amenityData, statsData] = await Promise.all([
+      const policyRequest = canCreate || canUpdate
+        ? getActiveCancellationPolicies().catch((error) => {
+          setPolicyLoadError(getErrorMessage(error))
+          return []
+        })
+        : Promise.resolve([])
+      const [roomTypeData, amenityData, policyData, statsData] = await Promise.all([
         getRoomTypes(),
         getAmenities(),
+        policyRequest,
         getRoomTypeStats(),
       ])
       setRoomTypes(roomTypeData)
       setAmenities(amenityData)
+      setCancellationPolicies(policyData)
       setStats(statsData)
     } catch (error) {
       setLoadError(getErrorMessage(error))
     } finally {
       setIsLoading(false)
     }
-  }, [canRead])
+  }, [canCreate, canRead, canUpdate])
 
   useEffect(() => {
     if (isAuthLoading || !isAuthenticated) return
@@ -181,6 +194,15 @@ export default function AdminRoomTypesPage() {
           )}
           {roomType.amenities.length === 0 && <span className="text-[var(--muted-foreground)]">—</span>}
         </div>
+      ),
+    },
+    {
+      key: "cancellationPolicy",
+      header: "Chính sách hủy",
+      render: (roomType: RoomType) => (
+        <span className={roomType.cancellationPolicy === null ? "text-[var(--muted-foreground)]" : undefined}>
+          {roomType.cancellationPolicy?.name ?? "Chưa gắn"}
+        </span>
       ),
     },
     {
@@ -316,6 +338,8 @@ export default function AdminRoomTypesPage() {
         open={formOpen}
         roomType={editingRoomType}
         amenities={amenities}
+        cancellationPolicies={cancellationPolicies}
+        policyLoadError={policyLoadError}
         canUploadImages={canUpdate}
         onOpenChange={setFormOpen}
         onSaved={loadData}

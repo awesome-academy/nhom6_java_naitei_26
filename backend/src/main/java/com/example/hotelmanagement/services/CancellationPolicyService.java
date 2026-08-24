@@ -7,13 +7,14 @@ import com.example.hotelmanagement.dto.cancellationpolicy.CancellationPolicyRule
 import com.example.hotelmanagement.dto.cancellationpolicy.CancellationPolicyRuleSnapshot;
 import com.example.hotelmanagement.dto.cancellationpolicy.CancellationPolicySnapshot;
 import com.example.hotelmanagement.dto.cancellationpolicy.CancellationPolicyUpdateRequest;
-import com.example.hotelmanagement.entity.Booking;
+import com.example.hotelmanagement.entity.BookingRoom;
 import com.example.hotelmanagement.entity.CancellationPolicy;
 import com.example.hotelmanagement.entity.CancellationPolicyRule;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.CancellationPolicyRepository;
+import com.example.hotelmanagement.repositories.RoomTypeRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
@@ -44,13 +45,16 @@ public class CancellationPolicyService {
     private static final Pattern CODE_PATTERN = Pattern.compile("^[A-Z0-9_-]+$");
 
     private final CancellationPolicyRepository cancellationPolicyRepository;
+    private final RoomTypeRepository roomTypeRepository;
     private final ObjectMapper objectMapper;
 
     public CancellationPolicyService(
             CancellationPolicyRepository cancellationPolicyRepository,
+            RoomTypeRepository roomTypeRepository,
             ObjectMapper objectMapper
     ) {
         this.cancellationPolicyRepository = cancellationPolicyRepository;
+        this.roomTypeRepository = roomTypeRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -64,7 +68,7 @@ public class CancellationPolicyService {
     }
 
     @Transactional(readOnly = true)
-    @PreAuthorize(PermissionExpressions.POLICY_USE_FOR_BOOKING)
+    @PreAuthorize(PermissionExpressions.POLICY_READ_ACTIVE)
     public List<CancellationPolicyResponse> getActiveCancellationPolicies() {
         return cancellationPolicyRepository.findAllByIsActiveTrueOrderByIsDefaultDescCodeAsc()
                 .stream()
@@ -118,6 +122,7 @@ public class CancellationPolicyService {
         policy.setDescription(normalizeOptionalText(request.description()));
         policy.setNoShowChargePercent(request.noShowChargePercent());
         if (request.isActive() != null) {
+            validatePolicyCanDeactivate(policy, request.isActive());
             policy.setIsActive(request.isActive());
         }
         if (request.isDefault() != null) {
@@ -131,20 +136,28 @@ public class CancellationPolicyService {
     @PreAuthorize(PermissionExpressions.POLICY_MANAGE)
     public void deleteCancellationPolicy(String code) {
         CancellationPolicy policy = getExistingPolicy(code);
+        validatePolicyCanDeactivate(policy, false);
         policy.setIsActive(false);
         cancellationPolicyRepository.save(policy);
     }
 
     @PreAuthorize(PermissionExpressions.POLICY_USE_FOR_BOOKING)
-    public void applyPolicySnapshot(Booking booking, String code) {
-        if (booking == null) {
-            throw new BusinessValidationException("Booking is required for policy snapshot");
+    public void applyPolicySnapshot(BookingRoom bookingRoom, String code) {
+        applyPolicySnapshot(bookingRoom, getActivePolicy(code));
+    }
+
+    @PreAuthorize(PermissionExpressions.POLICY_USE_FOR_BOOKING)
+    public void applyPolicySnapshot(BookingRoom bookingRoom, CancellationPolicy policy) {
+        if (bookingRoom == null) {
+            throw new BusinessValidationException("Booking room is required for policy snapshot");
+        }
+        if (policy == null || !Boolean.TRUE.equals(policy.getIsActive())) {
+            throw new BusinessValidationException("An active cancellation policy is required for booking room snapshot");
         }
 
-        CancellationPolicy policy = getActivePolicy(code);
         CancellationPolicySnapshot snapshot = mapPolicySnapshot(policy);
-        booking.setCancellationPolicy(policy);
-        booking.setCancellationPolicySnapshot(objectMapper.valueToTree(snapshot).toString());
+        bookingRoom.setCancellationPolicy(policy);
+        bookingRoom.setCancellationPolicySnapshot(objectMapper.valueToTree(snapshot).toString());
     }
 
     private CancellationPolicy getExistingPolicy(String code) {
@@ -196,6 +209,17 @@ public class CancellationPolicyService {
             }
         }
         policy.setIsDefault(isDefault);
+    }
+
+    private void validatePolicyCanDeactivate(CancellationPolicy policy, Boolean nextIsActive) {
+        if (Boolean.TRUE.equals(nextIsActive)) {
+            return;
+        }
+        if (roomTypeRepository.existsByCancellationPolicy_CodeIgnoreCaseAndDeletedAtIsNullAndIsActiveTrue(policy.getCode())) {
+            throw new BusinessValidationException(
+                    "Cancellation policy is assigned to active room types and cannot be deactivated"
+            );
+        }
     }
 
     private void validateRules(List<CancellationPolicyRuleRequest> ruleRequests) {

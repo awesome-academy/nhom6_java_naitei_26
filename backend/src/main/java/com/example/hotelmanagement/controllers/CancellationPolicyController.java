@@ -36,21 +36,21 @@ public class CancellationPolicyController {
 
     @Operation(summary = "Get Active Cancellation Policies")
     @GetMapping("/active")
-    @PreAuthorize(PermissionExpressions.POLICY_USE_FOR_BOOKING)
+    @PreAuthorize(PermissionExpressions.POLICY_READ_ACTIVE)
     public ResponseEntity<List<CancellationPolicyResponse>> getActiveCancellationPolicies() {
         return ResponseEntity.ok(cancellationPolicyService.getActiveCancellationPolicies());
     }
 
     @Operation(summary = "Get Cancellation Policies")
     @GetMapping
-    @PreAuthorize(PermissionExpressions.POLICY_USE_FOR_BOOKING)
+    @PreAuthorize(PermissionExpressions.POLICY_MANAGE)
     public ResponseEntity<List<CancellationPolicyResponse>> getCancellationPolicies() {
         return ResponseEntity.ok(cancellationPolicyService.getCancellationPolicies());
     }
 
     @Operation(summary = "Get Cancellation Policy")
     @GetMapping("/{code}")
-    @PreAuthorize(PermissionExpressions.POLICY_USE_FOR_BOOKING)
+    @PreAuthorize(PermissionExpressions.POLICY_MANAGE)
     public ResponseEntity<CancellationPolicyResponse> getCancellationPolicy(@PathVariable String code) {
         return ResponseEntity.ok(cancellationPolicyService.getCancellationPolicy(code));
     }

@@ -3,6 +3,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentType,
   type ReactNode,
@@ -12,13 +13,7 @@ import {
   addDays,
   addMonths,
   differenceInCalendarDays,
-  eachDayOfInterval,
-  endOfMonth,
   format,
-  getDay,
-  isBefore,
-  isSameDay,
-  isWithinInterval,
   parseISO,
   startOfMonth,
   startOfToday,
@@ -30,7 +25,6 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
-  ChevronLeft,
   ChevronRight,
   CreditCard,
   Heart,
@@ -48,7 +42,6 @@ import {
   Train,
   Users,
   Wifi,
-  X,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -56,6 +49,7 @@ import { SiteHeader } from "@/components/auth/site-header"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Calendar } from "@/components/ui/calendar"
 import {
   Card,
   CardContent,
@@ -84,21 +78,18 @@ import {
   getAvailability,
   getBookingRooms,
   getBookingRoomTypes,
-  getCancellationPolicies,
 } from "@/lib/api/booking"
 import { useAuth } from "@/lib/auth-context"
 import { cn } from "@/lib/utils"
 import type {
   Booking,
   BookingRoomItem,
-  CancellationPolicy,
   PriceCalculation,
 } from "@/types/booking"
 import type { Room } from "@/types/room"
 import type { RoomType } from "@/types/room-type"
 
 type SearchState = {
-  destination: string
   checkInDate: string
   checkOutDate: string
   rooms: number
@@ -135,24 +126,12 @@ type GalleryItem = {
 
 const today = startOfToday()
 const initialSearch: SearchState = {
-  destination: "TripStay Hotel",
   checkInDate: format(addDays(today, 1), "yyyy-MM-dd"),
   checkOutDate: format(addDays(today, 2), "yyyy-MM-dd"),
   rooms: 1,
   adults: 2,
   children: 0,
 }
-
-const popularDestinations = [
-  "TP. Hồ Chí Minh",
-  "Đà Nẵng",
-  "Hà Nội",
-  "Nha Trang",
-  "Đà Lạt",
-  "Vũng Tàu",
-  "Đảo Phú Quốc",
-  "Phan Thiết",
-]
 
 const bedTypeLabel: Record<string, string> = {
   SINGLE: "giường đơn",
@@ -201,6 +180,10 @@ function getBedSummary(roomType: RoomType) {
   return roomType.beds
     .map((bed) => `${bed.quantity} ${bedTypeLabel[bed.bedType] ?? bed.bedType}`)
     .join(", ")
+}
+
+function getRoomNightPrice(roomType: RoomType, room: Room) {
+  return Number(room.priceOverride ?? roomType.basePrice)
 }
 
 function distributeGuests(search: SearchState, roomCount: number) {
@@ -252,9 +235,7 @@ export default function BookingPage() {
   })
   const [rooms, setRooms] = useState<Room[]>([])
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([])
-  const [policies, setPolicies] = useState<CancellationPolicy[]>([])
   const [availableRoomIds, setAvailableRoomIds] = useState<Set<number>>(new Set())
-  const [selectedQuantities, setSelectedQuantities] = useState<Record<string, number>>({})
   const [selectedRoomIds, setSelectedRoomIds] = useState<number[]>([])
   const [quote, setQuote] = useState<Quote | null>(null)
   const [checkoutOpen, setCheckoutOpen] = useState(false)
@@ -268,7 +249,6 @@ export default function BookingPage() {
   const permissions = user?.permissions ?? []
   const accessMessage = isAuthenticated ? getAccessMessage(permissions) : null
   const nights = useMemo(() => getNights(search), [search])
-  const selectedPolicy = policies.find((policy) => policy.isDefault) ?? policies[0]
 
   const roomTypeOptions = useMemo<RoomTypeOption[]>(() => {
     return roomTypes
@@ -299,8 +279,22 @@ export default function BookingPage() {
       .slice(0, 6)
   }, [roomTypes])
 
-  const selectedCount = Object.values(selectedQuantities).reduce((sum, quantity) => sum + quantity, 0)
-  const selectedOptions = roomTypeOptions.filter((option) => selectedQuantities[option.roomType.code] > 0)
+  const selectedCount = selectedRoomIds.length
+  const roomTypeByCode = useMemo(
+    () => new Map(roomTypes.map((roomType) => [roomType.code, roomType])),
+    [roomTypes]
+  )
+  const roomById = useMemo(
+    () => new Map(rooms.map((room) => [room.roomId, room])),
+    [rooms]
+  )
+  const selectedPolicyLines = useMemo(() => {
+    return selectedRoomIds.map((roomId) => {
+      const room = roomById.get(roomId)
+      const roomType = room ? roomTypeByCode.get(room.roomTypeCode) : null
+      return `${roomType?.name ?? room?.roomTypeName ?? "Phòng"} ${room?.roomNumber ?? roomId}: ${roomType?.cancellationPolicy?.name ?? "Chưa có chính sách"}`
+    })
+  }, [roomById, roomTypeByCode, selectedRoomIds])
   const cheapestRoomType = roomTypes.reduce<RoomType | null>((best, current) => {
     if (!best) return current
     return Number(current.basePrice) < Number(best.basePrice) ? current : best
@@ -324,16 +318,14 @@ export default function BookingPage() {
       setError("")
 
       try {
-        const [roomData, roomTypeData, policyData, availability] = await Promise.all([
+        const [roomData, roomTypeData, availability] = await Promise.all([
           getBookingRooms(),
           getBookingRoomTypes(),
-          getCancellationPolicies(),
           getAvailability(search.checkInDate, search.checkOutDate),
         ])
         if (ignore) return
         setRooms(roomData)
         setRoomTypes(roomTypeData)
-        setPolicies(policyData.filter((policy) => policy.isActive))
         setAvailableRoomIds(new Set(Object.values(availability).flat().map((roomId) => Number(roomId))))
       } catch (loadError) {
         if (!ignore) {
@@ -354,7 +346,6 @@ export default function BookingPage() {
 
   function resetSelection(nextSearch: SearchState) {
     setSearch(nextSearch)
-    setSelectedQuantities({})
     setSelectedRoomIds([])
     setQuote(null)
     setCheckoutOpen(false)
@@ -374,7 +365,6 @@ export default function BookingPage() {
     }
 
     setSearching(true)
-    setSelectedQuantities({})
     setSelectedRoomIds([])
     setQuote(null)
     setCheckoutOpen(false)
@@ -394,33 +384,24 @@ export default function BookingPage() {
     }
   }
 
-  function updateSelectedQuantity(option: RoomTypeOption, quantity: number) {
-    const safeQuantity = Math.max(0, Math.min(quantity, option.availableRooms.length))
+  function toggleSelectedRoom(roomId: number) {
     setQuote(null)
-    setSelectedRoomIds([])
-    setSelectedQuantities((current) => {
-      const next = { ...current }
-      if (safeQuantity === 0) {
-        delete next[option.roomType.code]
-      } else {
-        next[option.roomType.code] = safeQuantity
-      }
-      return next
-    })
+    setCheckoutOpen(false)
+    setSelectedRoomIds((current) =>
+      current.includes(roomId)
+        ? current.filter((selectedRoomId) => selectedRoomId !== roomId)
+        : [...current, roomId]
+    )
   }
 
   async function calculateSelectedRooms() {
     setError("")
     setCalculating(true)
 
-    const plannedRoomIds = selectedOptions.flatMap((option) =>
-      option.availableRooms
-        .slice(0, selectedQuantities[option.roomType.code] ?? 0)
-        .map((room) => room.roomId)
-    )
+    const plannedRoomIds = selectedRoomIds
 
     if (plannedRoomIds.length === 0) {
-      setError("Vui lòng thêm ít nhất một loại phòng.")
+      setError("Vui lòng thêm ít nhất một phòng.")
       setCalculating(false)
       return
     }
@@ -466,11 +447,6 @@ export default function BookingPage() {
       return
     }
 
-    if (!selectedPolicy) {
-      setError("Backend chưa có chính sách hủy hoạt động.")
-      return
-    }
-
     if (!contact.contactName.trim() || !contact.contactEmail.trim()) {
       setError("Vui lòng nhập tên và email người liên hệ.")
       return
@@ -493,7 +469,6 @@ export default function BookingPage() {
 
     try {
       const created = await createBooking({
-        cancellationPolicyCode: selectedPolicy.code,
         contactName: contact.contactName.trim(),
         contactEmail: contact.contactEmail.trim(),
         contactPhone: contact.contactPhone.trim() || undefined,
@@ -591,13 +566,6 @@ export default function BookingPage() {
   return (
     <div className="min-h-screen bg-background pb-28">
       <SiteHeader />
-      <HotelSearchBar
-        search={search}
-        loading={searching || loadingCatalog}
-        minNightPrice={cheapestRoomType ? Number(cheapestRoomType.basePrice) : 0}
-        onChange={resetSelection}
-        onSearch={runSearch}
-      />
 
       <main className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-8 lg:px-8">
         {error && (
@@ -609,21 +577,28 @@ export default function BookingPage() {
 
         <HotelHeader />
         <HotelGallery images={galleryImages} loading={loadingCatalog} />
-        <HotelDetails roomTypes={roomTypes} policies={policies} cheapestRoomType={cheapestRoomType} search={search} />
+        <HotelDetails roomTypes={roomTypes} cheapestRoomType={cheapestRoomType} search={search} />
 
         <section id="choose-room" className="scroll-mt-28">
-          <div className="mb-4 flex flex-col gap-2">
+          <div className="flex flex-col gap-2">
             <h2 className="text-2xl font-bold tracking-tight">Chọn phòng</h2>
-            <p className="text-muted-foreground">
-              Chọn loại phòng và số lượng. Hệ thống chỉ tính tiền khi bạn bấm thanh toán phía dưới.
-            </p>
           </div>
+          <HotelSearchBar
+            search={search}
+            loading={searching || loadingCatalog}
+            minNightPrice={cheapestRoomType ? Number(cheapestRoomType.basePrice) : 0}
+            onChange={resetSelection}
+            onSearch={runSearch}
+          />
+          <p className="mb-4 text-muted-foreground">
+            Chọn từng phòng trong loại phòng phù hợp. Hệ thống chỉ tính tiền khi bạn bấm thanh toán phía dưới.
+          </p>
 
           <RoomTypeList
             options={roomTypeOptions}
             loading={loadingCatalog || searching}
-            selectedQuantities={selectedQuantities}
-            onQuantityChange={updateSelectedQuantity}
+            selectedRoomIds={selectedRoomIds}
+            onRoomToggle={toggleSelectedRoom}
           />
         </section>
       </main>
@@ -631,7 +606,6 @@ export default function BookingPage() {
       {selectedCount > 0 && (
         <BottomCheckoutBar
           selectedCount={selectedCount}
-          search={search}
           calculating={calculating}
           onContinue={calculateSelectedRooms}
         />
@@ -643,7 +617,7 @@ export default function BookingPage() {
         search={search}
         contact={contact}
         quote={quote}
-        policy={selectedPolicy}
+        policyLines={selectedPolicyLines}
         creating={creatingBooking}
         onContactChange={setContact}
         onSubmit={submitBooking}
@@ -658,9 +632,9 @@ function HotelHeader() {
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-3xl font-bold tracking-tight md:text-4xl">TripStay Hotel</h1>
-          <div className="flex text-primary">
+          <div className="flex gap-0.5 text-yellow-500">
             {Array.from({ length: 5 }).map((_, index) => (
-              <Star key={index} className="fill-current" />
+              <Star key={index} className="size-4 fill-current" />
             ))}
           </div>
         </div>
@@ -745,12 +719,10 @@ function GalleryTile({
 
 function HotelDetails({
   roomTypes,
-  policies,
   cheapestRoomType,
   search,
 }: {
   roomTypes: RoomType[]
-  policies: CancellationPolicy[]
   cheapestRoomType: RoomType | null
   search: SearchState
 }) {
@@ -817,7 +789,6 @@ function HotelDetails({
 
       <BestPriceCard
         roomType={cheapestRoomType}
-        policy={policies[0]}
         search={search}
       />
     </section>
@@ -868,11 +839,9 @@ function AmenityItem({ label }: { label: string }) {
 
 function BestPriceCard({
   roomType,
-  policy,
   search,
 }: {
   roomType: RoomType | null
-  policy?: CancellationPolicy
   search: SearchState
 }) {
   const estimate = roomType ? Number(roomType.basePrice) * search.rooms * getNights(search) : 0
@@ -894,7 +863,7 @@ function BestPriceCard({
         </div>
         <div className="font-semibold">{roomType?.name ?? "Chọn phòng"}</div>
         <InfoPill icon={BedDouble} label={roomType ? getBedSummary(roomType) : "Chưa có loại phòng"} />
-        <InfoPill icon={Ban} label={policy?.name ?? "Chính sách theo booking"} />
+        <InfoPill icon={Ban} label={roomType?.cancellationPolicy?.name ?? "Chính sách theo loại phòng"} />
         <InfoPill icon={Check} label="Xác nhận ngay" />
         <InfoPill icon={CreditCard} label="Thanh toán sau bước chọn phòng" />
         <Button size="lg" onClick={() => document.getElementById("choose-room")?.scrollIntoView({ behavior: "smooth" })}>
@@ -935,14 +904,12 @@ function HotelSearchBar({
   onSearch: () => void
 }) {
   return (
-    <div className="sticky top-16 z-40 border-b bg-background/95 px-4 py-3 shadow-sm backdrop-blur">
-      <div className="mx-auto flex max-w-7xl rounded-xl border-2 border-primary bg-background p-1">
-        <DestinationPicker search={search} onChange={onChange} />
-        <SearchDivider />
+    <div className="sticky top-16 z-40 mb-5 bg-background/95 py-3 backdrop-blur">
+      <div className="flex w-full flex-col gap-2 rounded-xl border-2 border-primary bg-background p-1 shadow-sm lg:flex-row lg:items-center">
         <DateRangePicker search={search} minNightPrice={minNightPrice} onChange={onChange} />
         <SearchDivider />
         <GuestPicker search={search} onChange={onChange} />
-        <Button className="h-12 rounded-lg px-6 text-base" onClick={onSearch} disabled={loading}>
+        <Button className="h-12 rounded-lg px-6 text-base lg:ml-auto" onClick={onSearch} disabled={loading}>
           {loading ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Search data-icon="inline-start" />}
           Tìm
         </Button>
@@ -952,52 +919,7 @@ function HotelSearchBar({
 }
 
 function SearchDivider() {
-  return <Separator orientation="vertical" className="mx-1 h-12" />
-}
-
-function DestinationPicker({
-  search,
-  onChange,
-}: {
-  search: SearchState
-  onChange: (search: SearchState) => void
-}) {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button className="flex h-12 min-w-[280px] flex-1 items-center gap-3 rounded-lg px-4 text-left hover:bg-muted">
-          <MapPin />
-          <span className="truncate text-base font-semibold">{search.destination}</span>
-          <X className="ml-auto text-muted-foreground" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-[640px] p-6">
-        <div className="flex flex-col gap-5">
-          <Label>Tìm kiếm gần đây</Label>
-          <button
-            className="flex items-center justify-between rounded-lg p-2 text-left hover:bg-muted"
-            onClick={() => onChange({ ...search, destination: "TP. Hồ Chí Minh" })}
-          >
-            <span>TP. Hồ Chí Minh</span>
-            <span className="text-muted-foreground">{displayDate(search.checkInDate)} - {displayDate(search.checkOutDate)}</span>
-          </button>
-          <Separator />
-          <Label>Điểm đến phổ biến</Label>
-          <div className="grid grid-cols-4 gap-3">
-            {popularDestinations.map((destination) => (
-              <button
-                key={destination}
-                className="rounded-lg p-2 text-left hover:bg-muted"
-                onClick={() => onChange({ ...search, destination })}
-              >
-                {destination}
-              </button>
-            ))}
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
-  )
+  return <Separator orientation="vertical" className="mx-1 hidden h-12 lg:block" />
 }
 
 function DateRangePicker({
@@ -1024,7 +946,7 @@ function DateRangePicker({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button className="flex h-12 min-w-[420px] items-center gap-4 rounded-lg px-4 hover:bg-muted">
+        <button className="flex h-12 w-full items-center gap-4 rounded-lg px-4 hover:bg-muted lg:w-auto lg:min-w-[420px]">
           <CalendarDays />
           <span className="text-base font-semibold">{headerDate(search.checkInDate)}</span>
           <span className="text-base font-semibold">-</span>
@@ -1032,85 +954,39 @@ function DateRangePicker({
           <Badge variant="secondary">{nights} đêm</Badge>
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[760px] p-6">
-        <div className="flex items-center justify-between">
-          <Button variant="ghost" size="icon" onClick={() => setCursorMonth(addMonths(cursorMonth, -1))}>
-            <ChevronLeft />
-          </Button>
-          <div className="grid flex-1 grid-cols-2 gap-8">
-            {[cursorMonth, addMonths(cursorMonth, 1)].map((month) => (
-              <MonthCalendar
-                key={month.toISOString()}
-                month={month}
-                search={search}
-                minNightPrice={minNightPrice}
-                onSelect={selectDate}
-              />
-            ))}
-          </div>
-          <Button variant="ghost" size="icon" onClick={() => setCursorMonth(addMonths(cursorMonth, 1))}>
-            <ChevronRight />
-          </Button>
+      <PopoverContent className="w-[min(860px,calc(100vw-2rem))] p-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          {[cursorMonth, addMonths(cursorMonth, 1)].map((month, index) => (
+            <Calendar
+              key={month.toISOString()}
+              month={month}
+              onMonthChange={(nextMonth) => setCursorMonth(index === 0 ? nextMonth : addMonths(nextMonth, -1))}
+              selectedRange={{
+                from: parseISO(search.checkInDate),
+                to: search.checkOutDate === search.checkInDate ? undefined : parseISO(search.checkOutDate),
+              }}
+              minDate={today}
+              onSelect={selectDate}
+              cellClassName="h-14 w-14 flex-col gap-0.5"
+              renderDayContent={(day, state) => (
+                <>
+                  <span className="text-base font-bold">{format(day, "d")}</span>
+                  {!state.disabled && (
+                    <span className={cn("text-[11px]", state.selected ? "text-primary-foreground/85" : "text-muted-foreground")}>
+                      {compactMoney(minNightPrice)}
+                    </span>
+                  )}
+                </>
+              )}
+            />
+          ))}
         </div>
         <div className="mt-6 flex items-center justify-between text-sm text-muted-foreground">
-          <span>Di chuột để xem giá từng ngày</span>
+          <span>Giá trong từng ô là giá đêm thấp nhất hiện có</span>
           <span>{headerDate(search.checkInDate)} - {headerDate(search.checkOutDate)} ({nights} đêm)</span>
         </div>
       </PopoverContent>
     </Popover>
-  )
-}
-
-function MonthCalendar({
-  month,
-  search,
-  minNightPrice,
-  onSelect,
-}: {
-  month: Date
-  search: SearchState
-  minNightPrice: number
-  onSelect: (date: Date) => void
-}) {
-  const days = eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) })
-  const offset = (getDay(startOfMonth(month)) + 6) % 7
-  const checkIn = parseISO(search.checkInDate)
-  const checkOut = parseISO(search.checkOutDate)
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="text-center text-lg font-bold">tháng {format(month, "M, yyyy")}</div>
-      <div className="grid grid-cols-7 gap-1 text-center text-sm font-semibold">
-        {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map((day) => (
-          <span key={day} className={cn(day === "T7" || day === "CN" ? "text-primary" : "text-foreground")}>{day}</span>
-        ))}
-      </div>
-      <div className="grid grid-cols-7 gap-1">
-        {Array.from({ length: offset }).map((_, index) => <div key={index} />)}
-        {days.map((day) => {
-          const disabled = isBefore(day, today)
-          const selected = isSameDay(day, checkIn) || isSameDay(day, checkOut)
-          const ranged = search.checkOutDate !== search.checkInDate && isWithinInterval(day, { start: checkIn, end: checkOut })
-
-          return (
-            <button
-              key={day.toISOString()}
-              type="button"
-              disabled={disabled}
-              onClick={() => onSelect(day)}
-              className={cn(
-                "flex h-16 flex-col items-center justify-center rounded-lg text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-35",
-                ranged && "bg-primary/10",
-                selected && "bg-primary text-primary-foreground hover:bg-primary"
-              )}
-            >
-              <span className="text-base font-bold">{format(day, "d")}</span>
-              {!disabled && <span className="text-xs opacity-80">{compactMoney(minNightPrice)}</span>}
-            </button>
-          )
-        })}
-      </div>
-    </div>
   )
 }
 
@@ -1124,7 +1000,7 @@ function GuestPicker({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button className="flex h-12 min-w-[300px] items-center gap-3 rounded-lg px-4 hover:bg-muted">
+        <button className="flex h-12 w-full items-center gap-3 rounded-lg px-4 hover:bg-muted lg:w-auto lg:min-w-[300px]">
           <Users />
           <span className="text-base font-semibold">
             {search.rooms} phòng, {search.adults} Người Lớn, {search.children} Trẻ Em
@@ -1195,14 +1071,16 @@ function CounterRow({
 function RoomTypeList({
   options,
   loading,
-  selectedQuantities,
-  onQuantityChange,
+  selectedRoomIds,
+  onRoomToggle,
 }: {
   options: RoomTypeOption[]
   loading: boolean
-  selectedQuantities: Record<string, number>
-  onQuantityChange: (option: RoomTypeOption, quantity: number) => void
+  selectedRoomIds: number[]
+  onRoomToggle: (roomId: number) => void
 }) {
+  const scrollersRef = useRef<Record<string, HTMLDivElement | null>>({})
+
   if (loading) {
     return (
       <div className="flex flex-col gap-4">
@@ -1217,12 +1095,12 @@ function RoomTypeList({
       {options.map((option) => {
         const roomType = option.roomType
         const availableCount = option.availableRooms.length
-        const quantity = selectedQuantities[roomType.code] ?? 0
+        const selectedInRoomType = option.availableRooms.filter((room) => selectedRoomIds.includes(room.roomId)).length
         const primaryImage = roomType.images.find((image) => image.isPrimary) ?? roomType.images[0]
 
         return (
-          <Card key={roomType.code} className={cn(quantity > 0 && "border-green-500")}>
-            <CardContent className="grid gap-0 p-0 lg:grid-cols-[430px_1fr]">
+          <Card key={roomType.code} className={cn("overflow-hidden", selectedInRoomType > 0 && "border-green-500")}>
+            <CardContent className="grid items-stretch gap-0 p-0 lg:grid-cols-[430px_minmax(0,1fr)]">
               <div className="border-r p-5">
                 <GalleryTile
                   item={primaryImage ? { url: primaryImage.downloadUrl, alt: primaryImage.altText } : undefined}
@@ -1246,23 +1124,44 @@ function RoomTypeList({
                 <button className="mt-6 text-base font-semibold underline underline-offset-4">Thông tin phòng</button>
               </div>
 
-              <div className="grid lg:grid-cols-2">
-                <RateOptionCard
-                  title="Giá thấp nhất hôm nay"
-                  roomType={roomType}
-                  availableCount={availableCount}
-                  quantity={quantity}
-                  variant="best"
-                  onQuantityChange={(nextQuantity) => onQuantityChange(option, nextQuantity)}
-                />
-                <RateOptionCard
-                  title="Chỉ tiền phòng"
-                  roomType={roomType}
-                  availableCount={availableCount}
-                  quantity={quantity}
-                  priceMultiplier={1.12}
-                  onQuantityChange={(nextQuantity) => onQuantityChange(option, nextQuantity)}
-                />
+              <div className="relative min-w-0 overflow-hidden">
+                {availableCount > 0 ? (
+                  <>
+                    <div
+                      ref={(node) => {
+                        scrollersRef.current[roomType.code] = node
+                      }}
+                      className="flex h-full min-w-0 overflow-x-auto scroll-smooth pr-16"
+                    >
+                      {option.availableRooms.map((room, index) => (
+                        <RoomChoiceCard
+                          key={room.roomId}
+                          roomType={roomType}
+                          room={room}
+                          index={index}
+                          selected={selectedRoomIds.includes(room.roomId)}
+                          onToggle={() => onRoomToggle(room.roomId)}
+                        />
+                      ))}
+                    </div>
+                    {availableCount > 2 && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="icon"
+                        className="absolute right-4 top-1/2 rounded-full shadow-lg"
+                        onClick={() => scrollersRef.current[roomType.code]?.scrollBy({ left: 360, behavior: "smooth" })}
+                        aria-label={`Xem thêm phòng ${roomType.name}`}
+                      >
+                        <ChevronRight />
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex h-full min-h-[260px] items-center justify-center p-6 text-center text-muted-foreground">
+                    Không còn phòng trống trong khoảng ngày này.
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1281,60 +1180,50 @@ function RoomSpec({ label }: { label: string }) {
   )
 }
 
-function RateOptionCard({
-  title,
+function RoomChoiceCard({
   roomType,
-  availableCount,
-  quantity,
-  variant,
-  priceMultiplier = 1,
-  onQuantityChange,
+  room,
+  index,
+  selected,
+  onToggle,
 }: {
-  title: string
   roomType: RoomType
-  availableCount: number
-  quantity: number
-  variant?: "best"
-  priceMultiplier?: number
-  onQuantityChange: (quantity: number) => void
+  room: Room
+  index: number
+  selected: boolean
+  onToggle: () => void
 }) {
-  const unitPrice = Number(roomType.basePrice) * priceMultiplier
+  const unitPrice = getRoomNightPrice(roomType, room)
 
   return (
-    <div className={cn("flex min-h-[360px] flex-col justify-between border-r p-5", quantity > 0 && "bg-green-50/70")}>
+    <div className={cn(
+      "flex min-h-[430px] w-[360px] shrink-0 flex-col justify-between border-r p-5",
+      selected && "bg-green-50/70"
+    )}>
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between gap-3">
-          <Badge variant={variant === "best" ? "success" : "outline"}>{title}</Badge>
+          <Badge variant={index === 0 ? "success" : "outline"}>
+            {index === 0 ? "Giá thấp nhất hôm nay" : `Lựa chọn ${index + 1}`}
+          </Badge>
           <Info className="text-muted-foreground" />
         </div>
-        <InfoPill icon={Ban} label="Không hoàn tiền" />
-        <InfoPill icon={CreditCard} label={variant === "best" ? "Thanh toán trước trực tuyến" : "Thanh toán tại khách sạn"} />
+        <div>
+          <div className="text-lg font-bold">Phòng {room.roomNumber}</div>
+          <div className="text-sm text-muted-foreground">
+            {room.floor === null ? "Chưa gán tầng" : `Tầng ${room.floor}`} · View {room.viewType}
+          </div>
+        </div>
+        <InfoPill icon={Ban} label={roomType.cancellationPolicy?.name ?? "Chính sách theo loại phòng"} />
+        <InfoPill icon={CreditCard} label={room.priceOverride === null ? "Giá theo loại phòng" : "Giá riêng của phòng"} />
         <InfoPill icon={Users} label={`Tối đa ${roomType.maxAdults} người lớn`} />
       </div>
 
       <div className="flex flex-col gap-3">
         <div className="text-2xl font-bold text-primary">{money(unitPrice, roomType.currency)}</div>
-        <div className="text-sm text-muted-foreground">Còn {availableCount} phòng có thể chọn</div>
-        {availableCount <= 3 && availableCount > 0 && (
-          <div className="font-semibold text-destructive">{availableCount} cuối của chúng tôi!</div>
-        )}
-        {quantity > 0 ? (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-green-500 bg-green-100 p-2">
-            <Button type="button" variant="outline" size="icon" onClick={() => onQuantityChange(quantity - 1)}>
-              <Minus />
-            </Button>
-            <div className="text-center font-semibold text-green-700">
-              Đã chọn {quantity}
-            </div>
-            <Button type="button" variant="outline" size="icon" disabled={quantity >= availableCount} onClick={() => onQuantityChange(quantity + 1)}>
-              <Plus />
-            </Button>
-          </div>
-        ) : (
-          <Button disabled={availableCount < 1} onClick={() => onQuantityChange(1)}>
-            Thêm
-          </Button>
-        )}
+        <div className="text-sm text-muted-foreground">Giá cho 1 đêm, chưa tính lại ưu đãi theo booking.</div>
+        <Button variant={selected ? "success" : "default"} onClick={onToggle}>
+          {selected ? "Đã thêm" : "Thêm"}
+        </Button>
       </div>
     </div>
   )
@@ -1342,30 +1231,32 @@ function RateOptionCard({
 
 function BottomCheckoutBar({
   selectedCount,
-  search,
   calculating,
   onContinue,
 }: {
   selectedCount: number
-  search: SearchState
   calculating: boolean
   onContinue: () => void
 }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-background/95 px-4 py-4 shadow-2xl backdrop-blur">
-      <div className="mx-auto flex max-w-4xl items-center justify-between gap-6 rounded-2xl border bg-card p-4 shadow-xl">
-        <div>
-          <div className="text-sm text-muted-foreground">Đã thêm {selectedCount} phòng</div>
-          <div className="text-lg font-bold">
-            {displayDate(search.checkInDate)} - {displayDate(search.checkOutDate)} · {getNights(search)} đêm
-          </div>
-          <div className="text-sm text-muted-foreground">Bấm tiếp tục để backend tính giá chính xác.</div>
-        </div>
-        <Button size="lg" onClick={onContinue} disabled={calculating}>
-          {calculating && <Loader2 data-icon="inline-start" className="animate-spin" />}
-          Tiếp tục thanh toán
-        </Button>
-      </div>
+    <div className="fixed bottom-6 right-6 z-50">
+      <div className="absolute inset-0 rounded-full bg-[var(--accent)] opacity-30 blur-md motion-safe:animate-ping" />
+      <Button
+        type="button"
+        onClick={onContinue}
+        disabled={calculating}
+        className="relative size-24 rounded-full shadow-2xl motion-safe:animate-pulse"
+        aria-label={`Thanh toán ${selectedCount} phòng đã chọn`}
+      >
+        {calculating ? (
+          <Loader2 data-icon="inline-start" className="animate-spin" />
+        ) : (
+          <span className="flex flex-col items-center leading-tight">
+            <span>Thanh toán</span>
+            <span className="text-xs opacity-85">{selectedCount} phòng</span>
+          </span>
+        )}
+      </Button>
     </div>
   )
 }
@@ -1376,7 +1267,7 @@ function CheckoutDialog({
   search,
   contact,
   quote,
-  policy,
+  policyLines,
   creating,
   onContactChange,
   onSubmit,
@@ -1386,7 +1277,7 @@ function CheckoutDialog({
   search: SearchState
   contact: ContactState
   quote: Quote | null
-  policy?: CancellationPolicy
+  policyLines: string[]
   creating: boolean
   onContactChange: (contact: ContactState) => void
   onSubmit: () => void
@@ -1406,7 +1297,7 @@ function CheckoutDialog({
           <div className="flex flex-col gap-4 rounded-xl border p-4">
             <InfoLine icon={CalendarDays} label="Ngày" value={`${displayDate(search.checkInDate)} - ${displayDate(search.checkOutDate)} (${getNights(search)} đêm)`} />
             <InfoLine icon={Users} label="Khách" value={`${search.adults} người lớn, ${search.children} trẻ em`} />
-            {policy && <InfoLine icon={ShieldCheck} label="Chính sách" value={policy.name} />}
+            {policyLines.length > 0 && <InfoLine icon={ShieldCheck} label="Chính sách" value={policyLines.join("; ")} />}
             <Separator />
             {quote && (
               <>

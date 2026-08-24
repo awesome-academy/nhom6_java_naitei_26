@@ -237,7 +237,6 @@ public class BookingStateMachineService {
                 booking.getRoomTaxPercentSnapshot(),
                 booking.getTotalAmount(),
                 booking.getCurrency(),
-                booking.getCancellationPolicy() == null ? null : booking.getCancellationPolicy().getCode(),
                 booking.getHoldExpiresAt(),
                 booking.getBookingRooms().stream().map(this::mapRoomResponse).toList(),
                 booking.getCreatedAt()
@@ -255,6 +254,8 @@ public class BookingStateMachineService {
                 bookingRoom.getStatus(),
                 bookingRoom.getGuestCount(),
                 bookingRoom.getRoomSubtotal(),
+                bookingRoom.getCancellationPolicy() == null ? null : bookingRoom.getCancellationPolicy().getCode(),
+                bookingRoom.getCancellationPolicy() == null ? null : bookingRoom.getCancellationPolicy().getName(),
                 bookingRoom.getAssignedAt(),
                 bookingRoom.getAssignedBy(),
                 bookingRoom.getBookingRoomNights().stream()

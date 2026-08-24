@@ -109,13 +109,6 @@ public class Booking extends BaseEntity {
     @Builder.Default
     private BookingPaymentStatus paymentStatus = BookingPaymentStatus.UNPAID;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "cancellation_policy_id")
-    private CancellationPolicy cancellationPolicy;
-
-    @Column(name = "cancellation_policy_snapshot", columnDefinition = "JSON")
-    private String cancellationPolicySnapshot;
-
     @Column(name = "hold_expires_at")
     private OffsetDateTime holdExpiresAt;
 

@@ -3,13 +3,14 @@ package com.example.hotelmanagement.services;
 import com.example.hotelmanagement.dto.cancellationpolicy.CancellationPolicyCreateRequest;
 import com.example.hotelmanagement.dto.cancellationpolicy.CancellationPolicyRuleRequest;
 import com.example.hotelmanagement.dto.cancellationpolicy.CancellationPolicyUpdateRequest;
-import com.example.hotelmanagement.entity.Booking;
+import com.example.hotelmanagement.entity.BookingRoom;
 import com.example.hotelmanagement.entity.CancellationPolicy;
 import com.example.hotelmanagement.entity.CancellationPolicyRule;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.CancellationPolicyRepository;
+import com.example.hotelmanagement.repositories.RoomTypeRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +39,8 @@ class CancellationPolicyServiceTest {
 
     @Mock
     private CancellationPolicyRepository cancellationPolicyRepository;
+    @Mock
+    private RoomTypeRepository roomTypeRepository;
 
     private ObjectMapper objectMapper;
     private CancellationPolicyService cancellationPolicyService;
@@ -47,6 +50,7 @@ class CancellationPolicyServiceTest {
         objectMapper = new ObjectMapper();
         cancellationPolicyService = new CancellationPolicyService(
                 cancellationPolicyRepository,
+                roomTypeRepository,
                 objectMapper
         );
     }
@@ -188,6 +192,21 @@ class CancellationPolicyServiceTest {
     }
 
     @Test
+    void deleteCancellationPolicyRejectsPolicyAssignedToActiveRoomType() {
+        CancellationPolicy policy = policy("FLEXIBLE", true, true);
+        when(cancellationPolicyRepository.findByCodeIgnoreCase("FLEXIBLE"))
+                .thenReturn(Optional.of(policy));
+        when(roomTypeRepository.existsByCancellationPolicy_CodeIgnoreCaseAndDeletedAtIsNullAndIsActiveTrue("FLEXIBLE"))
+                .thenReturn(true);
+
+        assertThrows(
+                BusinessValidationException.class,
+                () -> cancellationPolicyService.deleteCancellationPolicy("flexible")
+        );
+        verify(cancellationPolicyRepository, never()).save(any());
+    }
+
+    @Test
     void applyPolicySnapshotUsesActivePolicyAndDescendingRules() throws Exception {
         CancellationPolicy policy = policy("FLEXIBLE", true, true);
         policy.setName("Flexible");
@@ -195,14 +214,14 @@ class CancellationPolicyServiceTest {
         addRule(policy, 0, "0.00");
         addRule(policy, 72, "100.00");
         addRule(policy, 30, "50.00");
-        Booking booking = new Booking();
+        BookingRoom bookingRoom = new BookingRoom();
         when(cancellationPolicyRepository.findByCodeIgnoreCaseAndIsActiveTrue("FLEXIBLE"))
                 .thenReturn(Optional.of(policy));
 
-        cancellationPolicyService.applyPolicySnapshot(booking, "flexible");
+        cancellationPolicyService.applyPolicySnapshot(bookingRoom, "flexible");
 
-        assertSame(policy, booking.getCancellationPolicy());
-        JsonNode snapshot = objectMapper.readTree(booking.getCancellationPolicySnapshot());
+        assertSame(policy, bookingRoom.getCancellationPolicy());
+        JsonNode snapshot = objectMapper.readTree(bookingRoom.getCancellationPolicySnapshot());
         assertEquals("FLEXIBLE", snapshot.get("code").asText());
         assertEquals("Flexible", snapshot.get("name").asText());
         assertEquals(0, snapshot.get("no_show_charge_percent").decimalValue()
@@ -222,7 +241,7 @@ class CancellationPolicyServiceTest {
 
         assertThrows(
                 ResourceNotFoundException.class,
-                () -> cancellationPolicyService.applyPolicySnapshot(new Booking(), "NON_REFUND")
+                () -> cancellationPolicyService.applyPolicySnapshot(new BookingRoom(), "NON_REFUND")
         );
     }
 

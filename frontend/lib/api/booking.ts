@@ -2,7 +2,6 @@ import { apiClient } from "@/lib/api/client";
 import type {
   Booking,
   BookingCreateRequest,
-  CancellationPolicy,
   PriceCalculation,
 } from "@/types/booking";
 import type { Room } from "@/types/room";
@@ -24,8 +23,6 @@ export const calculateBookingPrice = (
     children: number;
   },
 ) => apiClient.post<PriceCalculation>("/api/bookings/calculate-price", body);
-export const getCancellationPolicies = () =>
-  apiClient.get<CancellationPolicy[]>("/api/cancellation-policies/active");
 export const createBooking = (body: BookingCreateRequest) =>
   apiClient.post<Booking>("/api/bookings", body);
 export const addBookingGuest = (

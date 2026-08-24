@@ -18,10 +18,10 @@ public interface RoomTypeRepository extends JpaRepository<RoomType, Long> {
 
     Optional<RoomType> findByIdAndDeletedAtIsNull(Long id);
 
-    @EntityGraph(attributePaths = {"beds", "amenities"})
+    @EntityGraph(attributePaths = {"beds", "amenities", "cancellationPolicy", "cancellationPolicy.rules"})
     List<RoomType> findAllByDeletedAtIsNullOrderBySortOrderAscNameAsc();
 
-    @EntityGraph(attributePaths = {"beds", "amenities"})
+    @EntityGraph(attributePaths = {"beds", "amenities", "cancellationPolicy", "cancellationPolicy.rules"})
     Optional<RoomType> findByCodeIgnoreCaseAndDeletedAtIsNull(String code);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -38,6 +38,8 @@ public interface RoomTypeRepository extends JpaRepository<RoomType, Long> {
     boolean existsBySlug(String slug);
 
     boolean existsBySlugAndIdNot(String slug, Long id);
+
+    boolean existsByCancellationPolicy_CodeIgnoreCaseAndDeletedAtIsNullAndIsActiveTrue(String code);
 
     long countByDeletedAtIsNullAndIsActiveTrue();
 

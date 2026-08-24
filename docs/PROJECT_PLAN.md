@@ -336,6 +336,7 @@
   - MODERATE: 168h → 100%, 72h → 50%, 0h → 0%
   - NON_REFUND: 0h → 0%
 - Snapshot policy + rules vào JSON → gửi lên booking
+- Admin gắn policy ở từng RoomType; room type cũ backfill tạm bằng `NON_REFUND`.
 
 #### BE-4.4 | Booking Price Calculator API | Priority: Urgent | 21/08 | Est: 4h
 
@@ -415,7 +416,7 @@
 - Tính giá từng đêm → ghi `booking_room_nights` rows
 - Snapshot fields:
   - `room_tax_percent_snapshot`
-  - `cancellation_policy_snapshot` (JSON full policy + rules)
+  - `booking_rooms.cancellation_policy_snapshot` (JSON full policy + rules theo RoomType)
   - `source_commission_percent_snapshot`
 - Tạo `booking_code` (BK-2026-XXXXXX)
 - Setup `hold_expires_at` (**15 phút** nếu không thanh toán ngay)
@@ -465,8 +466,8 @@
 - Multi-step booking wizard:
   - B1: Chọn phòng & ngày (Availability API → hiển thị phòng khả dụng)
   - B2: Nhập thông tin liên hệ + khách lưu trú
-  - B3: Chọn cancellation policy (hiển thị refund tiers)
-  - B4: Review + đặt cọc (chọn payment method → redirect gateway)
+  - B3: Review chính sách hủy theo từng RoomType đã chọn
+  - B4: Đặt cọc (chọn payment method → redirect gateway)
 - Progress indicator
 
 #### FE-5.2 | Customer — My Bookings | Priority: Urgent | 22/08 | Est: 4h
@@ -666,7 +667,7 @@
 
 - `RefundService`: xử lý hoàn tiền khi hủy booking
 - **Logic tính refund (theo DATABASE_DESIGN mục 5.3):**
-  1. Đọc `cancellation_policy_snapshot` (JSON) — không dùng policy hiện tại
+  1. Đọc `booking_rooms.cancellation_policy_snapshot` (JSON) — không dùng policy hiện tại
   2. `hours_before_cancel = scheduled_check_in_time - cancelled_at`
   3. Tìm rule: `min_hours_before` LỚN NHẤT nhưng ≤ `hours_before_cancel`
      - Ví dụ: 80h → 72h rule = 100%, 50h → 30h rule = 50%
@@ -941,7 +942,7 @@
 ## Quy tắc Snapshot (QĐ-4, QĐ-5)
 
 - Giá đêm → `booking_room_nights.price` (snapshot, bất biến)
-- Chính sách hủy → `bookings.cancellation_policy_snapshot` (JSON, bất biến)
+- Chính sách hủy → `booking_rooms.cancellation_policy_snapshot` (JSON, bất biến theo từng dòng phòng)
 - Hoa hồng OTA → `bookings.source_commission_percent_snapshot` (bất biến)
 - Giá dịch vụ → `folio_charges.unit_price` (snapshot tại thời điểm phát sinh)
 - Thông tin người mua → `invoices.buyer_*` (snapshot tại thời điểm phát hành)

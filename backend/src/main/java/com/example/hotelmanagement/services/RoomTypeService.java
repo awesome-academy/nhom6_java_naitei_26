@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.services;
 
+import com.example.hotelmanagement.dto.cancellationpolicy.CancellationPolicyResponse;
+import com.example.hotelmanagement.dto.cancellationpolicy.CancellationPolicyRuleResponse;
 import com.example.hotelmanagement.dto.roomtype.AmenityResponse;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeAmenitiesRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeBedRequest;
@@ -10,6 +12,8 @@ import com.example.hotelmanagement.dto.roomtype.RoomTypeResponse;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeStatsResponse;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeUpdateRequest;
 import com.example.hotelmanagement.entity.Amenity;
+import com.example.hotelmanagement.entity.CancellationPolicy;
+import com.example.hotelmanagement.entity.CancellationPolicyRule;
 import com.example.hotelmanagement.entity.RoomType;
 import com.example.hotelmanagement.entity.RoomTypeBed;
 import com.example.hotelmanagement.entity.enums.BedType;
@@ -17,6 +21,7 @@ import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.AmenityRepository;
+import com.example.hotelmanagement.repositories.CancellationPolicyRepository;
 import com.example.hotelmanagement.repositories.RoomTypeRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import jakarta.validation.Valid;
@@ -48,17 +53,20 @@ public class RoomTypeService {
 
     private final RoomTypeRepository roomTypeRepository;
     private final AmenityRepository amenityRepository;
+    private final CancellationPolicyRepository cancellationPolicyRepository;
     private final SlugService slugService;
     private final RoomTypeImageService roomTypeImageService;
 
     public RoomTypeService(
             RoomTypeRepository roomTypeRepository,
             AmenityRepository amenityRepository,
+            CancellationPolicyRepository cancellationPolicyRepository,
             SlugService slugService,
             RoomTypeImageService roomTypeImageService
     ) {
         this.roomTypeRepository = roomTypeRepository;
         this.amenityRepository = amenityRepository;
+        this.cancellationPolicyRepository = cancellationPolicyRepository;
         this.slugService = slugService;
         this.roomTypeImageService = roomTypeImageService;
     }
@@ -160,6 +168,10 @@ public class RoomTypeService {
         roomType.setSizeSqm(request.sizeSqm());
         roomType.setIsActive(getValueOrDefault(request.isActive(), true));
         roomType.setSortOrder(getValueOrDefault(request.sortOrder(), DEFAULT_SORT_ORDER));
+        roomType.setCancellationPolicy(resolveCancellationPolicy(
+                request.cancellationPolicyCode(),
+                roomType.getIsActive()
+        ));
     }
 
     private void applyUpdateFields(RoomType roomType, RoomTypeUpdateRequest request, int maxChildren) {
@@ -172,6 +184,10 @@ public class RoomTypeService {
         roomType.setCurrency(normalizeCurrency(request.currency()));
         roomType.setExtraBedPrice(request.extraBedPrice());
         roomType.setSizeSqm(request.sizeSqm());
+        roomType.setCancellationPolicy(resolveCancellationPolicy(
+                request.cancellationPolicyCode(),
+                getValueOrDefault(request.isActive(), roomType.getIsActive())
+        ));
 
         if (request.isActive() != null) {
             roomType.setIsActive(request.isActive());
@@ -285,6 +301,18 @@ public class RoomTypeService {
         }
     }
 
+    private CancellationPolicy resolveCancellationPolicy(String code, boolean isRoomTypeActive) {
+        if (code == null || code.isBlank()) {
+            if (isRoomTypeActive) {
+                throw new BusinessValidationException("Active room types must have a cancellation policy");
+            }
+            return null;
+        }
+        String normalizedCode = normalizeCode(code);
+        return cancellationPolicyRepository.findByCodeIgnoreCaseAndIsActiveTrue(normalizedCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Active cancellation policy", normalizedCode));
+    }
+
     private RoomTypeResponse mapRoomTypeResponse(RoomType roomType) {
         List<RoomTypeBedResponse> beds = roomType.getBeds().stream()
                 .sorted(Comparator.comparingInt(bed -> bed.getBedType().ordinal()))
@@ -317,11 +345,36 @@ public class RoomTypeService {
                 roomType.getSizeSqm(),
                 roomType.getIsActive(),
                 roomType.getSortOrder(),
+                mapCancellationPolicyResponse(roomType.getCancellationPolicy()),
                 beds,
                 amenities,
                 roomTypeImageService.getImageResponses(roomType),
                 roomType.getCreatedAt(),
                 roomType.getUpdatedAt()
+        );
+    }
+
+    private CancellationPolicyResponse mapCancellationPolicyResponse(CancellationPolicy policy) {
+        if (policy == null) {
+            return null;
+        }
+        List<CancellationPolicyRuleResponse> rules = policy.getRules().stream()
+                .sorted(Comparator.comparing(CancellationPolicyRule::getMinHoursBefore).reversed())
+                .map(rule -> new CancellationPolicyRuleResponse(
+                        rule.getMinHoursBefore(),
+                        rule.getRefundPercent()
+                ))
+                .toList();
+        return new CancellationPolicyResponse(
+                policy.getCode(),
+                policy.getName(),
+                policy.getDescription(),
+                policy.getNoShowChargePercent(),
+                policy.getIsDefault(),
+                policy.getIsActive(),
+                rules,
+                policy.getCreatedAt(),
+                policy.getUpdatedAt()
         );
     }
 

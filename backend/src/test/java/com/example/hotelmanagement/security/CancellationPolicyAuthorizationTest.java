@@ -96,6 +96,22 @@ class CancellationPolicyAuthorizationTest {
     }
 
     @Test
+    @WithMockUser(authorities = "room:update")
+    void roomUpdatePermissionCanReadActivePoliciesButCannotManageThem() throws Exception {
+        CancellationPolicyResponse response = response();
+        when(cancellationPolicyService.getActiveCancellationPolicies())
+                .thenReturn(List.of(response));
+
+        mockMvc.perform(get("/api/cancellation-policies/active"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/cancellation-policies"))
+                .andExpect(status().isForbidden());
+
+        verify(cancellationPolicyService).getActiveCancellationPolicies();
+        verifyNoMoreInteractions(cancellationPolicyService);
+    }
+
+    @Test
     @WithMockUser(authorities = "policy:manage")
     void policyPermissionAllowsCrudOperations() throws Exception {
         CancellationPolicyResponse response = response();

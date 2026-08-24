@@ -7,7 +7,9 @@ import com.example.hotelmanagement.dto.booking.BookingResponse;
 import com.example.hotelmanagement.dto.booking.BookingRoomCreateItem;
 import com.example.hotelmanagement.dto.pricing.DailyRateResponse;
 import com.example.hotelmanagement.entity.Booking;
+import com.example.hotelmanagement.entity.BookingRoom;
 import com.example.hotelmanagement.entity.BookingSource;
+import com.example.hotelmanagement.entity.CancellationPolicy;
 import com.example.hotelmanagement.entity.CustomerProfile;
 import com.example.hotelmanagement.entity.Room;
 import com.example.hotelmanagement.entity.RoomType;
@@ -47,6 +49,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -88,6 +91,13 @@ class BookingServiceTest {
                 cancellationPolicyService,
                 FIXED_CLOCK
         );
+        lenient().doAnswer(invocation -> {
+            BookingRoom bookingRoom = invocation.getArgument(0);
+            CancellationPolicy policy = invocation.getArgument(1);
+            bookingRoom.setCancellationPolicy(policy);
+            bookingRoom.setCancellationPolicySnapshot("{\"code\":\"" + policy.getCode() + "\"}");
+            return null;
+        }).when(cancellationPolicyService).applyPolicySnapshot(any(BookingRoom.class), any(CancellationPolicy.class));
     }
 
     @Test
@@ -120,7 +130,7 @@ class BookingServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         BookingCreateRequest request = new BookingCreateRequest(
-                "FLEXIBLE", null, null, null, null,
+                null, null, null, null,
                 List.of(new BookingRoomCreateItem(10L, checkIn, checkOut, 2, 0))
         );
 
@@ -156,7 +166,8 @@ class BookingServiceTest {
         assertThat(historyEntry.getChangedBy()).isEqualTo(USER_ID);
         assertThat(historyEntry.getSource()).isEqualTo(StatusChangeSource.MANUAL);
 
-        verify(cancellationPolicyService).applyPolicySnapshot(any(Booking.class), eq("FLEXIBLE"));
+        assertThat(response.rooms().getFirst().cancellationPolicyCode()).isEqualTo("FLEXIBLE");
+        verify(cancellationPolicyService).applyPolicySnapshot(any(BookingRoom.class), eq(room.getRoomType().getCancellationPolicy()));
     }
 
     @Test
@@ -194,7 +205,7 @@ class BookingServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         BookingCreateRequest request = new BookingCreateRequest(
-                "FLEXIBLE", null, null, null, null,
+                null, null, null, null,
                 List.of(
                         new BookingRoomCreateItem(10L, checkIn, checkOut, 2, 0),
                         new BookingRoomCreateItem(20L, checkIn, checkOut, 1, 1)
@@ -216,7 +227,7 @@ class BookingServiceTest {
         when(customerProfileRepository.findByUser_Id(USER_ID)).thenReturn(Optional.empty());
 
         BookingCreateRequest request = new BookingCreateRequest(
-                "FLEXIBLE", null, null, null, null,
+                null, null, null, null,
                 List.of(new BookingRoomCreateItem(10L, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2), 1, 0))
         );
 
@@ -239,7 +250,7 @@ class BookingServiceTest {
                 .thenReturn(true);
 
         BookingCreateRequest request = new BookingCreateRequest(
-                "FLEXIBLE", null, null, null, null,
+                null, null, null, null,
                 List.of(new BookingRoomCreateItem(10L, checkIn, checkOut, 1, 0))
         );
 
@@ -261,7 +272,7 @@ class BookingServiceTest {
                 .thenReturn(Optional.of(source));
 
         BookingCreateRequest request = new BookingCreateRequest(
-                "FLEXIBLE", null, null, null, null,
+                null, null, null, null,
                 List.of(new BookingRoomCreateItem(10L, checkIn, checkOut, 1, 0))
         );
 
@@ -294,7 +305,7 @@ class BookingServiceTest {
                 .thenThrow(new DataIntegrityViolationException("trigger rejected"));
 
         BookingCreateRequest request = new BookingCreateRequest(
-                "FLEXIBLE", null, null, null, null,
+                null, null, null, null,
                 List.of(new BookingRoomCreateItem(10L, checkIn, checkOut, 1, 0))
         );
 
@@ -326,7 +337,7 @@ class BookingServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         BookingCreateRequest request = new BookingCreateRequest(
-                "FLEXIBLE", null, null, null, null,
+                null, null, null, null,
                 List.of(new BookingRoomCreateItem(10L, checkIn, checkOut, 1, 0))
         );
 
@@ -346,7 +357,7 @@ class BookingServiceTest {
         when(bookingRepository.existsByBookingCode(anyString())).thenReturn(true);
 
         BookingCreateRequest request = new BookingCreateRequest(
-                "FLEXIBLE", null, null, null, null,
+                null, null, null, null,
                 List.of(new BookingRoomCreateItem(
                         10L, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2), 1, 0
                 ))
@@ -391,6 +402,7 @@ class BookingServiceTest {
                 .maxChildren(1)
                 .basePrice(money("1000000.00"))
                 .isActive(true)
+                .cancellationPolicy(createPolicy("FLEXIBLE", "Flexible"))
                 .build();
         roomType.setId(roomId + 100);
         Room room = Room.builder()
@@ -404,5 +416,16 @@ class BookingServiceTest {
 
     private static BigDecimal money(String value) {
         return new BigDecimal(value);
+    }
+
+    private CancellationPolicy createPolicy(String code, String name) {
+        return CancellationPolicy.builder()
+                .code(code)
+                .name(name)
+                .description(name + " policy")
+                .noShowChargePercent(new BigDecimal("100.00"))
+                .isDefault(true)
+                .isActive(true)
+                .build();
     }
 }

@@ -22,6 +22,7 @@ public record RoomTypeUpdateRequest(
         @DecimalMin("0.00") @Digits(integer = 12, fraction = 2) BigDecimal extraBedPrice,
         @DecimalMin(value = "0.01") @Digits(integer = 4, fraction = 2) BigDecimal sizeSqm,
         Boolean isActive,
-        @Min(0) Integer sortOrder
+        @Min(0) Integer sortOrder,
+        @Size(max = 30) @Pattern(regexp = "^[A-Za-z0-9_]*$") String cancellationPolicyCode
 ) {
 }

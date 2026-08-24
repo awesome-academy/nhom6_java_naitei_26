@@ -32,6 +32,7 @@ public record RoomTypeCreateRequest(
         @DecimalMin(value = "0.01") @Digits(integer = 4, fraction = 2) BigDecimal sizeSqm,
         Boolean isActive,
         @Min(0) Integer sortOrder,
+        @Size(max = 30) @Pattern(regexp = "^[A-Za-z0-9_]*$") String cancellationPolicyCode,
 
         @NotEmpty @Size(max = 6) List<@Valid RoomTypeBedRequest> beds,
 

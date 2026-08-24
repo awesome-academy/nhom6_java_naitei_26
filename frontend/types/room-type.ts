@@ -1,3 +1,5 @@
+import type { CancellationPolicy } from "@/types/cancellation-policy"
+
 export type BedType =
   | "SINGLE"
   | "DOUBLE"
@@ -48,6 +50,7 @@ export interface RoomType {
   sizeSqm: number | null
   isActive: boolean
   sortOrder: number
+  cancellationPolicy: CancellationPolicy | null
   beds: RoomTypeBed[]
   amenities: Amenity[]
   images: RoomTypeImage[]
@@ -74,6 +77,7 @@ export interface RoomTypeCreateRequest {
   sizeSqm: number | null
   isActive: boolean
   sortOrder: number
+  cancellationPolicyCode: string | null
   beds: RoomTypeBed[]
   amenityCodes: string[]
 }

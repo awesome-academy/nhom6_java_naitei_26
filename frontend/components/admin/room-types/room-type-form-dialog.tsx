@@ -24,6 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -47,10 +48,12 @@ import type {
   RoomTypeCreateRequest,
   RoomTypeImage,
 } from "@/types/room-type"
+import type { CancellationPolicy } from "@/types/cancellation-policy"
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024
 const MAX_IMAGES = 20
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"]
+const NO_POLICY_VALUE = "__none"
 
 const bedTypeLabels: Record<BedType, string> = {
   SINGLE: "Giường đơn",
@@ -92,6 +95,7 @@ const roomTypeSchema = z
     sizeSqm: z.number().positive("Diện tích phải lớn hơn 0").nullable(),
     isActive: z.boolean(),
     sortOrder: z.number().int().min(0),
+    cancellationPolicyCode: z.string().trim().max(30).nullable(),
     beds: z
       .array(
         z.object({
@@ -116,6 +120,13 @@ const roomTypeSchema = z
         code: "custom",
         path: ["maxChildren"],
         message: "Số trẻ em không được vượt quá sức chứa",
+      })
+    }
+    if (value.isActive && !value.cancellationPolicyCode) {
+      context.addIssue({
+        code: "custom",
+        path: ["cancellationPolicyCode"],
+        message: "Loại phòng hoạt động cần có chính sách hủy",
       })
     }
     const bedTypes = value.beds.map((bed) => bed.bedType)
@@ -148,9 +159,19 @@ interface RoomTypeFormDialogProps {
   open: boolean
   roomType: RoomType | null
   amenities: Amenity[]
+  cancellationPolicies: CancellationPolicy[]
+  policyLoadError: string | null
   canUploadImages: boolean
   onOpenChange: (open: boolean) => void
   onSaved: () => Promise<void>
+}
+
+function getPreferredPolicyCode(cancellationPolicies: CancellationPolicy[]): string | null {
+  return (
+    cancellationPolicies.find((policy) => policy.code === "NON_REFUND") ??
+    cancellationPolicies[0] ??
+    null
+  )?.code ?? null
 }
 
 function defaultValues(roomType: RoomType | null): RoomTypeFormValues {
@@ -167,6 +188,7 @@ function defaultValues(roomType: RoomType | null): RoomTypeFormValues {
     sizeSqm: roomType?.sizeSqm == null ? null : Number(roomType.sizeSqm),
     isActive: roomType?.isActive ?? true,
     sortOrder: roomType?.sortOrder ?? 0,
+    cancellationPolicyCode: roomType?.cancellationPolicy?.code ?? null,
     beds: roomType?.beds.length
       ? roomType.beds.map((bed) => ({ ...bed }))
       : [{ bedType: "QUEEN", quantity: 1 }],
@@ -183,6 +205,8 @@ export function RoomTypeFormDialog({
   open,
   roomType,
   amenities,
+  cancellationPolicies,
+  policyLoadError,
   canUploadImages,
   onOpenChange,
   onSaved,
@@ -201,6 +225,7 @@ export function RoomTypeFormDialog({
   const beds = useFieldArray({ control: form.control, name: "beds" })
   const watchedBeds = useWatch({ control: form.control, name: "beds" })
   const selectedAmenities = useWatch({ control: form.control, name: "amenityCodes" })
+  const selectedCancellationPolicyCode = useWatch({ control: form.control, name: "cancellationPolicyCode" })
   const selectedName = useWatch({ control: form.control, name: "name" })
   const isActive = useWatch({ control: form.control, name: "isActive" })
 
@@ -221,6 +246,17 @@ export function RoomTypeFormDialog({
   useEffect(() => {
     pendingImagesRef.current = pendingImages
   }, [pendingImages])
+
+  useEffect(() => {
+    if (!open || !isActive || form.getValues("cancellationPolicyCode")) return
+    const preferredPolicyCode = getPreferredPolicyCode(cancellationPolicies)
+    if (preferredPolicyCode) {
+      form.setValue("cancellationPolicyCode", preferredPolicyCode, {
+        shouldDirty: false,
+        shouldValidate: true,
+      })
+    }
+  }, [cancellationPolicies, form, isActive, open])
 
   useEffect(() => {
     return () => pendingImagesRef.current.forEach(
@@ -307,6 +343,7 @@ export function RoomTypeFormDialog({
       sizeSqm: values.sizeSqm,
       isActive: values.isActive,
       sortOrder: values.sortOrder,
+      cancellationPolicyCode: values.cancellationPolicyCode,
     }
 
     try {
@@ -416,6 +453,43 @@ export function RoomTypeFormDialog({
                   </p>
                 </div>
               </div>
+              <Field
+                label="Chính sách hủy"
+                error={form.formState.errors.cancellationPolicyCode?.message}
+              >
+                <Select
+                  value={selectedCancellationPolicyCode ?? NO_POLICY_VALUE}
+                  disabled={isActive && cancellationPolicies.length === 0}
+                  onValueChange={(value) => {
+                    form.setValue(
+                      "cancellationPolicyCode",
+                      value === NO_POLICY_VALUE ? null : value,
+                      { shouldDirty: true, shouldValidate: true }
+                    )
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Chọn chính sách hủy" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={NO_POLICY_VALUE} disabled={isActive}>
+                        {isActive ? "Chọn chính sách" : "Không áp dụng"}
+                      </SelectItem>
+                      {cancellationPolicies.map((policy) => (
+                        <SelectItem key={policy.code} value={policy.code}>
+                          {policy.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                {policyLoadError && (
+                  <p className="text-xs text-[var(--destructive)]">
+                    Không tải được danh sách chính sách hủy: {policyLoadError}
+                  </p>
+                )}
+              </Field>
             </section>
 
             <section className="space-y-4">
