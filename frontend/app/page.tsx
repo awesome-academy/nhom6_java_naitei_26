@@ -65,7 +65,7 @@ export default function HomePage() {
               {/* CTA */}
               <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
                 <Button size="lg" asChild className="h-11 px-6 bg-[var(--accent)] text-white hover:bg-[var(--accent)]/90">
-                  <Link href="/register">
+                  <Link href="/booking">
                     Tìm phòng ngay
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Link>
@@ -512,7 +512,7 @@ export default function HomePage() {
                     <span className="text-sm text-[var(--muted-foreground)]">/vĩnh viễn</span>
                   </div>
                   <Button className="mt-6 w-full h-12 bg-[var(--accent)] text-white hover:bg-[var(--accent)]/90" asChild size="lg">
-                    <Link href="/register">Bắt đầu đặt phòng miễn phí</Link>
+                    <Link href="/booking">Bắt đầu đặt phòng</Link>
                   </Button>
                 </div>
 

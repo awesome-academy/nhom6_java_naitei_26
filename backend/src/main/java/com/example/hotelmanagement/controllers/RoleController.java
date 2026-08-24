@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.rbac.PermissionResponse;
 import com.example.hotelmanagement.dto.rbac.RoleCreateRequest;
 import com.example.hotelmanagement.dto.rbac.RolePermissionUpdateRequest;
@@ -27,6 +29,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping(value = "/api/roles", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Roles and RBAC", description = "Manage roles and their permission assignments.")
 public class RoleController {
 
     private final RoleService roleService;
@@ -40,18 +43,21 @@ public class RoleController {
         this.rolePermissionService = rolePermissionService;
     }
 
+    @Operation(summary = "Get Roles")
     @GetMapping
     @PreAuthorize(PermissionExpressions.RBAC_READ)
     public ResponseEntity<List<RoleResponse>> getRoles() {
         return ResponseEntity.ok(roleService.getRoles());
     }
 
+    @Operation(summary = "Get Role")
     @GetMapping("/{code}")
     @PreAuthorize(PermissionExpressions.RBAC_READ)
     public ResponseEntity<RoleResponse> getRole(@PathVariable String code) {
         return ResponseEntity.ok(roleService.getRole(code));
     }
 
+    @Operation(summary = "Create Role")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.RBAC_MANAGE)
     public ResponseEntity<RoleResponse> createRole(@Valid @RequestBody RoleCreateRequest request) {
@@ -60,6 +66,7 @@ public class RoleController {
         return ResponseEntity.created(location).body(response);
     }
 
+    @Operation(summary = "Update Role")
     @PatchMapping(value = "/{code}", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.RBAC_MANAGE)
     public ResponseEntity<RoleResponse> updateRole(
@@ -69,6 +76,7 @@ public class RoleController {
         return ResponseEntity.ok(roleService.updateRole(code, request));
     }
 
+    @Operation(summary = "Delete Role")
     @DeleteMapping("/{code}")
     @PreAuthorize(PermissionExpressions.RBAC_MANAGE)
     public ResponseEntity<Void> deleteRole(@PathVariable String code) {
@@ -76,12 +84,14 @@ public class RoleController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "Get Role Permissions")
     @GetMapping("/{code}/permissions")
     @PreAuthorize(PermissionExpressions.RBAC_READ)
     public ResponseEntity<List<PermissionResponse>> getRolePermissions(@PathVariable String code) {
         return ResponseEntity.ok(rolePermissionService.getRolePermissions(code));
     }
 
+    @Operation(summary = "Replace Role Permissions")
     @PutMapping(value = "/{code}/permissions", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.RBAC_MANAGE)
     public ResponseEntity<RoleResponse> replaceRolePermissions(
@@ -91,6 +101,7 @@ public class RoleController {
         return ResponseEntity.ok(rolePermissionService.replaceRolePermissions(code, request));
     }
 
+    @Operation(summary = "Add Role Permission")
     @PostMapping("/{code}/permissions/{permissionCode}")
     @PreAuthorize(PermissionExpressions.RBAC_MANAGE)
     public ResponseEntity<RoleResponse> addRolePermission(
@@ -100,6 +111,7 @@ public class RoleController {
         return ResponseEntity.ok(rolePermissionService.addRolePermission(code, permissionCode));
     }
 
+    @Operation(summary = "Remove Role Permission")
     @DeleteMapping("/{code}/permissions/{permissionCode}")
     @PreAuthorize(PermissionExpressions.RBAC_MANAGE)
     public ResponseEntity<RoleResponse> removeRolePermission(

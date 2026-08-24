@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.shiftassignment.ShiftAssignmentCreateRequest;
 import com.example.hotelmanagement.dto.shiftassignment.ShiftAssignmentResponse;
 import com.example.hotelmanagement.dto.shiftassignment.ShiftAssignmentUpdateRequest;
@@ -27,6 +29,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping(value = "/api/shift-assignments", produces = MediaType.APPLICATION_JSON_VALUE)
 @PreAuthorize(PermissionExpressions.SHIFT_MANAGE)
+@Tag(name = "Shift Assignments", description = "Assign staff to shifts while preventing overlapping assignments.")
 public class ShiftAssignmentController {
 
     private final ShiftAssignmentService shiftAssignmentService;
@@ -35,16 +38,19 @@ public class ShiftAssignmentController {
         this.shiftAssignmentService = shiftAssignmentService;
     }
 
+    @Operation(summary = "Get Shift Assignments")
     @GetMapping
     public ResponseEntity<List<ShiftAssignmentResponse>> getShiftAssignments() {
         return ResponseEntity.ok(shiftAssignmentService.getShiftAssignments());
     }
 
+    @Operation(summary = "Get Shift Assignment")
     @GetMapping("/{publicId}")
     public ResponseEntity<ShiftAssignmentResponse> getShiftAssignment(@PathVariable UUID publicId) {
         return ResponseEntity.ok(shiftAssignmentService.getShiftAssignment(publicId));
     }
 
+    @Operation(summary = "Create Shift Assignment")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ShiftAssignmentResponse> createShiftAssignment(
             @Valid @RequestBody ShiftAssignmentCreateRequest request,
@@ -58,6 +64,7 @@ public class ShiftAssignmentController {
         return ResponseEntity.created(location).body(response);
     }
 
+    @Operation(summary = "Update Shift Assignment")
     @PutMapping(value = "/{publicId}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ShiftAssignmentResponse> updateShiftAssignment(
             @PathVariable UUID publicId,
@@ -71,6 +78,7 @@ public class ShiftAssignmentController {
         ));
     }
 
+    @Operation(summary = "Delete Shift Assignment")
     @DeleteMapping("/{publicId}")
     public ResponseEntity<Void> deleteShiftAssignment(@PathVariable UUID publicId) {
         shiftAssignmentService.deleteShiftAssignment(publicId);

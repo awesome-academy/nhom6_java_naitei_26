@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.rbac.PermissionResponse;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import com.example.hotelmanagement.services.PermissionService;
@@ -15,6 +17,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping(value = "/api/permissions", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Permissions", description = "Read the permissions available to the RBAC system.")
 public class PermissionController {
 
     private final PermissionService permissionService;
@@ -23,12 +26,14 @@ public class PermissionController {
         this.permissionService = permissionService;
     }
 
+    @Operation(summary = "Get Permissions")
     @GetMapping
     @PreAuthorize(PermissionExpressions.RBAC_READ)
     public ResponseEntity<List<PermissionResponse>> getPermissions() {
         return ResponseEntity.ok(permissionService.getPermissions());
     }
 
+    @Operation(summary = "Get Permission")
     @GetMapping("/{code}")
     @PreAuthorize(PermissionExpressions.RBAC_READ)
     public ResponseEntity<PermissionResponse> getPermission(@PathVariable String code) {

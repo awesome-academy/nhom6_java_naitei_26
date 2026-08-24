@@ -248,6 +248,7 @@ public class RoomService {
                 .toList();
 
         return new RoomResponse(
+                room.getId(),
                 room.getRoomNumber(),
                 room.getRoomType().getCode(),
                 room.getRoomType().getName(),

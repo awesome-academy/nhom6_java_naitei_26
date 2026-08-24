@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationRequest;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationResponse;
 import com.example.hotelmanagement.security.PermissionExpressions;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(value = "/api/bookings", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Booking Pricing", description = "Preview booking prices without creating a booking.")
 public class BookingCalculatorController {
 
     private final BookingCalculatorService bookingCalculatorService;
@@ -23,6 +26,7 @@ public class BookingCalculatorController {
         this.bookingCalculatorService = bookingCalculatorService;
     }
 
+    @Operation(summary = "Calculate Price")
     @PostMapping(value = "/calculate-price", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
     public ResponseEntity<BookingPriceCalculationResponse> calculatePrice(

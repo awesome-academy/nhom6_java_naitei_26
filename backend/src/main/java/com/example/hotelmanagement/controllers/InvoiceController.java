@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.invoice.InvoiceAdjustmentRequest;
 import com.example.hotelmanagement.dto.invoice.InvoicePdfResponse;
 import com.example.hotelmanagement.dto.invoice.InvoiceResponse;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(value = "/api", produces = MediaType.APPLICATION_JSON_VALUE)
 @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
+@Tag(name = "Invoices", description = "Manage draft invoice details and invoice lookup.")
 public class InvoiceController {
 
     private final InvoiceService invoiceService;
@@ -58,6 +61,7 @@ public class InvoiceController {
         return ResponseEntity.ok(invoiceService.voidInvoice(invoicePublicId, principal.getId(), request));
     }
 
+    @Operation(summary = "Get Invoice")
     @GetMapping("/invoices/{invoicePublicId}")
     public ResponseEntity<InvoiceResponse> getInvoice(
             @PathVariable String invoicePublicId
@@ -65,6 +69,7 @@ public class InvoiceController {
         return ResponseEntity.ok(invoiceService.getInvoice(invoicePublicId));
     }
 
+    @Operation(summary = "Get Draft By Booking")
     @GetMapping("/bookings/{bookingPublicId}/invoices/draft")
     public ResponseEntity<InvoiceResponse> getDraftByBooking(
             @PathVariable String bookingPublicId
@@ -72,6 +77,7 @@ public class InvoiceController {
         return ResponseEntity.ok(invoiceService.getDraftByBooking(bookingPublicId));
     }
 
+    @Operation(summary = "Add Adjustment")
     @PostMapping(
             value = "/invoices/{invoicePublicId}/adjustments",
             consumes = MediaType.APPLICATION_JSON_VALUE
@@ -83,6 +89,7 @@ public class InvoiceController {
         return ResponseEntity.ok(invoiceService.addAdjustment(invoicePublicId, request));
     }
 
+    @Operation(summary = "Remove Adjustment")
     @DeleteMapping("/invoices/{invoicePublicId}/adjustments/{itemId}")
     public ResponseEntity<InvoiceResponse> removeAdjustment(
             @PathVariable String invoicePublicId,

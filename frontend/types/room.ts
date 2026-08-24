@@ -11,6 +11,7 @@ export type RoomOperationalStatus =
   | "RENOVATION"
 
 export interface Room {
+  roomId: number
   roomNumber: string
   roomTypeCode: string
   roomTypeName: string

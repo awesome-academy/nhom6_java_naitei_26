@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.foliocharge.FolioChargeCreateRequest;
 import com.example.hotelmanagement.dto.foliocharge.FolioChargeResponse;
 import com.example.hotelmanagement.dto.foliocharge.FolioChargeVoidRequest;
@@ -28,6 +30,7 @@ import java.util.List;
         produces = MediaType.APPLICATION_JSON_VALUE
 )
 @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
+@Tag(name = "Folio Charges", description = "Record and void stay-related service charges.")
 public class FolioChargeController {
 
     private final FolioChargeService folioChargeService;
@@ -36,6 +39,7 @@ public class FolioChargeController {
         this.folioChargeService = folioChargeService;
     }
 
+    @Operation(summary = "Get Folio Charges")
     @GetMapping
     public ResponseEntity<List<FolioChargeResponse>> getFolioCharges(
             @PathVariable String bookingPublicId
@@ -43,6 +47,7 @@ public class FolioChargeController {
         return ResponseEntity.ok(folioChargeService.getFolioCharges(bookingPublicId));
     }
 
+    @Operation(summary = "Create Folio Charge")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<FolioChargeResponse> createFolioCharge(
             @PathVariable String bookingPublicId,
@@ -61,6 +66,7 @@ public class FolioChargeController {
         return ResponseEntity.created(location).body(response);
     }
 
+    @Operation(summary = "Void Folio Charge")
     @PatchMapping(value = "/{chargeId}/void", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<FolioChargeResponse> voidFolioCharge(
             @PathVariable String bookingPublicId,

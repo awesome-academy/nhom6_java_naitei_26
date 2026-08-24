@@ -76,7 +76,14 @@ export class ApiClient {
       }
     }
 
-    const token = this.getAccessToken()
+    let token = this.getAccessToken()
+    if (!token) {
+      const refreshed = await this.refreshAccessToken()
+      if (refreshed) {
+        token = this.getAccessToken()
+      }
+    }
+
     if (token) {
       headers.set("Authorization", `Bearer ${token}`)
     }
@@ -113,10 +120,12 @@ export class ApiClient {
         status: number
         fieldErrors?: Record<string, string>
         response: ApiErrorResponse
+        endpoint: string
       }
-      error.status = errorData.status
+      error.status = errorData.status ?? response.status
       error.fieldErrors = errorData.fieldErrors
       error.response = errorData
+      error.endpoint = endpoint
       throw error
     }
 

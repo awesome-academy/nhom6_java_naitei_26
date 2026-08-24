@@ -17,6 +17,8 @@ public record BookingRoomResponse(
         BookingRoomStatus status,
         Integer guestCount,
         BigDecimal roomSubtotal,
+        String cancellationPolicyCode,
+        String cancellationPolicyName,
         OffsetDateTime assignedAt,
         Long assignedByStaffId,
         List<BookingRoomNightResponse> nights

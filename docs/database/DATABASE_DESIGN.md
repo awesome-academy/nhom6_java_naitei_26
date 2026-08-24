@@ -69,7 +69,7 @@ Mỗi thực thể dưới đây tồn tại vì một câu trong tài liệu y�
 **Pricing & Policy**
 
 - **RateOverride** — giá thực bán khác giá niêm yết theo mùa/cuối tuần/dịp lễ. **Master/config data**: dùng để *tính* giá lúc đặt, không dùng để *tính lại* booking cũ.
-- **CancellationPolicy + CancellationPolicyRule** — dòng 97 và BR-005: "hệ thống tính số tiền hoàn dựa trên **thời điểm hủy**". Một mốc thời gian duy nhất không diễn đạt được chính sách thực tế nhiều bậc (72h → 100%, 30h → 50%, 0h → 0%), nên Policy tách thành nhiều Rule. Toàn bộ policy + rules được snapshot vào booking để đổi chính sách không hồi tố khách cũ.
+- **CancellationPolicy + CancellationPolicyRule** — dòng 97 và BR-005: "hệ thống tính số tiền hoàn dựa trên **thời điểm hủy**". Một mốc thời gian duy nhất không diễn đạt được chính sách thực tế nhiều bậc (72h → 100%, 30h → 50%, 0h → 0%), nên Policy tách thành nhiều Rule. Admin gắn policy cho từng RoomType; toàn bộ policy + rules được snapshot vào từng `booking_rooms` để đổi chính sách không hồi tố khách cũ.
 
 **Booking & Availability**
 
@@ -115,7 +115,8 @@ CancellationPolicy 1─N CancellationPolicyRule
 
 CustomerProfile 1─N Booking  (nullable: walk-in không có account)
 BookingSource   1─N Booking
-CancellationPolicy 1─N Booking  (+ snapshot JSONB toàn bộ policy vào booking)
+CancellationPolicy 1─N RoomType
+CancellationPolicy 1─N BookingRoom  (+ snapshot JSONB toàn bộ policy vào từng booking room)
 
 Booking 1─N BookingRoom ────── N─1 Room       ← overlap check bằng trigger BR-002
 BookingRoom 1─N BookingRoomNight              ← 1 dòng / 1 đêm, source of truth giá phòng
@@ -144,7 +145,7 @@ Dòng 74 yêu cầu "kiểm tra lại availability trước khi tạo booking". 
 Dòng 76-78: booking tạo ở trạng thái PENDING rồi mới thanh toán. Nếu khách bỏ giữa đường, phòng bị giữ vô thời hạn và không bán được. Cần `hold_expires_at` + job giải phóng. Thiếu cột này là lỗi thất thoát doanh thu.
 
 **QĐ-4. Snapshot mọi thứ ảnh hưởng tới tiền, đúng một lần, tại đúng thời điểm.**
-Giá đêm (`booking_room_nights.price`), chính sách hủy (`bookings.cancellation_policy_snapshot`), hoa hồng OTA (`bookings.source_commission_percent_snapshot`), giá dịch vụ (`folio_charges.unit_price`), thông tin người mua trên hóa đơn (`invoices.buyer_*`) đều được copy tại thời điểm giao dịch. Nếu join sang bảng gốc để hiển thị, việc Staff sửa giá hôm nay sẽ làm đổi hóa đơn đã in tháng trước.
+Giá đêm (`booking_room_nights.price`), chính sách hủy (`booking_rooms.cancellation_policy_snapshot`), hoa hồng OTA (`bookings.source_commission_percent_snapshot`), giá dịch vụ (`folio_charges.unit_price`), thông tin người mua trên hóa đơn (`invoices.buyer_*`) đều được copy tại thời điểm giao dịch. Nếu join sang bảng gốc để hiển thị, việc Staff sửa giá hôm nay sẽ làm đổi hóa đơn đã in tháng trước.
 
 **QĐ-5. Ba mốc snapshot — thay đổi master data không hồi tố xuống dưới.**
 
@@ -391,6 +392,7 @@ Nếu bỏ shift management, hai bảng này có thể để trống mà không 
 | `size_sqm`                                     | NUMERIC(6,2)  | NULL                                         |                                                                                                                                 |
 | `is_active`                                    | BOOLEAN       | NOT NULL default true                        | Ngừng bán loại phòng mà không xóa                                                                                        |
 | `sort_order`                                   | SMALLINT      | NOT NULL default 0                           | Dòng 199 phòng nổi bật                                                                                                      |
+| `cancellation_policy_id`                       | BIGINT        | NULL, FK→cancellation_policies RESTRICT      | Admin chọn chính sách hủy áp dụng cho loại phòng này. Bắt buộc khi `is_active=true`; inactive được phép trống để cấu hình sau. RoomType cũ được backfill tạm bằng `NON_REFUND` |
 | `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ   |                                              |                                                                                                                                 |
 
 ### 4.2. `room_type_beds`
@@ -577,9 +579,9 @@ Lợi ích so với hard-code `if >= 72 ... else if >= 30 ...`: business thêm b
 
 Trong đó `scheduled_check_in_time` = `MIN(booking_rooms.check_in_date)` của booking kết hợp giờ nhận phòng chuẩn của khách sạn. Query tính refund cụ thể ở mục 9.6.
 
-### 5.4. Snapshot chính sách hủy vào booking
+### 5.4. Snapshot chính sách hủy vào từng booking room
 
-`bookings.cancellation_policy_id` chỉ là **reference tới policy gốc** (để biết booking dùng policy nào, phục vụ báo cáo). Số tiền hoàn **phải** tính từ `bookings.cancellation_policy_snapshot JSONB` — bản chụp toàn bộ policy **kèm rules** tại thời điểm điều khoản được chốt với khách:
+`booking_rooms.cancellation_policy_id` chỉ là **reference tới policy gốc** (để biết từng dòng phòng dùng policy nào, phục vụ báo cáo). Số tiền hoàn **phải** tính từ `booking_rooms.cancellation_policy_snapshot JSONB` — bản chụp toàn bộ policy **kèm rules** tại thời điểm điều khoản được chốt với khách:
 
 ```json
 {
@@ -596,9 +598,10 @@ Trong đó `scheduled_check_in_time` = `MIN(booking_rooms.check_in_date)` của 
 
 Ba điểm cần đúng:
 
-1. Snapshot **đúng một policy áp dụng cho booking đó**, không copy toàn bộ bảng `cancellation_policies`.
+1. Snapshot **đúng policy của RoomType tại thời điểm tạo booking_room**, không copy toàn bộ bảng `cancellation_policies`.
 2. Thời điểm snapshot: khi điều khoản thương mại được khách chấp nhận. Với luồng ở mục 7 của spec (tạo booking → thanh toán → xác nhận), điều khoản hủy được hiển thị và chấp nhận ngay ở bước tạo booking, nên snapshot **tại lúc tạo booking**. Nếu team đổi flow sang "chấp nhận điều khoản ở bước thanh toán", chuyển sang snapshot lúc `CONFIRMED` — chỉ cần thống nhất một chỗ và ghi vào code comment.
-3. Sau khi snapshot, Admin sửa `cancellation_policies`/`cancellation_policy_rules` (kể cả xóa policy làm CASCADE mất rules) **không** ảnh hưởng booking cũ, vì phép tính refund đọc từ JSONB chứ không join sang bảng gốc. Đây là lý do không cần versioning hay SCD Type 2 cho policy (P8).
+3. Một booking có thể gồm nhiều RoomType với nhiều policy khác nhau; khi hủy, refund tính theo từng `booking_rooms.room_subtotal` và snapshot của dòng phòng đó rồi cộng lại.
+4. Sau khi snapshot, Admin sửa `room_types.cancellation_policy_id`, `cancellation_policies`/`cancellation_policy_rules` (kể cả xóa policy làm CASCADE mất rules) **không** ảnh hưởng booking cũ, vì phép tính refund đọc từ JSONB chứ không join sang bảng gốc. Đây là lý do không cần versioning hay SCD Type 2 cho policy (P8).
 
 ---
 
@@ -645,8 +648,6 @@ Giữ thông tin **đơn đặt** và **người liên hệ**. Không giữ kho�
 | `room_tax_percent_snapshot`          | NUMERIC(5,2)           | NOT NULL default 0, CHECK`BETWEEN 0 AND 100` | Thuế suất áp cho tiền phòng, chốt lúc tạo booking. Cần để`tax_total` và dòng ROOM trên hóa đơn tính lại được từ snapshot mà không đọc config hiện tại. **Cần business xác nhận thuế suất** — xem mục 14 |
 | `currency`                           | CHAR(3)                | NOT NULL default`VND`                        |                                                                                                                                                                                                                                                     |
 | `payment_status`                     | booking_payment_status | NOT NULL default`UNPAID`                     | `UNPAID / PARTIALLY_PAID / PAID / PARTIALLY_REFUNDED / REFUNDED`                                                                                                                                                                                  |
-| `cancellation_policy_id`             | BIGINT                 | NULL, FK→cancellation_policies RESTRICT       | Chỉ reference, không dùng để tính refund                                                                                                                                                                                                      |
-| `cancellation_policy_snapshot`       | JSONB                  | NULL                                           | **Nguồn tính refund** (mục 5.4)                                                                                                                                                                                                            |
 | `hold_expires_at`                    | TIMESTAMPTZ            | NULL                                           | QĐ-3: mốc hết hạn giữ phòng khi`status='PENDING'`                                                                                                                                                                                           |
 | `special_requests`                   | TEXT                   | NULL                                           |                                                                                                                                                                                                                                                     |
 | `internal_notes`                     | TEXT                   | NULL                                           | Chỉ Staff thấy                                                                                                                                                                                                                                    |
@@ -702,6 +703,8 @@ Nơi BR-001, BR-002, BR-003 và BR-009 được thực thi. Đây cũng là nơi
 | `room_type_id`                | BIGINT              | NOT NULL, FK→room_types RESTRICT                                   | **Chỉ là reference**, dùng để join lấy thông tin loại phòng hiện tại và cho báo cáo                                                                                    |
 | `room_type_code_snapshot`     | VARCHAR(30)         | NOT NULL                                                            | Snapshot code loại phòng lúc đặt                                                                                                                                                      |
 | `room_type_name_snapshot`     | VARCHAR(120)        | NOT NULL                                                            | Snapshot tên loại phòng lúc đặt. Cần vì Staff có thể đổi tên "Deluxe" thành "Deluxe Garden"; hóa đơn và lịch sử của khách cũ phải giữ tên tại thời điểm bán |
+| `cancellation_policy_id`      | BIGINT              | NULL, FK→cancellation_policies RESTRICT                             | Reference policy gốc của dòng phòng, không dùng để tính refund                                                                                                                   |
+| `cancellation_policy_snapshot`| JSONB               | NULL                                                                | **Nguồn tính refund** cho dòng phòng này (mục 5.4)                                                                                                                              |
 | `check_in_date`               | DATE                | NOT NULL                                                            |                                                                                                                                                                                            |
 | `check_out_date`              | DATE                | NOT NULL,**CHECK `> check_in_date`**                        | **BR-001** cưỡng chế tại DB                                                                                                                                                      |
 | `nights`                      | INT                 | GENERATED ALWAYS AS (`DATEDIFF(check_out_date, check_in_date)`) STORED | Số đêm lưu trú. MySQL 8 hỗ trợ generated columns                                                                                                                                                              |
@@ -1221,7 +1224,7 @@ Log thô mọi lần gateway gọi về. Chỉ ghi thêm.
 | `id`                          | BIGINT        | PK                              |                                                                                                                                  |
 | `payment_id`                  | BIGINT        | NOT NULL, FK→payments RESTRICT |                                                                                                                                  |
 | `booking_id`                  | BIGINT        | NOT NULL, FK→bookings RESTRICT |                                                                                                                                  |
-| `amount`                      | NUMERIC(14,2) | NOT NULL, CHECK`> 0`          | Tính từ`cancellation_policy_snapshot` (mục 9.6), không từ policy hiện tại                                               |
+| `amount`                      | NUMERIC(14,2) | NOT NULL, CHECK`> 0`          | Tính từ `booking_rooms.cancellation_policy_snapshot` (mục 9.6), không từ policy hiện tại                                |
 | `reason`                      | refund_reason | NOT NULL                        | `CUSTOMER_CANCEL / HOTEL_CANCEL / OVERCHARGE / NO_SHOW_ADJUST / OTHER`                                                         |
 | `status`                      | refund_status | NOT NULL default`PENDING`     | `PENDING / PROCESSING / COMPLETED / FAILED / REJECTED`                                                                         |
 | `policy_applied`              | JSONB         | NULL                            | Snapshot phép tính: bậc rule nào khớp,`hours_before_cancel`, phần trăm áp dụng. Cần khi khách tranh luận số tiền |
@@ -1401,7 +1404,7 @@ Cả hai trigger nên dùng `SELECT ... FROM rooms WHERE id = NEW.room_id FOR UP
 | `trg_night_within_stay`      | `booking_room_nights`                        | `CREATE TRIGGER ... BEFORE INSERT ON booking_room_nights FOR EACH ROW BEGIN ... SIGNAL ... END` — đêm phải nằm trong khoảng lưu trú (6.4) |
 | `trg_stay_range_vs_nights`   | `booking_rooms`                              | `CREATE TRIGGER ... AFTER UPDATE ON booking_rooms FOR EACH ROW BEGIN ... END` — đổi ngày không được để night row lạc ngoài khoảng (6.4) |
 | `trg_booking_totals`         | `booking_room_nights`, `folio_charges`     | `CREATE TRIGGER ... AFTER INSERT/UPDATE/DELETE ON booking_room_nights/folio_charges FOR EACH ROW BEGIN UPDATE bookings SET ... END` — cập nhật totals |
-| `trg_confirm_completeness`   | `bookings`                                   | `CREATE TRIGGER ... BEFORE UPDATE ON bookings FOR EACH ROW BEGIN ... SIGNAL ... END` — khi`→ CONFIRMED`: đủ night rows, tổng khớp, có policy snapshot |
+| `trg_confirm_completeness`   | `bookings`                                   | `CREATE TRIGGER ... BEFORE UPDATE ON bookings FOR EACH ROW BEGIN ... SIGNAL ... END` — khi`→ CONFIRMED`: đủ night rows, tổng khớp, mọi `booking_rooms` có policy snapshot |
 | `trg_payment_ledger`         | `payments`, `refunds`                      | `CREATE TRIGGER ... AFTER INSERT/UPDATE ON payments/refunds FOR EACH ROW BEGIN UPDATE bookings SET ... END` — cập nhật paid/refunded/payment_status |
 | `trg_invoice_immutable`      | `invoices`                                   | `CREATE TRIGGER ... BEFORE UPDATE/DELETE ON invoices FOR EACH ROW BEGIN SIGNAL ... END` — chặn sửa sau`ISSUED`, chặn delete (7.4) |
 | `trg_invoice_item_immutable` | `invoice_items`                              | `CREATE TRIGGER ... BEFORE INSERT/UPDATE/DELETE ON invoice_items FOR EACH ROW BEGIN ... END` — chặn khi hóa đơn cha`<> DRAFT` (7.5) |
@@ -1474,38 +1477,40 @@ START TRANSACTION;
   -- Khóa hàng phòng trước để tránh race với trigger BR-002
   SELECT 1 FROM rooms WHERE id = $16 FOR UPDATE;
 
-  INSERT INTO bookings (
-      public_id, booking_code, customer_id, source_id,
-      source_commission_percent_snapshot, status,
-      contact_name, contact_email, contact_phone,
-      adults, children, rooms_total, room_tax_percent_snapshot,
-      tax_total, total_amount, hold_expires_at, currency,
-      cancellation_policy_id, cancellation_policy_snapshot)
-  SELECT UUID(), $1, $2, $3,
-         s.commission_percent, 'PENDING',
-         $4, $5, $6, $7, $8, $9, $10,
-         $11, $12, DATE_ADD(NOW(), INTERVAL 15 MINUTE), 'VND',
-         p.id,
-         JSON_OBJECT(
-           'code', p.code, 'name', p.name,
-           'no_show_charge_percent', p.no_show_charge_percent,
-           'rules', (SELECT JSON_ARRAYAGG(JSON_OBJECT(
-                              'min_hours_before', r.min_hours_before,
-                              'refund_percent',   r.refund_percent)
-                            ORDER BY r.min_hours_before DESC)
-                     FROM cancellation_policy_rules r WHERE r.policy_id = p.id))
-  FROM booking_sources s, cancellation_policies p
-  WHERE s.id = $3 AND p.id = $13;
+	  INSERT INTO bookings (
+	      public_id, booking_code, customer_id, source_id,
+	      source_commission_percent_snapshot, status,
+	      contact_name, contact_email, contact_phone,
+	      adults, children, rooms_total, room_tax_percent_snapshot,
+	      tax_total, total_amount, hold_expires_at, currency)
+	  SELECT UUID(), $1, $2, $3,
+	         s.commission_percent, 'PENDING',
+	         $4, $5, $6, $7, $8, $9, $10,
+	         $11, $12, DATE_ADD(NOW(), INTERVAL 15 MINUTE), 'VND'
+	  FROM booking_sources s
+	  WHERE s.id = $3;
 
   -- Nếu phòng đã bị người khác giữ: trigger BR-002 ném lỗi SQLSTATE '45000'
   -- Backend bắt 45000 → trả 409 "Phòng vừa được đặt, vui lòng chọn phòng khác"
-  INSERT INTO booking_rooms (
-      booking_id, room_id, room_type_id,
-      room_type_code_snapshot, room_type_name_snapshot,
-      check_in_date, check_out_date, room_subtotal, status)
-  SELECT LAST_INSERT_ID(), r.id, rt.id, rt.code, rt.name, $14, $15, 0, 'RESERVED'
-  FROM rooms r JOIN room_types rt ON rt.id = r.room_type_id
-  WHERE r.id = $16;
+	  INSERT INTO booking_rooms (
+	      booking_id, room_id, room_type_id,
+	      room_type_code_snapshot, room_type_name_snapshot,
+	      cancellation_policy_id, cancellation_policy_snapshot,
+	      check_in_date, check_out_date, room_subtotal, status)
+	  SELECT LAST_INSERT_ID(), r.id, rt.id, rt.code, rt.name,
+	         p.id,
+	         JSON_OBJECT(
+	           'code', p.code, 'name', p.name,
+	           'no_show_charge_percent', p.no_show_charge_percent,
+	           'rules', (SELECT JSON_EXTRACT(CONCAT('[', COALESCE(GROUP_CONCAT(JSON_OBJECT(
+	                              'min_hours_before', r.min_hours_before,
+	                              'refund_percent',   r.refund_percent)
+	                            ORDER BY r.min_hours_before DESC SEPARATOR ','), ''), ']'), '$')
+	                     FROM cancellation_policy_rules r WHERE r.policy_id = p.id)),
+	         $14, $15, 0, 'RESERVED'
+	  FROM rooms r JOIN room_types rt ON rt.id = r.room_type_id
+	  JOIN cancellation_policies p ON p.id = rt.cancellation_policy_id
+	  WHERE r.id = $16;
 
   -- Giá từng đêm: rate_override (priority cao nhất) → price_override → base_price
   -- MySQL không có generate_series → tạo dãy ngày bằng application loop hoặc recursive CTE
@@ -1614,46 +1619,44 @@ ORDER BY r.room_number;
 
 ### 9.6. Tính tiền hoàn khi hủy (dòng 97, BR-005, mục 5.3)
 
-Đọc **từ snapshot**, không join sang `cancellation_policy_rules`.
+Đọc **từ snapshot trên từng booking room**, không join sang `cancellation_policy_rules`.
 
 ```sql
-WITH stay AS (
-  SELECT MIN(br.check_in_date) AS first_check_in
+WITH room_ctx AS (
+  SELECT br.id,
+         br.room_subtotal,
+         br.cancellation_policy_snapshot AS snap,
+         TIMESTAMPDIFF(HOUR,
+           NOW(),
+           TIMESTAMP(CAST(br.check_in_date AS DATE), '14:00:00')
+         ) AS hours_before_cancel
   FROM booking_rooms br
   WHERE br.booking_id = $1 AND br.status IN ('RESERVED','OCCUPIED')
 ),
-ctx AS (
-  SELECT b.paid_amount - b.refunded_amount AS net_received,
-         b.cancellation_policy_snapshot    AS snap,
-         TIMESTAMPDIFF(HOUR,
-           NOW(),
-           TIMESTAMP(CAST(s.first_check_in AS DATE), '14:00:00')
-         ) AS hours_before_cancel
-  FROM bookings b CROSS JOIN stay s
-  WHERE b.id = $1
-),
 matched AS (
-  -- MySQL không có jsonb_array_elements; duyệt bằng JSON_TABLE (MySQL 8.0.20+)
-  SELECT j.refund_percent, j.min_hours_before
-  FROM ctx,
+  SELECT rc.id, j.refund_percent, j.min_hours_before,
+         ROW_NUMBER() OVER (PARTITION BY rc.id ORDER BY j.min_hours_before DESC) AS rn
+  FROM room_ctx rc,
        JSON_TABLE(
-         ctx.snap, '$.rules[*]' COLUMNS (
+         rc.snap, '$.rules[*]' COLUMNS (
            refund_percent   NUMERIC(5,2) PATH '$.refund_percent',
            min_hours_before INT         PATH '$.min_hours_before'
          )
        ) AS j
-  WHERE j.min_hours_before <= ctx.hours_before_cancel
-  ORDER BY j.min_hours_before DESC
-  LIMIT 1
+  WHERE j.min_hours_before <= rc.hours_before_cancel
 )
-SELECT ctx.hours_before_cancel,
-       m.min_hours_before,
-       m.refund_percent,
-       ROUND(ctx.net_received * m.refund_percent / 100, 2) AS refund_amount
-FROM ctx LEFT JOIN matched m ON true;
+SELECT ROUND(SUM(rc.room_subtotal * m.refund_percent / 100), 2) AS refund_amount,
+       JSON_ARRAYAGG(JSON_OBJECT(
+         'booking_room_id', rc.id,
+         'hours_before_cancel', rc.hours_before_cancel,
+         'min_hours_before', m.min_hours_before,
+         'refund_percent', m.refund_percent
+       )) AS policy_applied
+FROM room_ctx rc
+JOIN matched m ON m.id = rc.id AND m.rn = 1;
 ```
 
-Kết quả (`hours_before_cancel`, rule khớp, phần trăm) được ghi vào `refunds.policy_applied` để giải thích cho khách. Giờ nhận phòng chuẩn `14:00` nên đưa vào bảng cấu hình khách sạn thay vì hard-code — spec không nêu con số này (mục 14).
+Kết quả theo từng dòng phòng (`booking_room_id`, `hours_before_cancel`, rule khớp, phần trăm) được ghi vào `refunds.policy_applied` để giải thích cho khách. Giờ nhận phòng chuẩn `14:00` nên đưa vào bảng cấu hình khách sạn thay vì hard-code — spec không nêu con số này (mục 14).
 
 ### 9.7. View khoảng lưu trú của booking (QĐ-6)
 
@@ -1746,7 +1749,7 @@ Mỗi giá trị tiền chỉ có một nơi sinh ra. Các cột aggregate đư�
 | Tiền đã thu              | `payments` (status SUCCEEDED)                 | `bookings.paid_amount`, `invoices.paid_amount`                                       | `trg_payment_ledger`                        |
 | Tiền đã hoàn            | `refunds` (status COMPLETED)                  | `payments.refunded_amount`, `bookings.refunded_amount`, `invoices.refunded_amount` | `trg_payment_ledger`                        |
 | Khoảng ngày lưu trú     | `booking_rooms.check_in_date/check_out_date`  | View`v_booking_stay_range`                                                             | Không lưu, derive                           |
-| Chính sách hủy áp dụng | `bookings.cancellation_policy_snapshot`       | —                                                                                       | Ghi một lần lúc tạo booking               |
+| Chính sách hủy áp dụng | `booking_rooms.cancellation_policy_snapshot`  | —                                                                                       | Ghi một lần cho từng phòng lúc tạo booking |
 | Hoa hồng OTA của đơn    | `bookings.source_commission_percent_snapshot` | —                                                                                       | Ghi lúc xác nhận booking                   |
 
 Job đối soát hằng đêm so lại toàn bộ cột aggregate với nguồn và báo lệch — trigger có thể sai do bug, dữ liệu tiền thì không được sai âm thầm.
@@ -1910,7 +1913,7 @@ Thay đổi schema so với bản đầu, theo nhóm.
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Bỏ`free_cancel_hours`, `refund_percent_after` | Chỉ biểu diễn được một mốc; thay bằng`cancellation_policy_rules` nhiều bậc                                                                       |
 | Giữ`no_show_charge_percent`                     | No-show không phải một bậc hủy (không có thời điểm hủy để so). Ghi rõ nên chuyển sang cấu hình chung nếu toàn khách sạn dùng một mức |
-| Snapshot vào booking gồm cả rules               | `cancellation_policy_snapshot` chứa `code`, `name`, `no_show_charge_percent`, và mảng `rules` (5.4)                                              |
+| Snapshot vào booking room gồm cả rules          | `booking_rooms.cancellation_policy_snapshot` chứa `code`, `name`, `no_show_charge_percent`, và mảng `rules` (5.4)                                |
 
 **`folio_charges`**
 

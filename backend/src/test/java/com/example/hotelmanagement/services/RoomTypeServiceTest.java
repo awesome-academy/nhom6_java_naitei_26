@@ -6,6 +6,7 @@ import com.example.hotelmanagement.dto.roomtype.RoomTypeBedsRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeCreateRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeResponse;
 import com.example.hotelmanagement.entity.Amenity;
+import com.example.hotelmanagement.entity.CancellationPolicy;
 import com.example.hotelmanagement.entity.RoomType;
 import com.example.hotelmanagement.entity.RoomTypeBed;
 import com.example.hotelmanagement.entity.enums.AmenityCategory;
@@ -13,6 +14,7 @@ import com.example.hotelmanagement.entity.enums.BedType;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.AmenityRepository;
+import com.example.hotelmanagement.repositories.CancellationPolicyRepository;
 import com.example.hotelmanagement.repositories.RoomTypeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,6 +48,8 @@ class RoomTypeServiceTest {
 
     @Mock
     private AmenityRepository amenityRepository;
+    @Mock
+    private CancellationPolicyRepository cancellationPolicyRepository;
 
     @Mock
     private SlugService slugService;
@@ -59,6 +63,7 @@ class RoomTypeServiceTest {
         roomTypeService = new RoomTypeService(
                 roomTypeRepository,
                 amenityRepository,
+                cancellationPolicyRepository,
                 slugService,
                 roomTypeImageService
         );
@@ -69,6 +74,7 @@ class RoomTypeServiceTest {
     void createRoomTypeDerivesBedCountAndAssignsAmenities() {
         Amenity wifi = createAmenity("WIFI", "Wi-Fi", AmenityCategory.TECH, 10);
         Amenity airConditioner = createAmenity("AC", "Air conditioner", AmenityCategory.ROOM, 40);
+        CancellationPolicy policy = createPolicy("FLEXIBLE");
         RoomTypeCreateRequest request = new RoomTypeCreateRequest(
                 "dlx_ocean",
                 "Deluxe Ocean",
@@ -82,6 +88,7 @@ class RoomTypeServiceTest {
                 new BigDecimal("42.50"),
                 null,
                 null,
+                "flexible",
                 List.of(
                         new RoomTypeBedRequest(BedType.QUEEN, 2),
                         new RoomTypeBedRequest(BedType.SOFA_BED, 1)
@@ -91,6 +98,8 @@ class RoomTypeServiceTest {
 
         when(roomTypeRepository.existsByCodeIgnoreCase("DLX_OCEAN")).thenReturn(false);
         when(slugService.generateUniqueSlug("Deluxe Ocean")).thenReturn("deluxe-ocean");
+        when(cancellationPolicyRepository.findByCodeIgnoreCaseAndIsActiveTrue("FLEXIBLE"))
+                .thenReturn(Optional.of(policy));
         when(amenityRepository.findAllByCodeIn(anyCollection())).thenReturn(List.of(wifi, airConditioner));
         when(roomTypeRepository.save(any(RoomType.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -101,11 +110,39 @@ class RoomTypeServiceTest {
         assertEquals(3, response.bedCount());
         assertEquals("VND", response.currency());
         assertEquals(2, response.amenities().size());
+        assertEquals("FLEXIBLE", response.cancellationPolicy().code());
 
         ArgumentCaptor<RoomType> roomTypeCaptor = ArgumentCaptor.forClass(RoomType.class);
         verify(roomTypeRepository).save(roomTypeCaptor.capture());
         assertEquals(3, roomTypeCaptor.getValue().getBedCount());
         assertEquals(2, roomTypeCaptor.getValue().getAmenities().size());
+        assertSame(policy, roomTypeCaptor.getValue().getCancellationPolicy());
+    }
+
+    @Test
+    void createRoomTypeRejectsActiveRoomTypeWithoutCancellationPolicy() {
+        RoomTypeCreateRequest request = new RoomTypeCreateRequest(
+                "std",
+                "Standard",
+                null,
+                2,
+                2,
+                0,
+                new BigDecimal("800000.00"),
+                null,
+                null,
+                null,
+                true,
+                null,
+                null,
+                List.of(new RoomTypeBedRequest(BedType.QUEEN, 1)),
+                Set.of()
+        );
+        when(roomTypeRepository.existsByCodeIgnoreCase("STD")).thenReturn(false);
+        when(slugService.generateUniqueSlug("Standard")).thenReturn("standard");
+
+        assertThrows(BusinessValidationException.class, () -> roomTypeService.createRoomType(request));
+        verify(roomTypeRepository, never()).save(any(RoomType.class));
     }
 
     @Test
@@ -220,6 +257,18 @@ class RoomTypeServiceTest {
                 .currency("VND")
                 .isActive(true)
                 .sortOrder(10)
+                .cancellationPolicy(createPolicy("FLEXIBLE"))
+                .build();
+    }
+
+    private CancellationPolicy createPolicy(String code) {
+        return CancellationPolicy.builder()
+                .code(code)
+                .name("Flexible")
+                .description("Flexible cancellation policy")
+                .noShowChargePercent(new BigDecimal("100.00"))
+                .isDefault(true)
+                .isActive(true)
                 .build();
     }
 }

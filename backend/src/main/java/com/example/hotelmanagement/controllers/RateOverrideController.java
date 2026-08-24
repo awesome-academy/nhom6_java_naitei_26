@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.pricing.RateOverrideCreateRequest;
 import com.example.hotelmanagement.dto.pricing.RateOverrideResponse;
 import com.example.hotelmanagement.dto.pricing.RateOverrideUpdateRequest;
@@ -25,6 +27,7 @@ import java.util.List;
 @RestController
 @RequestMapping(value = "/api/rate-overrides", produces = MediaType.APPLICATION_JSON_VALUE)
 @PreAuthorize(PermissionExpressions.PRICING_MANAGE)
+@Tag(name = "Rate Overrides", description = "Manage date-based room pricing overrides.")
 public class RateOverrideController {
 
     private final RateOverrideService rateOverrideService;
@@ -33,16 +36,19 @@ public class RateOverrideController {
         this.rateOverrideService = rateOverrideService;
     }
 
+    @Operation(summary = "Get Active Rate Overrides")
     @GetMapping
     public ResponseEntity<List<RateOverrideResponse>> getActiveRateOverrides() {
         return ResponseEntity.ok(rateOverrideService.getActiveRateOverrides());
     }
 
+    @Operation(summary = "Get Rate Override")
     @GetMapping("/{id}")
     public ResponseEntity<RateOverrideResponse> getRateOverride(@PathVariable Long id) {
         return ResponseEntity.ok(rateOverrideService.getRateOverride(id));
     }
 
+    @Operation(summary = "Create Rate Override")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<RateOverrideResponse> createRateOverride(
             @Valid @RequestBody RateOverrideCreateRequest request
@@ -53,6 +59,7 @@ public class RateOverrideController {
         ).body(response);
     }
 
+    @Operation(summary = "Create Room Type Rate Override")
     @PostMapping(value = "/room-types/{roomTypeCode}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<RateOverrideResponse> createRoomTypeRateOverride(
             @PathVariable String roomTypeCode,
@@ -67,6 +74,7 @@ public class RateOverrideController {
         ).body(response);
     }
 
+    @Operation(summary = "Update Rate Override")
     @PutMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<RateOverrideResponse> updateRateOverride(
             @PathVariable Long id,
@@ -75,6 +83,7 @@ public class RateOverrideController {
         return ResponseEntity.ok(rateOverrideService.updateRateOverride(id, request));
     }
 
+    @Operation(summary = "Delete Rate Override")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteRateOverride(@PathVariable Long id) {
         rateOverrideService.deleteRateOverride(id);

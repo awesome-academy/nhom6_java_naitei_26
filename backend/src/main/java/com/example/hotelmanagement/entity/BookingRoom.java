@@ -40,6 +40,13 @@ public class BookingRoom extends BaseEntity {
     @Column(name = "room_type_name_snapshot", nullable = false, length = 120)
     private String roomTypeNameSnapshot;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cancellation_policy_id")
+    private CancellationPolicy cancellationPolicy;
+
+    @Column(name = "cancellation_policy_snapshot", columnDefinition = "JSON")
+    private String cancellationPolicySnapshot;
+
     @Column(name = "check_in_date", nullable = false)
     private LocalDate checkInDate;
 

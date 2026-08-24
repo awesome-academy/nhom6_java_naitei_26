@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.room.HousekeepingStatusUpdateRequest;
 import com.example.hotelmanagement.dto.room.RoomCreateRequest;
 import com.example.hotelmanagement.dto.room.RoomOperationalStatusResponse;
@@ -38,6 +40,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping(value = "/api/rooms", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Rooms", description = "Manage physical rooms, housekeeping, operational status, and images.")
 public class RoomController {
 
     private final RoomService roomService;
@@ -54,6 +57,7 @@ public class RoomController {
         this.roomStatusBlockService = roomStatusBlockService;
     }
 
+    @Operation(summary = "Get Rooms")
     @GetMapping
     @PreAuthorize(PermissionExpressions.ROOM_READ)
     public ResponseEntity<List<RoomResponse>> getRooms(
@@ -65,12 +69,14 @@ public class RoomController {
         return ResponseEntity.ok(roomService.getRooms(roomTypeCode, viewType, floor, amenityCodes));
     }
 
+    @Operation(summary = "Get Room")
     @GetMapping("/{roomNumber}")
     @PreAuthorize(PermissionExpressions.ROOM_READ)
     public ResponseEntity<RoomResponse> getRoom(@PathVariable String roomNumber) {
         return ResponseEntity.ok(roomService.getRoom(roomNumber));
     }
 
+    @Operation(summary = "Create Room")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_CREATE)
     public ResponseEntity<RoomResponse> createRoom(
@@ -81,6 +87,7 @@ public class RoomController {
         return ResponseEntity.created(URI.create("/api/rooms/" + response.roomNumber())).body(response);
     }
 
+    @Operation(summary = "Update Room")
     @PutMapping(value = "/{roomNumber}", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomResponse> updateRoom(
@@ -90,6 +97,7 @@ public class RoomController {
         return ResponseEntity.ok(roomService.updateRoom(roomNumber, request));
     }
 
+    @Operation(summary = "Delete Room")
     @DeleteMapping("/{roomNumber}")
     @PreAuthorize(PermissionExpressions.ROOM_DELETE)
     public ResponseEntity<Void> deleteRoom(@PathVariable String roomNumber) {
@@ -97,6 +105,7 @@ public class RoomController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "Update Housekeeping Status")
     @PatchMapping(value = "/{roomNumber}/housekeeping-status", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomResponse> updateHousekeepingStatus(
@@ -106,6 +115,7 @@ public class RoomController {
         return ResponseEntity.ok(roomService.updateHousekeepingStatus(roomNumber, request));
     }
 
+    @Operation(summary = "Update Operational Status")
     @PatchMapping(value = "/{roomNumber}/operational-status", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomOperationalStatusResponse> updateOperationalStatus(
@@ -115,6 +125,7 @@ public class RoomController {
         return ResponseEntity.ok(roomStatusBlockService.updateOperationalStatus(roomNumber, request));
     }
 
+    @Operation(summary = "Create Room Image Upload Url")
     @PostMapping(value = "/{roomNumber}/images/upload-url", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomImageUploadUrlResponse> createRoomImageUploadUrl(
@@ -124,6 +135,7 @@ public class RoomController {
         return ResponseEntity.ok(roomImageService.createUploadUrl(roomNumber, request));
     }
 
+    @Operation(summary = "confirm Room Image Upload")
     @PostMapping(value = "/{roomNumber}/images/confirm", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomImageResponse> confirmRoomImageUpload(
@@ -135,6 +147,7 @@ public class RoomController {
         return ResponseEntity.created(location).body(response);
     }
 
+    @Operation(summary = "reorder Room Images")
     @PutMapping(value = "/{roomNumber}/images/order", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<List<RoomImageResponse>> reorderRoomImages(

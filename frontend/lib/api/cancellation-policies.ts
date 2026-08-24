@@ -15,6 +15,10 @@ export function getCancellationPolicies(): Promise<CancellationPolicy[]> {
   return apiClient.get<CancellationPolicy[]>(CANCELLATION_POLICIES_PATH)
 }
 
+export function getActiveCancellationPolicies(): Promise<CancellationPolicy[]> {
+  return apiClient.get<CancellationPolicy[]>(`${CANCELLATION_POLICIES_PATH}/active`)
+}
+
 export function createCancellationPolicy(
   request: CancellationPolicyCreateRequest
 ): Promise<CancellationPolicy> {

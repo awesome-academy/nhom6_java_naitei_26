@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.auth.AuthResponse;
 import com.example.hotelmanagement.dto.auth.OAuthCallbackRequest;
 import com.example.hotelmanagement.exceptions.AuthException;
@@ -22,6 +24,7 @@ import java.util.UUID;
 @RequestMapping("/api/auth/oauth/google")
 @RequiredArgsConstructor
 @Slf4j
+@Tag(name = "Google OAuth", description = "Initiate and complete the Google OAuth login flow.")
 public class OAuthController {
 
     private final OAuthService oauthService;
@@ -37,6 +40,7 @@ public class OAuthController {
      * Step 1: Initiate Google OAuth flow
      * Returns the Google authorization URL for frontend to redirect
      */
+    @Operation(summary = "Authorize")
     @GetMapping("/authorize")
     public ResponseEntity<Map<String, String>> authorize(
         @RequestParam(defaultValue = "") String returnUrl
@@ -61,6 +65,7 @@ public class OAuthController {
      * Step 2: Handle OAuth callback from Google
      * This endpoint is called by the frontend after Google redirects back
      */
+    @Operation(summary = "Callback")
     @PostMapping("/callback")
     public ResponseEntity<AuthResponse> callback(@RequestBody OAuthCallbackRequest request) {
         return handleOAuthCallback(request);
@@ -71,6 +76,7 @@ public class OAuthController {
      * Google redirects here with ?code=xxx
      * We'll redirect to frontend callback page with the result
      */
+    @Operation(summary = "Callback Get")
     @GetMapping("/callback")
     public void callbackGet(
         @RequestParam(required = false) String code,
@@ -184,6 +190,7 @@ public class OAuthController {
     /**
      * Health check to verify OAuth is configured
      */
+    @Operation(summary = "Status")
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> status() {
         return ResponseEntity.ok(Map.of(

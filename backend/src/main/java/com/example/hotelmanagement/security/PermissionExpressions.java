@@ -14,6 +14,8 @@ public final class PermissionExpressions {
     public static final String STAFF_MANAGE = "hasAuthority('staff:manage')";
     public static final String PRICING_MANAGE = "hasAuthority('pricing:manage')";
     public static final String POLICY_MANAGE = "hasAuthority('policy:manage')";
+    public static final String POLICY_READ_ACTIVE =
+            "hasAnyAuthority('booking:create', 'policy:manage', 'room:create', 'room:update')";
     public static final String POLICY_USE_FOR_BOOKING =
             "hasAnyAuthority('booking:create', 'policy:manage')";
     public static final String BOOKING_CANCEL =

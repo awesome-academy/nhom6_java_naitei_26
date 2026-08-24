@@ -63,6 +63,10 @@ public class RoomType extends BaseEntity {
     @Builder.Default
     private Integer sortOrder = 0;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cancellation_policy_id")
+    private CancellationPolicy cancellationPolicy;
+
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 

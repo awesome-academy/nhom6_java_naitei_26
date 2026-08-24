@@ -156,6 +156,7 @@ public class BookingService {
                     .status(BookingRoomStatus.RESERVED)
                     .guestCount(item.adults() + item.children())
                     .build();
+            cancellationPolicyService.applyPolicySnapshot(bookingRoom, roomType.getCancellationPolicy());
 
             for (DailyRateResponse dailyRate : priceCalculation.dailyRates()) {
                 bookingRoom.getBookingRoomNights().add(
@@ -189,8 +190,6 @@ public class BookingService {
         if (currency != null) {
             booking.setCurrency(currency);
         }
-
-        cancellationPolicyService.applyPolicySnapshot(booking, request.cancellationPolicyCode());
 
         booking.getStatusHistory().add(
                 BookingStatusHistory.builder()
@@ -278,7 +277,6 @@ public class BookingService {
                 booking.getRoomTaxPercentSnapshot(),
                 booking.getTotalAmount(),
                 booking.getCurrency(),
-                booking.getCancellationPolicy() == null ? null : booking.getCancellationPolicy().getCode(),
                 booking.getHoldExpiresAt(),
                 booking.getBookingRooms().stream().map(this::mapRoomResponse).toList(),
                 booking.getCreatedAt()
@@ -296,6 +294,8 @@ public class BookingService {
                 bookingRoom.getStatus(),
                 bookingRoom.getGuestCount(),
                 bookingRoom.getRoomSubtotal(),
+                bookingRoom.getCancellationPolicy() == null ? null : bookingRoom.getCancellationPolicy().getCode(),
+                bookingRoom.getCancellationPolicy() == null ? null : bookingRoom.getCancellationPolicy().getName(),
                 bookingRoom.getAssignedAt(),
                 bookingRoom.getAssignedBy(),
                 bookingRoom.getBookingRoomNights().stream()

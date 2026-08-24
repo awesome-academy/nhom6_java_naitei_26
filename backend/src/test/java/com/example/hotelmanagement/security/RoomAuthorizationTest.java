@@ -334,6 +334,7 @@ class RoomAuthorizationTest {
 
     private RoomResponse roomResponse() {
         return new RoomResponse(
+                1L,
                 ROOM_NUMBER,
                 "DLX",
                 "Deluxe",

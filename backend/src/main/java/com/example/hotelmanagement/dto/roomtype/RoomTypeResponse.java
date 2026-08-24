@@ -1,5 +1,6 @@
 package com.example.hotelmanagement.dto.roomtype;
 
+import com.example.hotelmanagement.dto.cancellationpolicy.CancellationPolicyResponse;
 import com.example.hotelmanagement.dto.roomimage.RoomImageResponse;
 
 import java.math.BigDecimal;
@@ -21,6 +22,7 @@ public record RoomTypeResponse(
         BigDecimal sizeSqm,
         Boolean isActive,
         Integer sortOrder,
+        CancellationPolicyResponse cancellationPolicy,
         List<RoomTypeBedResponse> beds,
         List<AmenityResponse> amenities,
         List<RoomImageResponse> images,

@@ -82,7 +82,7 @@ export default function AdminRoomsPage() {
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
-      router.replace("/login?redirect=%2Fadmin%2Frooms")
+      router.replace("/admin/login?redirect=%2Fadmin%2Frooms")
     }
   }, [isAuthLoading, isAuthenticated, router])
 

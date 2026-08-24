@@ -14,6 +14,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { toast } from "sonner"
 import { Loader2, Mail, Lock, Eye, EyeOff } from "lucide-react"
 import { login, getGoogleOAuthUrl } from "@/lib/api/auth"
+import { isAdminUser } from "@/lib/admin-auth"
 import { useAuth } from "@/lib/auth-context"
 import type { LoginFormData } from "@/types/auth"
 
@@ -26,7 +27,7 @@ const loginSchema = z.object({
 export function LoginFormNew() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { setAuth } = useAuth()
+  const { setAuth, clearAuth } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -78,14 +79,16 @@ export function LoginFormNew() {
 
     try {
       const response = await login({ email: data.email, password: data.password })
+
+      if (isAdminUser(response.user)) {
+        clearAuth()
+        setError("Tài khoản quản trị cần đăng nhập tại trang /admin/login.")
+        return
+      }
+
       setAuth(response.user, response.accessToken, response.refreshToken)
       toast.success("Đăng nhập thành công")
-      // Redirect based on role
-      if (response.user.roles.includes("ADMIN") || response.user.roles.includes("STAFF")) {
-        router.push("/admin")
-      } else {
-        router.push("/")
-      }
+      router.push("/")
       router.refresh()
     } catch (err: unknown) {
       const error = err as { status?: number; message?: string }
