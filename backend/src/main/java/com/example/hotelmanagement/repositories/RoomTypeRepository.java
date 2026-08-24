@@ -18,10 +18,22 @@ public interface RoomTypeRepository extends JpaRepository<RoomType, Long> {
 
     Optional<RoomType> findByIdAndDeletedAtIsNull(Long id);
 
-    @EntityGraph(attributePaths = {"beds", "amenities", "cancellationPolicy", "cancellationPolicy.rules"})
+    @EntityGraph(attributePaths = {
+            "beds",
+            "amenities",
+            "cancellationPolicyOptions",
+            "cancellationPolicyOptions.cancellationPolicy",
+            "cancellationPolicyOptions.cancellationPolicy.rules"
+    })
     List<RoomType> findAllByDeletedAtIsNullOrderBySortOrderAscNameAsc();
 
-    @EntityGraph(attributePaths = {"beds", "amenities", "cancellationPolicy", "cancellationPolicy.rules"})
+    @EntityGraph(attributePaths = {
+            "beds",
+            "amenities",
+            "cancellationPolicyOptions",
+            "cancellationPolicyOptions.cancellationPolicy",
+            "cancellationPolicyOptions.cancellationPolicy.rules"
+    })
     Optional<RoomType> findByCodeIgnoreCaseAndDeletedAtIsNull(String code);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -39,7 +51,11 @@ public interface RoomTypeRepository extends JpaRepository<RoomType, Long> {
 
     boolean existsBySlugAndIdNot(String slug, Long id);
 
-    boolean existsByCancellationPolicy_CodeIgnoreCaseAndDeletedAtIsNullAndIsActiveTrue(String code);
+    boolean existsByPayAtHotelEnabledTrueAndDeletedAtIsNullAndIsActiveTrue();
+
+    default boolean existsByCancellationPolicy_CodeIgnoreCaseAndDeletedAtIsNullAndIsActiveTrue(String code) {
+        return false;
+    }
 
     long countByDeletedAtIsNullAndIsActiveTrue();
 

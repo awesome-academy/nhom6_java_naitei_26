@@ -14,10 +14,12 @@ import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.CancellationPolicyRepository;
+import com.example.hotelmanagement.repositories.RoomTypeCancellationPolicyRepository;
 import com.example.hotelmanagement.repositories.RoomTypeRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,16 +48,33 @@ public class CancellationPolicyService {
 
     private final CancellationPolicyRepository cancellationPolicyRepository;
     private final RoomTypeRepository roomTypeRepository;
+    private final RoomTypeCancellationPolicyRepository roomTypeCancellationPolicyRepository;
     private final ObjectMapper objectMapper;
+
+    @Autowired
+    public CancellationPolicyService(
+            CancellationPolicyRepository cancellationPolicyRepository,
+            RoomTypeRepository roomTypeRepository,
+            RoomTypeCancellationPolicyRepository roomTypeCancellationPolicyRepository,
+            ObjectMapper objectMapper
+    ) {
+        this.cancellationPolicyRepository = cancellationPolicyRepository;
+        this.roomTypeRepository = roomTypeRepository;
+        this.roomTypeCancellationPolicyRepository = roomTypeCancellationPolicyRepository;
+        this.objectMapper = objectMapper;
+    }
 
     public CancellationPolicyService(
             CancellationPolicyRepository cancellationPolicyRepository,
             RoomTypeRepository roomTypeRepository,
             ObjectMapper objectMapper
     ) {
-        this.cancellationPolicyRepository = cancellationPolicyRepository;
-        this.roomTypeRepository = roomTypeRepository;
-        this.objectMapper = objectMapper;
+        this(
+                cancellationPolicyRepository,
+                roomTypeRepository,
+                null,
+                objectMapper
+        );
     }
 
     @Transactional(readOnly = true)
@@ -92,6 +111,7 @@ public class CancellationPolicyService {
         }
 
         validatePercent(request.noShowChargePercent(), "No-show charge percent");
+        BigDecimal priceAdjustmentPercent = normalizePercent(request.priceAdjustmentPercent());
         validateRules(request.rules());
 
         CancellationPolicy policy = CancellationPolicy.builder()
@@ -99,6 +119,7 @@ public class CancellationPolicyService {
                 .name(normalizeRequiredText(request.name(), "Name"))
                 .description(normalizeOptionalText(request.description()))
                 .noShowChargePercent(request.noShowChargePercent())
+                .priceAdjustmentPercent(priceAdjustmentPercent)
                 .isDefault(getValueOrDefault(request.isDefault(), false))
                 .isActive(getValueOrDefault(request.isActive(), true))
                 .build();
@@ -116,11 +137,13 @@ public class CancellationPolicyService {
     ) {
         CancellationPolicy policy = getExistingPolicy(code);
         validatePercent(request.noShowChargePercent(), "No-show charge percent");
+        BigDecimal priceAdjustmentPercent = normalizePercent(request.priceAdjustmentPercent());
         validateRules(request.rules());
 
         policy.setName(normalizeRequiredText(request.name(), "Name"));
         policy.setDescription(normalizeOptionalText(request.description()));
         policy.setNoShowChargePercent(request.noShowChargePercent());
+        policy.setPriceAdjustmentPercent(priceAdjustmentPercent);
         if (request.isActive() != null) {
             validatePolicyCanDeactivate(policy, request.isActive());
             policy.setIsActive(request.isActive());
@@ -148,6 +171,19 @@ public class CancellationPolicyService {
 
     @PreAuthorize(PermissionExpressions.POLICY_USE_FOR_BOOKING)
     public void applyPolicySnapshot(BookingRoom bookingRoom, CancellationPolicy policy) {
+        applyPolicySnapshot(
+                bookingRoom,
+                policy,
+                policy == null ? BigDecimal.ZERO : policy.getPriceAdjustmentPercent()
+        );
+    }
+
+    @PreAuthorize(PermissionExpressions.POLICY_USE_FOR_BOOKING)
+    public void applyPolicySnapshot(
+            BookingRoom bookingRoom,
+            CancellationPolicy policy,
+            BigDecimal priceAdjustmentPercent
+    ) {
         if (bookingRoom == null) {
             throw new BusinessValidationException("Booking room is required for policy snapshot");
         }
@@ -155,7 +191,7 @@ public class CancellationPolicyService {
             throw new BusinessValidationException("An active cancellation policy is required for booking room snapshot");
         }
 
-        CancellationPolicySnapshot snapshot = mapPolicySnapshot(policy);
+        CancellationPolicySnapshot snapshot = mapPolicySnapshot(policy, normalizePercent(priceAdjustmentPercent));
         bookingRoom.setCancellationPolicy(policy);
         bookingRoom.setCancellationPolicySnapshot(objectMapper.valueToTree(snapshot).toString());
     }
@@ -215,9 +251,26 @@ public class CancellationPolicyService {
         if (Boolean.TRUE.equals(nextIsActive)) {
             return;
         }
-        if (roomTypeRepository.existsByCancellationPolicy_CodeIgnoreCaseAndDeletedAtIsNullAndIsActiveTrue(policy.getCode())) {
+        if (roomTypeCancellationPolicyRepository != null && roomTypeCancellationPolicyRepository
+                .existsByCancellationPolicy_CodeIgnoreCaseAndRoomType_DeletedAtIsNullAndRoomType_IsActiveTrue(
+                        policy.getCode()
+                )) {
             throw new BusinessValidationException(
                     "Cancellation policy is assigned to active room types and cannot be deactivated"
+            );
+        }
+        if (roomTypeCancellationPolicyRepository == null
+                && roomTypeRepository.existsByCancellationPolicy_CodeIgnoreCaseAndDeletedAtIsNullAndIsActiveTrue(
+                        policy.getCode()
+                )) {
+            throw new BusinessValidationException(
+                    "Cancellation policy is assigned to active room types and cannot be deactivated"
+            );
+        }
+        if ("NON_REFUND".equalsIgnoreCase(policy.getCode())
+                && roomTypeRepository.existsByPayAtHotelEnabledTrueAndDeletedAtIsNullAndIsActiveTrue()) {
+            throw new BusinessValidationException(
+                    "Non-refundable policy is required by active pay-at-hotel room types"
             );
         }
     }
@@ -272,6 +325,7 @@ public class CancellationPolicyService {
                 policy.getName(),
                 policy.getDescription(),
                 policy.getNoShowChargePercent(),
+                policy.getPriceAdjustmentPercent(),
                 policy.getIsDefault(),
                 policy.getIsActive(),
                 rules,
@@ -280,7 +334,10 @@ public class CancellationPolicyService {
         );
     }
 
-    private CancellationPolicySnapshot mapPolicySnapshot(CancellationPolicy policy) {
+    private CancellationPolicySnapshot mapPolicySnapshot(
+            CancellationPolicy policy,
+            BigDecimal priceAdjustmentPercent
+    ) {
         List<CancellationPolicyRuleSnapshot> rules = policy.getRules().stream()
                 .sorted(Comparator.comparing(CancellationPolicyRule::getMinHoursBefore).reversed())
                 .map(rule -> new CancellationPolicyRuleSnapshot(
@@ -292,8 +349,17 @@ public class CancellationPolicyService {
                 policy.getCode(),
                 policy.getName(),
                 policy.getNoShowChargePercent(),
+                priceAdjustmentPercent,
                 rules
         );
+    }
+
+    private BigDecimal normalizePercent(BigDecimal value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        validatePercent(value, "Price adjustment percent");
+        return value;
     }
 
     private String normalizeCode(String code) {

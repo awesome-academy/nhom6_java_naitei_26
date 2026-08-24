@@ -3,7 +3,6 @@
 import {
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ComponentType,
   type ReactNode,
@@ -25,7 +24,6 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
-  ChevronRight,
   CreditCard,
   Heart,
   ImageIcon,
@@ -76,7 +74,6 @@ import {
   calculateBookingPrice,
   createBooking,
   getAvailability,
-  getBookingRooms,
   getBookingRoomTypes,
 } from "@/lib/api/booking"
 import { useAuth } from "@/lib/auth-context"
@@ -86,8 +83,7 @@ import type {
   BookingRoomItem,
   PriceCalculation,
 } from "@/types/booking"
-import type { Room } from "@/types/room"
-import type { RoomType } from "@/types/room-type"
+import type { RoomType, RoomTypeBookingOption } from "@/types/room-type"
 
 type SearchState = {
   checkInDate: string
@@ -106,7 +102,15 @@ type ContactState = {
 
 type RoomTypeOption = {
   roomType: RoomType
-  availableRooms: Room[]
+  availableCount: number
+}
+
+type SelectedBookingOption = {
+  selectionId: string
+  roomTypeCode: string
+  optionKey: string
+  paymentOption: "ONLINE" | "PAY_AT_HOTEL"
+  cancellationPolicyCode: string
 }
 
 type Quote = {
@@ -122,6 +126,12 @@ type GalleryItem = {
   url: string
   alt: string
   sortOrder: number
+}
+
+type CheapestBookingOffer = {
+  roomType: RoomType
+  option: RoomTypeBookingOption
+  unitPrice: number
 }
 
 const today = startOfToday()
@@ -161,6 +171,20 @@ function displayDate(value: string) {
   return format(parseISO(value), "dd/MM/yyyy")
 }
 
+function mapAvailabilityByRoomTypeCode(
+  availability: Record<string, number[]>,
+  roomTypes: RoomType[]
+) {
+  const roomTypeCodeById = new Map(
+    roomTypes.map((roomType) => [String(roomType.roomTypeId), roomType.code])
+  )
+  return Object.fromEntries(
+    Object.entries(availability)
+      .map(([roomTypeId, roomIds]) => [roomTypeCodeById.get(roomTypeId), roomIds.length] as const)
+      .filter((entry): entry is [string, number] => Boolean(entry[0]))
+  )
+}
+
 function headerDate(value: string) {
   return format(parseISO(value), "EEE, dd 'thg' M")
 }
@@ -180,10 +204,6 @@ function getBedSummary(roomType: RoomType) {
   return roomType.beds
     .map((bed) => `${bed.quantity} ${bedTypeLabel[bed.bedType] ?? bed.bedType}`)
     .join(", ")
-}
-
-function getRoomNightPrice(roomType: RoomType, room: Room) {
-  return Number(room.priceOverride ?? roomType.basePrice)
 }
 
 function distributeGuests(search: SearchState, roomCount: number) {
@@ -224,6 +244,29 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   return apiError.message
 }
 
+function getBookingOptionUnitPrice(roomType: RoomType, option: RoomTypeBookingOption) {
+  return Number(roomType.basePrice) * (1 + Number(option.priceAdjustmentPercent) / 100)
+}
+
+function sortBookingOptionsByPrice(roomType: RoomType) {
+  return [...roomType.bookingOptions].sort((left, right) => {
+    const priceDiff = getBookingOptionUnitPrice(roomType, left) - getBookingOptionUnitPrice(roomType, right)
+    if (priceDiff !== 0) return priceDiff
+    return left.optionKey.localeCompare(right.optionKey)
+  })
+}
+
+function getSelectionCount(
+  selections: SelectedBookingOption[],
+  roomTypeCode: string,
+  optionKey?: string
+) {
+  return selections.filter((selection) => {
+    if (selection.roomTypeCode !== roomTypeCode) return false
+    return optionKey ? selection.optionKey === optionKey : true
+  }).length
+}
+
 export default function BookingPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth()
   const [search, setSearch] = useState<SearchState>(initialSearch)
@@ -233,10 +276,9 @@ export default function BookingPage() {
     contactPhone: "",
     specialRequests: "",
   })
-  const [rooms, setRooms] = useState<Room[]>([])
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([])
-  const [availableRoomIds, setAvailableRoomIds] = useState<Set<number>>(new Set())
-  const [selectedRoomIds, setSelectedRoomIds] = useState<number[]>([])
+  const [availableRoomsByType, setAvailableRoomsByType] = useState<Record<string, number>>({})
+  const [selectedOptions, setSelectedOptions] = useState<SelectedBookingOption[]>([])
   const [quote, setQuote] = useState<Quote | null>(null)
   const [checkoutOpen, setCheckoutOpen] = useState(false)
   const [booking, setBooking] = useState<Booking | null>(null)
@@ -254,16 +296,10 @@ export default function BookingPage() {
     return roomTypes
       .filter((roomType) => roomType.isActive)
       .map((roomType) => {
-        const availableRooms = rooms.filter(
-          (room) =>
-            room.isActive &&
-            room.roomTypeCode === roomType.code &&
-            availableRoomIds.has(room.roomId)
-        )
-        return { roomType, availableRooms }
+        return { roomType, availableCount: availableRoomsByType[roomType.code] ?? 0 }
       })
       .sort((left, right) => left.roomType.sortOrder - right.roomType.sortOrder)
-  }, [availableRoomIds, rooms, roomTypes])
+  }, [availableRoomsByType, roomTypes])
 
   const galleryImages = useMemo<GalleryItem[]>(() => {
     return roomTypes
@@ -279,26 +315,37 @@ export default function BookingPage() {
       .slice(0, 6)
   }, [roomTypes])
 
-  const selectedCount = selectedRoomIds.length
+  const selectedCount = selectedOptions.length
   const roomTypeByCode = useMemo(
     () => new Map(roomTypes.map((roomType) => [roomType.code, roomType])),
     [roomTypes]
   )
-  const roomById = useMemo(
-    () => new Map(rooms.map((room) => [room.roomId, room])),
-    [rooms]
-  )
   const selectedPolicyLines = useMemo(() => {
-    return selectedRoomIds.map((roomId) => {
-      const room = roomById.get(roomId)
-      const roomType = room ? roomTypeByCode.get(room.roomTypeCode) : null
-      return `${roomType?.name ?? room?.roomTypeName ?? "Phòng"} ${room?.roomNumber ?? roomId}: ${roomType?.cancellationPolicy?.name ?? "Chưa có chính sách"}`
+    return selectedOptions.map((selection) => {
+      const roomType = roomTypeByCode.get(selection.roomTypeCode)
+      const option = roomType?.bookingOptions.find((candidate) => candidate.optionKey === selection.optionKey)
+      const paymentLabel = selection.paymentOption === "PAY_AT_HOTEL" ? "Thanh toán tại khách sạn" : "Thanh toán trực tuyến"
+      return `${roomType?.name ?? selection.roomTypeCode}: ${option?.cancellationPolicy.name ?? selection.cancellationPolicyCode} · ${paymentLabel}`
     })
-  }, [roomById, roomTypeByCode, selectedRoomIds])
-  const cheapestRoomType = roomTypes.reduce<RoomType | null>((best, current) => {
-    if (!best) return current
-    return Number(current.basePrice) < Number(best.basePrice) ? current : best
-  }, null)
+  }, [roomTypeByCode, selectedOptions])
+  const cheapestBookingOffer = useMemo<CheapestBookingOffer | null>(() => {
+    const offers = roomTypeOptions
+      .filter((option) => option.availableCount > 0)
+      .flatMap(({ roomType }) =>
+        roomType.bookingOptions.map((bookingOption) => ({
+          roomType,
+          option: bookingOption,
+          unitPrice: getBookingOptionUnitPrice(roomType, bookingOption),
+        }))
+      )
+      .sort((left, right) => {
+        const priceDiff = left.unitPrice - right.unitPrice
+        if (priceDiff !== 0) return priceDiff
+        return left.option.optionKey.localeCompare(right.option.optionKey)
+      })
+
+    return offers[0] ?? null
+  }, [roomTypeOptions])
 
   useEffect(() => {
     if (authLoading || !isAuthenticated || accessMessage) return
@@ -318,15 +365,13 @@ export default function BookingPage() {
       setError("")
 
       try {
-        const [roomData, roomTypeData, availability] = await Promise.all([
-          getBookingRooms(),
+        const [roomTypeData, availability] = await Promise.all([
           getBookingRoomTypes(),
           getAvailability(search.checkInDate, search.checkOutDate),
         ])
         if (ignore) return
-        setRooms(roomData)
         setRoomTypes(roomTypeData)
-        setAvailableRoomIds(new Set(Object.values(availability).flat().map((roomId) => Number(roomId))))
+        setAvailableRoomsByType(mapAvailabilityByRoomTypeCode(availability, roomTypeData))
       } catch (loadError) {
         if (!ignore) {
           setError(getApiErrorMessage(loadError, "Không thể tải dữ liệu khách sạn"))
@@ -346,7 +391,7 @@ export default function BookingPage() {
 
   function resetSelection(nextSearch: SearchState) {
     setSearch(nextSearch)
-    setSelectedRoomIds([])
+    setSelectedOptions([])
     setQuote(null)
     setCheckoutOpen(false)
   }
@@ -365,57 +410,80 @@ export default function BookingPage() {
     }
 
     setSearching(true)
-    setSelectedRoomIds([])
+    setSelectedOptions([])
     setQuote(null)
     setCheckoutOpen(false)
 
     try {
       const availability = await getAvailability(search.checkInDate, search.checkOutDate)
-      const ids = Object.values(availability)
-        .flat()
-        .map((roomId) => Number(roomId))
-      setAvailableRoomIds(new Set(ids))
+      setAvailableRoomsByType(mapAvailabilityByRoomTypeCode(availability, roomTypes))
       document.getElementById("choose-room")?.scrollIntoView({ behavior: "smooth", block: "start" })
     } catch (searchError) {
-      setAvailableRoomIds(new Set())
+      setAvailableRoomsByType({})
       setError(getApiErrorMessage(searchError, "Không thể kiểm tra phòng còn trống"))
     } finally {
       setSearching(false)
     }
   }
 
-  function toggleSelectedRoom(roomId: number) {
+  function addSelectedOption(roomType: RoomType, option: RoomTypeBookingOption) {
     setQuote(null)
     setCheckoutOpen(false)
-    setSelectedRoomIds((current) =>
-      current.includes(roomId)
-        ? current.filter((selectedRoomId) => selectedRoomId !== roomId)
-        : [...current, roomId]
-    )
+    setSelectedOptions((current) => {
+      if (getSelectionCount(current, roomType.code) >= (availableRoomsByType[roomType.code] ?? 0)) {
+        return current
+      }
+      return [
+        ...current,
+        {
+          selectionId: crypto.randomUUID(),
+          roomTypeCode: roomType.code,
+          optionKey: option.optionKey,
+          paymentOption: option.paymentOption,
+          cancellationPolicyCode: option.cancellationPolicy.code,
+        },
+      ]
+    })
+  }
+
+  function removeSelectedOption(roomType: RoomType, option: RoomTypeBookingOption) {
+    setQuote(null)
+    setCheckoutOpen(false)
+    setSelectedOptions((current) => {
+      const removeIndex = current.findIndex(
+        (selection) =>
+          selection.roomTypeCode === roomType.code &&
+          selection.optionKey === option.optionKey
+      )
+      if (removeIndex < 0) return current
+      return current.filter((_, index) => index !== removeIndex)
+    })
   }
 
   async function calculateSelectedRooms() {
     setError("")
     setCalculating(true)
 
-    const plannedRoomIds = selectedRoomIds
+    const plannedOptions = selectedOptions
 
-    if (plannedRoomIds.length === 0) {
+    if (plannedOptions.length === 0) {
       setError("Vui lòng thêm ít nhất một phòng.")
       setCalculating(false)
       return
     }
 
     const guestDistribution = distributeGuests(
-      { ...search, rooms: plannedRoomIds.length },
-      plannedRoomIds.length
+      { ...search, rooms: plannedOptions.length },
+      plannedOptions.length
     )
 
     try {
       const calculations = await Promise.all(
-        plannedRoomIds.map((roomId, index) =>
+        plannedOptions.map((selection, index) =>
           calculateBookingPrice({
-            roomId,
+            roomTypeCode: selection.roomTypeCode,
+            paymentOption: selection.paymentOption,
+            cancellationPolicyCode: selection.cancellationPolicyCode,
             checkInDate: search.checkInDate,
             checkOutDate: search.checkOutDate,
             adults: guestDistribution[index].adults,
@@ -423,7 +491,7 @@ export default function BookingPage() {
           })
         )
       )
-      setSelectedRoomIds(plannedRoomIds)
+      setSelectedOptions(plannedOptions)
       setQuote({
         calculations,
         roomsTotal: calculations.reduce((sum, item) => sum + Number(item.roomsTotal), 0),
@@ -434,7 +502,7 @@ export default function BookingPage() {
       setCheckoutOpen(true)
     } catch (quoteError) {
       setQuote(null)
-      setSelectedRoomIds([])
+      setSelectedOptions([])
       setError(getApiErrorMessage(quoteError, "Không thể tính giá cho các phòng đã chọn"))
     } finally {
       setCalculating(false)
@@ -442,7 +510,7 @@ export default function BookingPage() {
   }
 
   async function submitBooking() {
-    if (selectedRoomIds.length === 0 || !quote) {
+    if (selectedOptions.length === 0 || !quote) {
       setError("Vui lòng bấm tiếp tục thanh toán để tính giá trước.")
       return
     }
@@ -453,11 +521,13 @@ export default function BookingPage() {
     }
 
     const guestDistribution = distributeGuests(
-      { ...search, rooms: selectedRoomIds.length },
-      selectedRoomIds.length
+      { ...search, rooms: selectedOptions.length },
+      selectedOptions.length
     )
-    const bookingRooms: BookingRoomItem[] = selectedRoomIds.map((roomId, index) => ({
-      roomId,
+    const bookingRooms: BookingRoomItem[] = selectedOptions.map((selection, index) => ({
+      roomTypeCode: selection.roomTypeCode,
+      paymentOption: selection.paymentOption,
+      cancellationPolicyCode: selection.cancellationPolicyCode,
       checkInDate: search.checkInDate,
       checkOutDate: search.checkOutDate,
       adults: guestDistribution[index].adults,
@@ -564,7 +634,7 @@ export default function BookingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background pb-28">
+    <div className="min-h-screen bg-background pb-28 font-sans">
       <SiteHeader />
 
       <main className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-8 lg:px-8">
@@ -577,7 +647,7 @@ export default function BookingPage() {
 
         <HotelHeader />
         <HotelGallery images={galleryImages} loading={loadingCatalog} />
-        <HotelDetails roomTypes={roomTypes} cheapestRoomType={cheapestRoomType} search={search} />
+        <HotelDetails roomTypes={roomTypes} cheapestOffer={cheapestBookingOffer} search={search} />
 
         <section id="choose-room" className="scroll-mt-28">
           <div className="flex flex-col gap-2">
@@ -586,19 +656,22 @@ export default function BookingPage() {
           <HotelSearchBar
             search={search}
             loading={searching || loadingCatalog}
-            minNightPrice={cheapestRoomType ? Number(cheapestRoomType.basePrice) : 0}
+            minNightPrice={cheapestBookingOffer?.unitPrice ?? 0}
             onChange={resetSelection}
             onSearch={runSearch}
           />
           <p className="mb-4 text-muted-foreground">
-            Chọn từng phòng trong loại phòng phù hợp. Hệ thống chỉ tính tiền khi bạn bấm thanh toán phía dưới.
+            Chọn loại giá trong room type phù hợp. Khách sạn sẽ tự xếp phòng trống khi giữ booking.
           </p>
 
           <RoomTypeList
             options={roomTypeOptions}
             loading={loadingCatalog || searching}
-            selectedRoomIds={selectedRoomIds}
-            onRoomToggle={toggleSelectedRoom}
+            selectedOptions={selectedOptions}
+            cheapestOptionKey={cheapestBookingOffer?.option.optionKey}
+            nights={nights}
+            onAddOption={addSelectedOption}
+            onRemoveOption={removeSelectedOption}
           />
         </section>
       </main>
@@ -719,11 +792,11 @@ function GalleryTile({
 
 function HotelDetails({
   roomTypes,
-  cheapestRoomType,
+  cheapestOffer,
   search,
 }: {
   roomTypes: RoomType[]
-  cheapestRoomType: RoomType | null
+  cheapestOffer: CheapestBookingOffer | null
   search: SearchState
 }) {
   const amenities = Array.from(
@@ -788,7 +861,7 @@ function HotelDetails({
       </div>
 
       <BestPriceCard
-        roomType={cheapestRoomType}
+        offer={cheapestOffer}
         search={search}
       />
     </section>
@@ -838,13 +911,16 @@ function AmenityItem({ label }: { label: string }) {
 }
 
 function BestPriceCard({
-  roomType,
+  offer,
   search,
 }: {
-  roomType: RoomType | null
+  offer: CheapestBookingOffer | null
   search: SearchState
 }) {
-  const estimate = roomType ? Number(roomType.basePrice) * search.rooms * getNights(search) : 0
+  const roomType = offer?.roomType ?? null
+  const bookingOption = offer?.option ?? null
+  const unitPrice = offer?.unitPrice ?? 0
+  const estimate = unitPrice * search.rooms * getNights(search)
 
   return (
     <Card className="h-fit overflow-hidden shadow-xl lg:sticky lg:top-36">
@@ -853,7 +929,7 @@ function BestPriceCard({
       </div>
       <CardContent className="flex flex-col gap-4 p-6">
         <div>
-          <div className="text-3xl font-bold text-primary">{money(roomType?.basePrice ?? 0, roomType?.currency ?? "VND")}</div>
+          <div className="text-3xl font-bold text-primary">{money(unitPrice, roomType?.currency ?? "VND")}</div>
           <div className="text-sm text-muted-foreground">
             Tổng giá: <span className="font-semibold text-foreground">{money(estimate, roomType?.currency ?? "VND")}</span>
           </div>
@@ -863,7 +939,7 @@ function BestPriceCard({
         </div>
         <div className="font-semibold">{roomType?.name ?? "Chọn phòng"}</div>
         <InfoPill icon={BedDouble} label={roomType ? getBedSummary(roomType) : "Chưa có loại phòng"} />
-        <InfoPill icon={Ban} label={roomType?.cancellationPolicy?.name ?? "Chính sách theo loại phòng"} />
+        <InfoPill icon={Ban} label={bookingOption?.cancellationPolicy.name ?? "Chính sách theo loại phòng"} />
         <InfoPill icon={Check} label="Xác nhận ngay" />
         <InfoPill icon={CreditCard} label="Thanh toán sau bước chọn phòng" />
         <Button size="lg" onClick={() => document.getElementById("choose-room")?.scrollIntoView({ behavior: "smooth" })}>
@@ -905,21 +981,16 @@ function HotelSearchBar({
 }) {
   return (
     <div className="sticky top-16 z-40 mb-5 bg-background/95 py-3 backdrop-blur">
-      <div className="flex w-full flex-col gap-2 rounded-xl border-2 border-primary bg-background p-1 shadow-sm lg:flex-row lg:items-center">
+      <div className="grid w-full grid-cols-1 gap-2 rounded-xl border-2 border-primary bg-background p-1 shadow-sm lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-center">
         <DateRangePicker search={search} minNightPrice={minNightPrice} onChange={onChange} />
-        <SearchDivider />
         <GuestPicker search={search} onChange={onChange} />
-        <Button className="h-12 rounded-lg px-6 text-base lg:ml-auto" onClick={onSearch} disabled={loading}>
+        <Button className="h-12 rounded-lg px-6 text-base" onClick={onSearch} disabled={loading}>
           {loading ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Search data-icon="inline-start" />}
           Tìm
         </Button>
       </div>
     </div>
   )
-}
-
-function SearchDivider() {
-  return <Separator orientation="vertical" className="mx-1 hidden h-12 lg:block" />
 }
 
 function DateRangePicker({
@@ -946,7 +1017,7 @@ function DateRangePicker({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button className="flex h-12 w-full items-center gap-4 rounded-lg px-4 hover:bg-muted lg:w-auto lg:min-w-[420px]">
+        <button className="flex h-12 w-full items-center gap-4 rounded-lg px-4 hover:bg-muted">
           <CalendarDays />
           <span className="text-base font-semibold">{headerDate(search.checkInDate)}</span>
           <span className="text-base font-semibold">-</span>
@@ -1000,26 +1071,20 @@ function GuestPicker({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button className="flex h-12 w-full items-center gap-3 rounded-lg px-4 hover:bg-muted lg:w-auto lg:min-w-[300px]">
+        <button className="flex h-12 w-full items-center gap-3 rounded-lg px-4 hover:bg-muted">
           <Users />
           <span className="text-base font-semibold">
-            {search.rooms} phòng, {search.adults} Người Lớn, {search.children} Trẻ Em
+            {search.adults} người lớn, {search.children} trẻ em
           </span>
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[360px] p-6">
         <div className="flex flex-col gap-6">
           <CounterRow
-            label="Phòng"
-            value={search.rooms}
-            min={1}
-            onChange={(rooms) => onChange({ ...search, rooms, adults: Math.max(search.adults, rooms) })}
-          />
-          <CounterRow
             label="Người lớn"
             description="18+ tuổi"
             value={search.adults}
-            min={search.rooms}
+            min={1}
             onChange={(adults) => onChange({ ...search, adults })}
           />
           <CounterRow
@@ -1071,16 +1136,20 @@ function CounterRow({
 function RoomTypeList({
   options,
   loading,
-  selectedRoomIds,
-  onRoomToggle,
+  selectedOptions,
+  cheapestOptionKey,
+  nights,
+  onAddOption,
+  onRemoveOption,
 }: {
   options: RoomTypeOption[]
   loading: boolean
-  selectedRoomIds: number[]
-  onRoomToggle: (roomId: number) => void
+  selectedOptions: SelectedBookingOption[]
+  cheapestOptionKey?: string
+  nights: number
+  onAddOption: (roomType: RoomType, option: RoomTypeBookingOption) => void
+  onRemoveOption: (roomType: RoomType, option: RoomTypeBookingOption) => void
 }) {
-  const scrollersRef = useRef<Record<string, HTMLDivElement | null>>({})
-
   if (loading) {
     return (
       <div className="flex flex-col gap-4">
@@ -1094,9 +1163,11 @@ function RoomTypeList({
     <div className="flex flex-col gap-5">
       {options.map((option) => {
         const roomType = option.roomType
-        const availableCount = option.availableRooms.length
-        const selectedInRoomType = option.availableRooms.filter((room) => selectedRoomIds.includes(room.roomId)).length
+        const availableCount = option.availableCount
+        const selectedInRoomType = getSelectionCount(selectedOptions, roomType.code)
         const primaryImage = roomType.images.find((image) => image.isPrimary) ?? roomType.images[0]
+        const canAddMore = selectedInRoomType < availableCount
+        const sortedBookingOptions = sortBookingOptionsByPrice(roomType)
 
         return (
           <Card key={roomType.code} className={cn("overflow-hidden", selectedInRoomType > 0 && "border-green-500")}>
@@ -1108,7 +1179,19 @@ function RoomTypeList({
                   overlay={`${roomType.images.length || 1}`}
                 />
                 <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-xl font-bold">{roomType.name}</h3>
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <h3 className="text-xl font-bold">{roomType.name}</h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={availableCount > 0 ? "success" : "destructive"} className="text-sm">
+                        Còn {availableCount} phòng
+                      </Badge>
+                      {selectedInRoomType > 0 && (
+                        <Badge variant="secondary" className="text-sm">
+                          Đã chọn {selectedInRoomType}/{availableCount}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
                   <Info className="text-muted-foreground" />
                 </div>
                 <div className="mt-4 flex items-center gap-2 text-base font-semibold">
@@ -1125,41 +1208,27 @@ function RoomTypeList({
               </div>
 
               <div className="relative min-w-0 overflow-hidden">
-                {availableCount > 0 ? (
-                  <>
-                    <div
-                      ref={(node) => {
-                        scrollersRef.current[roomType.code] = node
-                      }}
-                      className="flex h-full min-w-0 overflow-x-auto scroll-smooth pr-16"
-                    >
-                      {option.availableRooms.map((room, index) => (
-                        <RoomChoiceCard
-                          key={room.roomId}
-                          roomType={roomType}
-                          room={room}
-                          index={index}
-                          selected={selectedRoomIds.includes(room.roomId)}
-                          onToggle={() => onRoomToggle(room.roomId)}
-                        />
-                      ))}
-                    </div>
-                    {availableCount > 2 && (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="icon"
-                        className="absolute right-4 top-1/2 rounded-full shadow-lg"
-                        onClick={() => scrollersRef.current[roomType.code]?.scrollBy({ left: 360, behavior: "smooth" })}
-                        aria-label={`Xem thêm phòng ${roomType.name}`}
-                      >
-                        <ChevronRight />
-                      </Button>
-                    )}
-                  </>
+                {availableCount > 0 && sortedBookingOptions.length > 0 ? (
+                  <div className="flex h-full min-w-0 overflow-x-auto scroll-smooth">
+                    {sortedBookingOptions.map((bookingOption) => (
+                      <RoomChoiceCard
+                        key={bookingOption.optionKey}
+                        roomType={roomType}
+                        option={bookingOption}
+                        selectedCount={getSelectionCount(selectedOptions, roomType.code, bookingOption.optionKey)}
+                        isCheapestToday={bookingOption.optionKey === cheapestOptionKey}
+                        canAddMore={canAddMore}
+                        nights={nights}
+                        onAdd={() => onAddOption(roomType, bookingOption)}
+                        onRemove={() => onRemoveOption(roomType, bookingOption)}
+                      />
+                    ))}
+                  </div>
                 ) : (
                   <div className="flex h-full min-h-[260px] items-center justify-center p-6 text-center text-muted-foreground">
-                    Không còn phòng trống trong khoảng ngày này.
+                    {availableCount === 0
+                      ? "Không còn phòng trống trong khoảng ngày này."
+                      : "Loại phòng này chưa có option bán đang hoạt động."}
                   </div>
                 )}
               </div>
@@ -1182,48 +1251,119 @@ function RoomSpec({ label }: { label: string }) {
 
 function RoomChoiceCard({
   roomType,
-  room,
-  index,
-  selected,
-  onToggle,
+  option,
+  selectedCount,
+  isCheapestToday,
+  canAddMore,
+  nights,
+  onAdd,
+  onRemove,
 }: {
   roomType: RoomType
-  room: Room
-  index: number
-  selected: boolean
-  onToggle: () => void
+  option: RoomTypeBookingOption
+  selectedCount: number
+  isCheapestToday: boolean
+  canAddMore: boolean
+  nights: number
+  onAdd: () => void
+  onRemove: () => void
 }) {
-  const unitPrice = getRoomNightPrice(roomType, room)
+  const unitPrice = getBookingOptionUnitPrice(roomType, option)
+  const basePrice = Number(roomType.basePrice)
+  const priceDifference = unitPrice - basePrice
+  const displayRoomCount = Math.max(1, selectedCount)
+  const totalPrice = unitPrice * displayRoomCount * Math.max(1, nights)
+  const paymentLabel = option.paymentOption === "PAY_AT_HOTEL"
+    ? "Thanh toán tại khách sạn"
+    : "Thanh toán trước trực tuyến"
 
   return (
     <div className={cn(
       "flex min-h-[430px] w-[360px] shrink-0 flex-col justify-between border-r p-5",
-      selected && "bg-green-50/70"
+      selectedCount > 0 && "bg-green-50/70"
     )}>
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between gap-3">
-          <Badge variant={index === 0 ? "success" : "outline"}>
-            {index === 0 ? "Giá thấp nhất hôm nay" : `Lựa chọn ${index + 1}`}
-          </Badge>
+          {isCheapestToday ? (
+            <Badge className="rounded-md border-0 bg-cyan-50 px-3 py-1 text-sm font-semibold text-cyan-800">
+              Giá thấp nhất hôm nay
+            </Badge>
+          ) : (
+            <div className="text-base font-bold text-foreground">Chỉ tiền phòng</div>
+          )}
           <Info className="text-muted-foreground" />
         </div>
-        <div>
-          <div className="text-lg font-bold">Phòng {room.roomNumber}</div>
-          <div className="text-sm text-muted-foreground">
-            {room.floor === null ? "Chưa gán tầng" : `Tầng ${room.floor}`} · View {room.viewType}
-          </div>
-        </div>
-        <InfoPill icon={Ban} label={roomType.cancellationPolicy?.name ?? "Chính sách theo loại phòng"} />
-        <InfoPill icon={CreditCard} label={room.priceOverride === null ? "Giá theo loại phòng" : "Giá riêng của phòng"} />
+        <InfoPill icon={Ban} label={option.cancellationPolicy.name} />
+        <InfoPill icon={CreditCard} label={paymentLabel} />
         <InfoPill icon={Users} label={`Tối đa ${roomType.maxAdults} người lớn`} />
       </div>
 
       <div className="flex flex-col gap-3">
-        <div className="text-2xl font-bold text-primary">{money(unitPrice, roomType.currency)}</div>
-        <div className="text-sm text-muted-foreground">Giá cho 1 đêm, chưa tính lại ưu đãi theo booking.</div>
-        <Button variant={selected ? "success" : "default"} onClick={onToggle}>
-          {selected ? "Đã thêm" : "Thêm"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {priceDifference < 0 && (
+            <>
+              <Badge className="rounded-md border-0 bg-rose-600 px-2 py-1 text-sm font-bold text-white">
+                {money(priceDifference, roomType.currency)}
+              </Badge>
+              <Badge className="rounded-md border-0 bg-rose-50 px-2 py-1 text-sm font-medium text-rose-600">
+                Giảm Giá Đặc Biệt
+              </Badge>
+            </>
+          )}
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="text-3xl font-semibold leading-none text-[var(--accent)]">
+            {money(unitPrice, roomType.currency)}
+          </div>
+          {priceDifference < 0 && (
+            <div className="relative text-lg leading-none text-muted-foreground">
+              <span>{money(basePrice, roomType.currency)}</span>
+              <span className="absolute left-0 top-1/2 h-0.5 w-full -translate-y-1/2 rotate-[-8deg] bg-rose-600" />
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+          <div>
+            Tổng giá:{" "}
+            <span className="font-semibold text-foreground">
+              {money(totalPrice, roomType.currency)}
+            </span>
+          </div>
+          <div>
+            {displayRoomCount} phòng x {Math.max(1, nights)} đêm bao gồm thuế & phí
+          </div>
+        </div>
+        {selectedCount > 0 ? (
+          <div className="grid h-11 grid-cols-[44px_1fr_44px] overflow-hidden rounded-md border border-green-200 bg-green-50">
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-11 rounded-none text-green-800 hover:bg-green-100"
+              onClick={onRemove}
+              aria-label={`Giảm ${option.cancellationPolicy.name}`}
+            >
+              <Minus />
+            </Button>
+            <div className="flex items-center justify-center text-sm font-semibold text-green-900">
+              {selectedCount} phòng
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-11 rounded-none text-green-800 hover:bg-green-100"
+              onClick={onAdd}
+              disabled={!canAddMore}
+              aria-label={`Thêm ${option.cancellationPolicy.name}`}
+            >
+              <Plus />
+            </Button>
+          </div>
+        ) : (
+          <Button variant="default" onClick={onAdd} disabled={!canAddMore}>
+            <Plus data-icon="inline-start" />
+            Thêm
+          </Button>
+        )}
       </div>
     </div>
   )
@@ -1239,13 +1379,14 @@ function BottomCheckoutBar({
   onContinue: () => void
 }) {
   return (
-    <div className="fixed bottom-6 right-6 z-50">
-      <div className="absolute inset-0 rounded-full bg-[var(--accent)] opacity-30 blur-md motion-safe:animate-ping" />
+    <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
+      <div className="absolute inset-0 rounded-full bg-[var(--success)] opacity-30 blur-md motion-safe:animate-ping" />
       <Button
         type="button"
         onClick={onContinue}
         disabled={calculating}
-        className="relative size-24 rounded-full shadow-2xl motion-safe:animate-pulse"
+        variant="success"
+        className="relative size-24 rounded-full shadow-2xl"
         aria-label={`Thanh toán ${selectedCount} phòng đã chọn`}
       >
         {calculating ? (

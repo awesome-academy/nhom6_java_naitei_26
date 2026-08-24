@@ -9,6 +9,7 @@ import java.util.List;
 
 public record RoomTypeResponse(
         String code,
+        Long roomTypeId,
         String name,
         String slug,
         String description,
@@ -22,11 +23,20 @@ public record RoomTypeResponse(
         BigDecimal sizeSqm,
         Boolean isActive,
         Integer sortOrder,
-        CancellationPolicyResponse cancellationPolicy,
+        Boolean payAtHotelEnabled,
+        BigDecimal payAtHotelPriceAdjustmentPercent,
+        List<RoomTypeCancellationPolicyOptionResponse> onlineCancellationPolicyOptions,
+        List<RoomTypeBookingOptionResponse> bookingOptions,
         List<RoomTypeBedResponse> beds,
         List<AmenityResponse> amenities,
         List<RoomImageResponse> images,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt
 ) {
+    public CancellationPolicyResponse cancellationPolicy() {
+        if (onlineCancellationPolicyOptions == null || onlineCancellationPolicyOptions.isEmpty()) {
+            return null;
+        }
+        return onlineCancellationPolicyOptions.getFirst().cancellationPolicy();
+    }
 }

@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.dto.booking;
 
 import com.example.hotelmanagement.entity.enums.BookingRoomStatus;
+import com.example.hotelmanagement.entity.enums.BookingPaymentOption;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -19,6 +20,8 @@ public record BookingRoomResponse(
         BigDecimal roomSubtotal,
         String cancellationPolicyCode,
         String cancellationPolicyName,
+        BookingPaymentOption paymentOption,
+        BigDecimal priceAdjustmentPercent,
         OffsetDateTime assignedAt,
         Long assignedByStaffId,
         List<BookingRoomNightResponse> nights

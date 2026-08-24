@@ -3,6 +3,7 @@ package com.example.hotelmanagement.services;
 import com.example.hotelmanagement.dto.pricing.DailyRateResponse;
 import com.example.hotelmanagement.entity.RateOverride;
 import com.example.hotelmanagement.entity.Room;
+import com.example.hotelmanagement.entity.RoomType;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.PricingConfigurationException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
@@ -63,9 +64,45 @@ public class RateEngineService {
         return List.copyOf(dailyRates);
     }
 
+    public List<DailyRateResponse> calculateDailyRatesForRoomType(
+            RoomType roomType,
+            LocalDate checkInDate,
+            LocalDate checkOutDate
+    ) {
+        validateRoomTypeStayDates(roomType, checkInDate, checkOutDate);
+
+        List<ResolvedRateOverride> rateOverrides = rateOverrideRepository
+                .findActiveRoomTypeOverridesForPricing(roomType.getId(), checkInDate, checkOutDate)
+                .stream()
+                .filter(rateOverride -> Boolean.TRUE.equals(rateOverride.getIsActive()))
+                .map(this::resolveRateOverride)
+                .toList();
+
+        List<DailyRateResponse> dailyRates = new ArrayList<>();
+        for (LocalDate date = checkInDate; date.isBefore(checkOutDate); date = date.plusDays(1)) {
+            BigDecimal price = selectRateOverride(rateOverrides, date)
+                    .map(RateOverride::getPrice)
+                    .orElseGet(() -> getFallbackPrice(roomType));
+            dailyRates.add(new DailyRateResponse(date, price));
+        }
+        return List.copyOf(dailyRates);
+    }
+
     private void validateStayDates(Long roomId, LocalDate checkInDate, LocalDate checkOutDate) {
         if (roomId == null || roomId <= 0) {
             throw new BusinessValidationException("Room id must be a positive number");
+        }
+        if (checkInDate == null || checkOutDate == null) {
+            throw new BusinessValidationException("Check-in date and check-out date are required");
+        }
+        if (!checkOutDate.isAfter(checkInDate)) {
+            throw new BusinessValidationException("Check-out date must be after check-in date");
+        }
+    }
+
+    private void validateRoomTypeStayDates(RoomType roomType, LocalDate checkInDate, LocalDate checkOutDate) {
+        if (roomType == null || roomType.getId() == null) {
+            throw new BusinessValidationException("Room type is required for pricing");
         }
         if (checkInDate == null || checkOutDate == null) {
             throw new BusinessValidationException("Check-in date and check-out date are required");
@@ -168,6 +205,15 @@ public class RateEngineService {
             );
         }
         return room.getRoomType().getBasePrice();
+    }
+
+    private BigDecimal getFallbackPrice(RoomType roomType) {
+        if (roomType.getBasePrice() == null) {
+            throw new PricingConfigurationException(
+                    "Room type " + roomType.getId() + " has no base price"
+            );
+        }
+        return roomType.getBasePrice();
     }
 
     private record ResolvedRateOverride(

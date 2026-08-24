@@ -7,6 +7,8 @@ import com.example.hotelmanagement.dto.roomtype.RoomTypeAmenitiesRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeBedRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeBedResponse;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeBedsRequest;
+import com.example.hotelmanagement.dto.roomtype.RoomTypeBookingOptionResponse;
+import com.example.hotelmanagement.dto.roomtype.RoomTypeCancellationPolicyOptionResponse;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeCreateRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeResponse;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeStatsResponse;
@@ -16,7 +18,9 @@ import com.example.hotelmanagement.entity.CancellationPolicy;
 import com.example.hotelmanagement.entity.CancellationPolicyRule;
 import com.example.hotelmanagement.entity.RoomType;
 import com.example.hotelmanagement.entity.RoomTypeBed;
+import com.example.hotelmanagement.entity.RoomTypeCancellationPolicy;
 import com.example.hotelmanagement.entity.enums.BedType;
+import com.example.hotelmanagement.entity.enums.BookingPaymentOption;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
@@ -30,6 +34,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Comparator;
@@ -50,6 +55,7 @@ public class RoomTypeService {
     private static final int MAX_TOTAL_BEDS = 10;
     private static final String DEFAULT_CURRENCY = "VND";
     private static final int DEFAULT_SORT_ORDER = 0;
+    private static final String NON_REFUND_POLICY_CODE = "NON_REFUND";
 
     private final RoomTypeRepository roomTypeRepository;
     private final AmenityRepository amenityRepository;
@@ -168,10 +174,13 @@ public class RoomTypeService {
         roomType.setSizeSqm(request.sizeSqm());
         roomType.setIsActive(getValueOrDefault(request.isActive(), true));
         roomType.setSortOrder(getValueOrDefault(request.sortOrder(), DEFAULT_SORT_ORDER));
-        roomType.setCancellationPolicy(resolveCancellationPolicy(
-                request.cancellationPolicyCode(),
-                roomType.getIsActive()
+        roomType.setPayAtHotelEnabled(getValueOrDefault(request.payAtHotelEnabled(), true));
+        roomType.setPayAtHotelPriceAdjustmentPercent(normalizePercent(
+                request.payAtHotelPriceAdjustmentPercent(),
+                new BigDecimal("10.00")
         ));
+        replaceCancellationPolicyOptions(roomType, request.onlineCancellationPolicyCodes());
+        validateBookingOptions(roomType);
     }
 
     private void applyUpdateFields(RoomType roomType, RoomTypeUpdateRequest request, int maxChildren) {
@@ -184,10 +193,12 @@ public class RoomTypeService {
         roomType.setCurrency(normalizeCurrency(request.currency()));
         roomType.setExtraBedPrice(request.extraBedPrice());
         roomType.setSizeSqm(request.sizeSqm());
-        roomType.setCancellationPolicy(resolveCancellationPolicy(
-                request.cancellationPolicyCode(),
-                getValueOrDefault(request.isActive(), roomType.getIsActive())
+        roomType.setPayAtHotelEnabled(getValueOrDefault(request.payAtHotelEnabled(), roomType.getPayAtHotelEnabled()));
+        roomType.setPayAtHotelPriceAdjustmentPercent(normalizePercent(
+                request.payAtHotelPriceAdjustmentPercent(),
+                roomType.getPayAtHotelPriceAdjustmentPercent()
         ));
+        replaceCancellationPolicyOptions(roomType, request.onlineCancellationPolicyCodes());
 
         if (request.isActive() != null) {
             roomType.setIsActive(request.isActive());
@@ -195,6 +206,7 @@ public class RoomTypeService {
         if (request.sortOrder() != null) {
             roomType.setSortOrder(request.sortOrder());
         }
+        validateBookingOptions(roomType);
     }
 
     private void replaceBedConfiguration(RoomType roomType, List<RoomTypeBedRequest> bedRequests) {
@@ -301,16 +313,60 @@ public class RoomTypeService {
         }
     }
 
-    private CancellationPolicy resolveCancellationPolicy(String code, boolean isRoomTypeActive) {
-        if (code == null || code.isBlank()) {
-            if (isRoomTypeActive) {
-                throw new BusinessValidationException("Active room types must have a cancellation policy");
+    private void replaceCancellationPolicyOptions(RoomType roomType, Set<String> policyCodes) {
+        Set<String> normalizedCodes = normalizePolicyCodes(policyCodes);
+        Map<String, RoomTypeCancellationPolicy> existingOptions = roomType.getCancellationPolicyOptions().stream()
+                .filter(option -> option.getCancellationPolicy() != null)
+                .collect(Collectors.toMap(
+                        option -> normalizeCode(option.getCancellationPolicy().getCode()),
+                        option -> option,
+                        (first, duplicate) -> first
+                ));
+        roomType.getCancellationPolicyOptions().removeIf(
+                option -> option.getCancellationPolicy() == null
+                        || !normalizedCodes.contains(normalizeCode(option.getCancellationPolicy().getCode()))
+        );
+
+        int sortOrder = 0;
+        for (String policyCode : normalizedCodes) {
+            RoomTypeCancellationPolicy existingOption = existingOptions.get(policyCode);
+            if (existingOption != null) {
+                existingOption.setIsActive(true);
+                existingOption.setSortOrder(sortOrder++);
+                continue;
             }
-            return null;
+            CancellationPolicy policy = cancellationPolicyRepository.findByCodeIgnoreCaseAndIsActiveTrue(policyCode)
+                    .orElseThrow(() -> new ResourceNotFoundException("Active cancellation policy", policyCode));
+            if (roomType.getCancellationPolicy() == null) {
+                roomType.setCancellationPolicy(policy);
+            }
+            roomType.getCancellationPolicyOptions().add(RoomTypeCancellationPolicy.builder()
+                    .roomType(roomType)
+                    .cancellationPolicy(policy)
+                    .isActive(true)
+                    .sortOrder(sortOrder++)
+                    .build());
         }
-        String normalizedCode = normalizeCode(code);
-        return cancellationPolicyRepository.findByCodeIgnoreCaseAndIsActiveTrue(normalizedCode)
-                .orElseThrow(() -> new ResourceNotFoundException("Active cancellation policy", normalizedCode));
+    }
+
+    private Set<String> normalizePolicyCodes(Set<String> policyCodes) {
+        if (policyCodes == null) {
+            throw new BusinessValidationException("Online cancellation policy codes are required");
+        }
+        return policyCodes.stream()
+                .map(this::normalizeCode)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private void validateBookingOptions(RoomType roomType) {
+        if (!Boolean.TRUE.equals(roomType.getIsActive())) {
+            return;
+        }
+        boolean hasOnlineOption = roomType.getCancellationPolicyOptions().stream()
+                .anyMatch(option -> Boolean.TRUE.equals(option.getIsActive()));
+        if (!hasOnlineOption && !Boolean.TRUE.equals(roomType.getPayAtHotelEnabled())) {
+            throw new BusinessValidationException("Active room types must have at least one booking option");
+        }
     }
 
     private RoomTypeResponse mapRoomTypeResponse(RoomType roomType) {
@@ -332,6 +388,7 @@ public class RoomTypeService {
 
         return new RoomTypeResponse(
                 roomType.getCode(),
+                roomType.getId(),
                 roomType.getName(),
                 roomType.getSlug(),
                 roomType.getDescription(),
@@ -345,13 +402,58 @@ public class RoomTypeService {
                 roomType.getSizeSqm(),
                 roomType.getIsActive(),
                 roomType.getSortOrder(),
-                mapCancellationPolicyResponse(roomType.getCancellationPolicy()),
+                roomType.getPayAtHotelEnabled(),
+                roomType.getPayAtHotelPriceAdjustmentPercent(),
+                mapOnlinePolicyOptions(roomType),
+                mapBookingOptions(roomType),
                 beds,
                 amenities,
                 roomTypeImageService.getImageResponses(roomType),
                 roomType.getCreatedAt(),
                 roomType.getUpdatedAt()
         );
+    }
+
+    private List<RoomTypeCancellationPolicyOptionResponse> mapOnlinePolicyOptions(RoomType roomType) {
+        return roomType.getCancellationPolicyOptions().stream()
+                .filter(option -> option.getCancellationPolicy() != null)
+                .sorted(Comparator.comparing(RoomTypeCancellationPolicy::getSortOrder)
+                        .thenComparing(option -> option.getCancellationPolicy().getCode()))
+                .map(option -> new RoomTypeCancellationPolicyOptionResponse(
+                        mapCancellationPolicyResponse(option.getCancellationPolicy()),
+                        option.getIsActive(),
+                        option.getSortOrder()
+                ))
+                .toList();
+    }
+
+    private List<RoomTypeBookingOptionResponse> mapBookingOptions(RoomType roomType) {
+        List<RoomTypeBookingOptionResponse> options = new java.util.ArrayList<>();
+        roomType.getCancellationPolicyOptions().stream()
+                .filter(option -> Boolean.TRUE.equals(option.getIsActive()))
+                .filter(option -> option.getCancellationPolicy() != null)
+                .filter(option -> Boolean.TRUE.equals(option.getCancellationPolicy().getIsActive()))
+                .sorted(Comparator.comparing(RoomTypeCancellationPolicy::getSortOrder)
+                        .thenComparing(option -> option.getCancellationPolicy().getCode()))
+                .map(option -> new RoomTypeBookingOptionResponse(
+                        "ONLINE:" + option.getCancellationPolicy().getCode(),
+                        BookingPaymentOption.ONLINE,
+                        mapCancellationPolicyResponse(option.getCancellationPolicy()),
+                        option.getCancellationPolicy().getPriceAdjustmentPercent()
+                ))
+                .forEach(options::add);
+
+        if (Boolean.TRUE.equals(roomType.getPayAtHotelEnabled())) {
+            cancellationPolicyRepository.findByCodeIgnoreCaseAndIsActiveTrue(NON_REFUND_POLICY_CODE)
+                    .map(policy -> new RoomTypeBookingOptionResponse(
+                            "PAY_AT_HOTEL:" + policy.getCode(),
+                            BookingPaymentOption.PAY_AT_HOTEL,
+                            mapCancellationPolicyResponse(policy),
+                            roomType.getPayAtHotelPriceAdjustmentPercent()
+                    ))
+                    .ifPresent(options::add);
+        }
+        return List.copyOf(options);
     }
 
     private CancellationPolicyResponse mapCancellationPolicyResponse(CancellationPolicy policy) {
@@ -370,6 +472,7 @@ public class RoomTypeService {
                 policy.getName(),
                 policy.getDescription(),
                 policy.getNoShowChargePercent(),
+                policy.getPriceAdjustmentPercent(),
                 policy.getIsDefault(),
                 policy.getIsActive(),
                 rules,
@@ -406,5 +509,13 @@ public class RoomTypeService {
 
     private boolean getValueOrDefault(Boolean value, boolean defaultValue) {
         return value == null ? defaultValue : value;
+    }
+
+    private BigDecimal normalizePercent(BigDecimal value, BigDecimal defaultValue) {
+        BigDecimal normalized = value == null ? defaultValue : value;
+        if (normalized == null || normalized.signum() < 0 || normalized.compareTo(new BigDecimal("100.00")) > 0) {
+            throw new BusinessValidationException("Price adjustment percent must be between 0 and 100");
+        }
+        return normalized;
     }
 }

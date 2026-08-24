@@ -16,7 +16,9 @@ export const getAvailability = (checkInDate: string, checkOutDate: string) =>
   );
 export const calculateBookingPrice = (
   body: {
-    roomId: number;
+    roomTypeCode: string;
+    paymentOption: "ONLINE" | "PAY_AT_HOTEL";
+    cancellationPolicyCode: string;
     checkInDate: string;
     checkOutDate: string;
     adults: number;

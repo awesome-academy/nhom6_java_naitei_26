@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.dto.roomtype;
 
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -10,6 +11,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.util.Set;
 
 public record RoomTypeUpdateRequest(
         @NotBlank @Size(max = 120) String name,
@@ -23,6 +25,41 @@ public record RoomTypeUpdateRequest(
         @DecimalMin(value = "0.01") @Digits(integer = 4, fraction = 2) BigDecimal sizeSqm,
         Boolean isActive,
         @Min(0) Integer sortOrder,
-        @Size(max = 30) @Pattern(regexp = "^[A-Za-z0-9_]*$") String cancellationPolicyCode
+        Boolean payAtHotelEnabled,
+        @DecimalMin("0.00") @DecimalMax("100.00") @Digits(integer = 3, fraction = 2)
+        BigDecimal payAtHotelPriceAdjustmentPercent,
+        @NotNull @Size(max = 20)
+        Set<@NotBlank @Size(max = 30) @Pattern(regexp = "^[A-Za-z0-9_]+$") String> onlineCancellationPolicyCodes
 ) {
+    public RoomTypeUpdateRequest(
+            String name,
+            String description,
+            Integer maxOccupancy,
+            Integer maxAdults,
+            Integer maxChildren,
+            BigDecimal basePrice,
+            String currency,
+            BigDecimal extraBedPrice,
+            BigDecimal sizeSqm,
+            Boolean isActive,
+            Integer sortOrder,
+            String cancellationPolicyCode
+    ) {
+        this(
+                name,
+                description,
+                maxOccupancy,
+                maxAdults,
+                maxChildren,
+                basePrice,
+                currency,
+                extraBedPrice,
+                sizeSqm,
+                isActive,
+                sortOrder,
+                true,
+                new BigDecimal("10.00"),
+                cancellationPolicyCode == null ? Set.of() : Set.of(cancellationPolicyCode)
+        );
+    }
 }

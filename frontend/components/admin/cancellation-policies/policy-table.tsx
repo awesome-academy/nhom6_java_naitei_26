@@ -35,6 +35,7 @@ export function PolicyTable({
               <th className="w-12 px-4 py-3"><span className="sr-only">Mở rộng</span></th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Policy</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">No-show</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Tăng giá</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Bậc hoàn tiền</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Trạng thái</th>
               <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Thao tác</th>
@@ -43,7 +44,7 @@ export function PolicyTable({
           <tbody className="divide-y divide-[var(--border)]">
             {policies.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-[var(--muted-foreground)]">
+                <td colSpan={7} className="px-4 py-12 text-center text-[var(--muted-foreground)]">
                   Không có cancellation policy phù hợp.
                 </td>
               </tr>
@@ -72,6 +73,7 @@ export function PolicyTable({
                       <p className="mt-1 font-mono text-xs text-[var(--muted-foreground)]">{policy.code}</p>
                     </td>
                     <td className="px-4 py-3 text-sm font-medium">{formatPercent(policy.noShowChargePercent)}%</td>
+                    <td className="px-4 py-3 text-sm font-medium">{formatPercent(policy.priceAdjustmentPercent)}%</td>
                     <td className="px-4 py-3 text-sm">{policy.rules.length} bậc</td>
                     <td className="px-4 py-3 text-sm">
                       <Badge variant={policy.isActive ? "active" : "deactivated"}>
@@ -94,7 +96,7 @@ export function PolicyTable({
 
                   {expanded && (
                     <tr className="bg-[var(--muted)]/15">
-                      <td colSpan={6} className="px-6 py-5">
+                      <td colSpan={7} className="px-6 py-5">
                         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(360px,1.3fr)]">
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Mô tả</p>

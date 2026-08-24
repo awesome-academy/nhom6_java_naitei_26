@@ -19,11 +19,15 @@ public record CancellationPolicyUpdateRequest(
         @Size(max = 10_000)
         String description,
 
-        @NotNull
         @DecimalMin("0.00")
         @DecimalMax("100.00")
         @Digits(integer = 3, fraction = 2)
         BigDecimal noShowChargePercent,
+
+        @DecimalMin("0.00")
+        @DecimalMax("100.00")
+        @Digits(integer = 3, fraction = 2)
+        BigDecimal priceAdjustmentPercent,
 
         Boolean isDefault,
         Boolean isActive,
@@ -32,4 +36,22 @@ public record CancellationPolicyUpdateRequest(
         @Size(min = 1)
         List<@Valid CancellationPolicyRuleRequest> rules
 ) {
+    public CancellationPolicyUpdateRequest(
+            String name,
+            String description,
+            BigDecimal noShowChargePercent,
+            Boolean isDefault,
+            Boolean isActive,
+            List<CancellationPolicyRuleRequest> rules
+    ) {
+        this(
+                name,
+                description,
+                noShowChargePercent,
+                BigDecimal.ZERO,
+                isDefault,
+                isActive,
+                rules
+        );
+    }
 }

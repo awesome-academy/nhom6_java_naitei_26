@@ -3,6 +3,7 @@ import {
   storeTokens,
   clearTokens,
   getStoredTokens,
+  type AuthSessionScope,
 } from "./tokens"
 import type {
   AuthMessageResponse,
@@ -22,10 +23,12 @@ const OAUTH_STATE_KEY = "oauth_google_state"
 
 export { storeTokens, clearTokens, getStoredTokens }
 
-export function initAuthFromStorage() {
-  const { accessToken } = getStoredTokens()
+export function initAuthFromStorage(scope?: AuthSessionScope) {
+  const { accessToken } = getStoredTokens(scope)
   if (accessToken) {
-    apiClient.setAccessToken(accessToken)
+    apiClient.setAccessToken(accessToken, scope)
+  } else {
+    apiClient.setAccessToken(null, scope)
   }
 }
 

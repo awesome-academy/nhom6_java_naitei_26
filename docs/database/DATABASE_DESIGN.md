@@ -69,7 +69,7 @@ Mỗi thực thể dưới đây tồn tại vì một câu trong tài liệu y�
 **Pricing & Policy**
 
 - **RateOverride** — giá thực bán khác giá niêm yết theo mùa/cuối tuần/dịp lễ. **Master/config data**: dùng để *tính* giá lúc đặt, không dùng để *tính lại* booking cũ.
-- **CancellationPolicy + CancellationPolicyRule** — dòng 97 và BR-005: "hệ thống tính số tiền hoàn dựa trên **thời điểm hủy**". Một mốc thời gian duy nhất không diễn đạt được chính sách thực tế nhiều bậc (72h → 100%, 30h → 50%, 0h → 0%), nên Policy tách thành nhiều Rule. Admin gắn policy cho từng RoomType; toàn bộ policy + rules được snapshot vào từng `booking_rooms` để đổi chính sách không hồi tố khách cũ.
+- **CancellationPolicy + CancellationPolicyRule** — dòng 97 và BR-005: "hệ thống tính số tiền hoàn dựa trên **thời điểm hủy**". Một mốc thời gian duy nhất không diễn đạt được chính sách thực tế nhiều bậc (72h → 100%, 30h → 50%, 0h → 0%), nên Policy tách thành nhiều Rule. Policy còn giữ `% tăng giá` cho option thanh toán online. Admin chọn nhiều policy online cho từng RoomType qua bảng nối; option "thanh toán tại khách sạn" là cờ riêng trên RoomType và luôn dùng `NON_REFUND`. Toàn bộ policy + rules + phụ thu được snapshot vào từng `booking_rooms` để đổi chính sách không hồi tố khách cũ.
 
 **Booking & Availability**
 
@@ -115,7 +115,7 @@ CancellationPolicy 1─N CancellationPolicyRule
 
 CustomerProfile 1─N Booking  (nullable: walk-in không có account)
 BookingSource   1─N Booking
-CancellationPolicy 1─N RoomType
+RoomType N─N CancellationPolicy (qua room_type_cancellation_policies cho option online)
 CancellationPolicy 1─N BookingRoom  (+ snapshot JSONB toàn bộ policy vào từng booking room)
 
 Booking 1─N BookingRoom ────── N─1 Room       ← overlap check bằng trigger BR-002
@@ -392,10 +392,25 @@ Nếu bỏ shift management, hai bảng này có thể để trống mà không 
 | `size_sqm`                                     | NUMERIC(6,2)  | NULL                                         |                                                                                                                                 |
 | `is_active`                                    | BOOLEAN       | NOT NULL default true                        | Ngừng bán loại phòng mà không xóa                                                                                        |
 | `sort_order`                                   | SMALLINT      | NOT NULL default 0                           | Dòng 199 phòng nổi bật                                                                                                      |
-| `cancellation_policy_id`                       | BIGINT        | NULL, FK→cancellation_policies RESTRICT      | Admin chọn chính sách hủy áp dụng cho loại phòng này. Bắt buộc khi `is_active=true`; inactive được phép trống để cấu hình sau. RoomType cũ được backfill tạm bằng `NON_REFUND` |
+| `pay_at_hotel_enabled`                         | BOOLEAN       | NOT NULL default true                         | Admin bật/tắt option "Thanh toán tại khách sạn" cho RoomType. Option này luôn dùng policy `NON_REFUND` khi tạo booking. |
+| `pay_at_hotel_price_adjustment_percent`        | NUMERIC(5,2)  | NOT NULL default 10, CHECK`BETWEEN 0 AND 100` | Phụ thu cho option thanh toán tại khách sạn. Tách khỏi `NON_REFUND` để online non-refundable vẫn có thể giữ giá gốc. |
 | `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ   |                                              |                                                                                                                                 |
 
-### 4.2. `room_type_beds`
+### 4.2. `room_type_cancellation_policies`
+
+Bảng nối cấu hình **các policy hủy bán theo kênh thanh toán online** cho từng RoomType. Customer không chọn phòng vật lý; customer chỉ chọn RoomType + option thương mại, backend tự assign phòng còn trống.
+
+| Cột                       | Kiểu        | Ràng buộc                                      | Giải thích |
+| -------------------------- | ------------ | ------------------------------------------------ | ---------- |
+| `id`                     | BIGINT       | PK                                             |            |
+| `room_type_id`           | BIGINT       | NOT NULL, FK→room_types CASCADE                |            |
+| `cancellation_policy_id` | BIGINT       | NOT NULL, FK→cancellation_policies RESTRICT    | Policy online được phép bán cho RoomType này |
+| `is_active`              | BOOLEAN      | NOT NULL default true                          | Tắt một option mà không xóa cấu hình |
+| `sort_order`             | INT          | NOT NULL default 0                             | Thứ tự hiển thị option trên trang booking |
+
+UNIQUE(`room_type_id`, `cancellation_policy_id`) — một RoomType không có hai option online trùng policy. RoomType active phải có ít nhất một option bán: hoặc `pay_at_hotel_enabled=true`, hoặc có ít nhất một dòng active trong bảng này.
+
+### 4.3. `room_type_beds`
 
 Chi tiết cấu hình giường (2 giường Queen + 1 sofa bed). `bed_count` ở trên là tổng để lọc nhanh; bảng này để hiển thị chi tiết.
 
@@ -408,7 +423,7 @@ Chi tiết cấu hình giường (2 giường Queen + 1 sofa bed). `bed_count` �
 
 UNIQUE(`room_type_id`, `bed_type`) — không tạo hai dòng KING cho cùng loại phòng, phải cộng vào `quantity`.
 
-### 4.3. `amenities`, `room_type_amenities`, `room_amenities`
+### 4.4. `amenities`, `room_type_amenities`, `room_amenities`
 
 | Bảng                   | Cột                                                                                         | Ràng buộc & giải thích                                                                                                                   |
 | ----------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -418,7 +433,7 @@ UNIQUE(`room_type_id`, `bed_type`) — không tạo hai dòng KING cho cùng lo�
 
 Tiện nghi hiệu lực của một phòng = hợp của hai bảng. Cách này tránh nhân bản 20 dòng tiện nghi cho từng phòng trong khi vẫn cho phép ngoại lệ theo phòng.
 
-### 4.4. `rooms`
+### 4.5. `rooms`
 
 | Cột                                                              | Kiểu                   | Ràng buộc                                                    | Giải thích                                                                                                                                                                                           |
 | ----------------------------------------------------------------- | ----------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -437,7 +452,7 @@ Tiện nghi hiệu lực của một phòng = hợp của hai bảng. Cách này
 
 Index: `(room_type_id)`, `(view_type)`, và `(operational_status, is_active)` với `WHERE deleted_at IS NULL`.
 
-### 4.5. `room_images` và `room_type_images`
+### 4.6. `room_images` và `room_type_images`
 
 Hai bảng cùng cấu trúc, tách ra để FK rõ ràng (một bảng dùng chung với `owner_type` sẽ mất khả năng ràng buộc FK).
 
@@ -454,7 +469,7 @@ Hai bảng cùng cấu trúc, tách ra để FK rõ ràng (một bảng dùng ch
 
 Partial UNIQUE(`room_id`) `WHERE is_primary` — chỉ một ảnh chính mỗi phòng. Không đặt UNIQUE trên `sort_order` vì kéo-thả sắp xếp lại sẽ vi phạm tạm thời giữa các bước update.
 
-### 4.6. `room_status_blocks`
+### 4.7. `room_status_blocks`
 
 Bảng then chốt cho BR-003/BR-004. Ghi lại khoảng phòng không bán được vì lý do vận hành.
 
@@ -531,6 +546,7 @@ Dòng 97: "hệ thống tính số tiền hoàn dựa trên thời điểm hủy
 | `name`                        | VARCHAR(120) | NOT NULL                                         | Hiện cho khách trước khi đặt                                                                          |
 | `description`                 | TEXT         | NULL                                             |                                                                                                             |
 | `no_show_charge_percent`      | NUMERIC(5,2) | NOT NULL default 100, CHECK`BETWEEN 0 AND 100` | Dòng 151 có trạng thái no-show.**No-show không phải một bậc hủy** — xem giải thích dưới |
+| `price_adjustment_percent`    | NUMERIC(5,2) | NOT NULL default 0, CHECK`BETWEEN 0 AND 100`   | Phụ thu khi policy này được bán ở option thanh toán online. `NON_REFUND` thường là 0%; policy hoàn linh hoạt có thể cao hơn. |
 | `is_default`                  | BOOLEAN      | NOT NULL default false                           | Partial UNIQUE`WHERE is_default` — chỉ một chính sách mặc định                                    |
 | `is_active`                   | BOOLEAN      | NOT NULL default true                            |                                                                                                             |
 | `created_at` / `updated_at` | TIMESTAMPTZ  | NOT NULL default now()                           |                                                                                                             |
@@ -588,6 +604,7 @@ Trong đó `scheduled_check_in_time` = `MIN(booking_rooms.check_in_date)` của 
   "code": "FLEXIBLE",
   "name": "Flexible Cancellation",
   "no_show_charge_percent": 100,
+  "price_adjustment_percent": 10,
   "rules": [
     { "min_hours_before": 72, "refund_percent": 100 },
     { "min_hours_before": 30, "refund_percent": 50 },
@@ -598,10 +615,10 @@ Trong đó `scheduled_check_in_time` = `MIN(booking_rooms.check_in_date)` của 
 
 Ba điểm cần đúng:
 
-1. Snapshot **đúng policy của RoomType tại thời điểm tạo booking_room**, không copy toàn bộ bảng `cancellation_policies`.
+1. Snapshot **đúng policy của option RoomType tại thời điểm tạo booking_room**, không copy toàn bộ bảng `cancellation_policies`.
 2. Thời điểm snapshot: khi điều khoản thương mại được khách chấp nhận. Với luồng ở mục 7 của spec (tạo booking → thanh toán → xác nhận), điều khoản hủy được hiển thị và chấp nhận ngay ở bước tạo booking, nên snapshot **tại lúc tạo booking**. Nếu team đổi flow sang "chấp nhận điều khoản ở bước thanh toán", chuyển sang snapshot lúc `CONFIRMED` — chỉ cần thống nhất một chỗ và ghi vào code comment.
-3. Một booking có thể gồm nhiều RoomType với nhiều policy khác nhau; khi hủy, refund tính theo từng `booking_rooms.room_subtotal` và snapshot của dòng phòng đó rồi cộng lại.
-4. Sau khi snapshot, Admin sửa `room_types.cancellation_policy_id`, `cancellation_policies`/`cancellation_policy_rules` (kể cả xóa policy làm CASCADE mất rules) **không** ảnh hưởng booking cũ, vì phép tính refund đọc từ JSONB chứ không join sang bảng gốc. Đây là lý do không cần versioning hay SCD Type 2 cho policy (P8).
+3. Một booking có thể gồm nhiều RoomType với nhiều policy/payment option khác nhau; khi hủy, refund tính theo từng `booking_rooms.room_subtotal` và snapshot của dòng phòng đó rồi cộng lại.
+4. Sau khi snapshot, Admin sửa `room_type_cancellation_policies`, `room_types.pay_at_hotel_*`, `cancellation_policies`/`cancellation_policy_rules` (kể cả xóa policy làm CASCADE mất rules) **không** ảnh hưởng booking cũ, vì phép tính refund đọc từ JSONB chứ không join sang bảng gốc. Đây là lý do không cần versioning hay SCD Type 2 cho policy (P8).
 
 ---
 
@@ -705,6 +722,8 @@ Nơi BR-001, BR-002, BR-003 và BR-009 được thực thi. Đây cũng là nơi
 | `room_type_name_snapshot`     | VARCHAR(120)        | NOT NULL                                                            | Snapshot tên loại phòng lúc đặt. Cần vì Staff có thể đổi tên "Deluxe" thành "Deluxe Garden"; hóa đơn và lịch sử của khách cũ phải giữ tên tại thời điểm bán |
 | `cancellation_policy_id`      | BIGINT              | NULL, FK→cancellation_policies RESTRICT                             | Reference policy gốc của dòng phòng, không dùng để tính refund                                                                                                                   |
 | `cancellation_policy_snapshot`| JSONB               | NULL                                                                | **Nguồn tính refund** cho dòng phòng này (mục 5.4)                                                                                                                              |
+| `payment_option`              | VARCHAR(30)         | NOT NULL default `ONLINE`, CHECK `ONLINE/PAY_AT_HOTEL`              | Snapshot loại thanh toán khách đã chọn cho dòng phòng |
+| `price_adjustment_percent_snapshot` | NUMERIC(5,2) | NOT NULL default 0, CHECK`BETWEEN 0 AND 100`                        | Snapshot phụ thu đã dùng để tính `booking_room_nights.price` |
 | `check_in_date`               | DATE                | NOT NULL                                                            |                                                                                                                                                                                            |
 | `check_out_date`              | DATE                | NOT NULL,**CHECK `> check_in_date`**                        | **BR-001** cưỡng chế tại DB                                                                                                                                                      |
 | `nights`                      | INT                 | GENERATED ALWAYS AS (`DATEDIFF(check_out_date, check_in_date)`) STORED | Số đêm lưu trú. MySQL 8 hỗ trợ generated columns                                                                                                                                                              |

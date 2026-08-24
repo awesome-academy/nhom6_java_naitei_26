@@ -336,7 +336,9 @@
   - MODERATE: 168h → 100%, 72h → 50%, 0h → 0%
   - NON_REFUND: 0h → 0%
 - Snapshot policy + rules vào JSON → gửi lên booking
-- Admin gắn policy ở từng RoomType; room type cũ backfill tạm bằng `NON_REFUND`.
+- Admin gắn nhiều cancellation policy online ở từng RoomType; policy có `% tăng giá` khi bán online.
+- Mỗi RoomType có thể bật/tắt option `Thanh toán tại khách sạn`; option này luôn dùng `NON_REFUND` và có phụ thu riêng trên RoomType.
+- Customer chọn RoomType + payment/cancellation option; backend tự assign phòng vật lý còn trống, không cho customer chọn phòng cụ thể.
 
 #### BE-4.4 | Booking Price Calculator API | Priority: Urgent | 21/08 | Est: 4h
 
@@ -416,7 +418,8 @@
 - Tính giá từng đêm → ghi `booking_room_nights` rows
 - Snapshot fields:
   - `room_tax_percent_snapshot`
-  - `booking_rooms.cancellation_policy_snapshot` (JSON full policy + rules theo RoomType)
+  - `booking_rooms.cancellation_policy_snapshot` (JSON full policy + rules theo option RoomType)
+  - `booking_rooms.payment_option`, `booking_rooms.price_adjustment_percent_snapshot`
   - `source_commission_percent_snapshot`
 - Tạo `booking_code` (BK-2026-XXXXXX)
 - Setup `hold_expires_at` (**15 phút** nếu không thanh toán ngay)
@@ -466,7 +469,7 @@
 - Multi-step booking wizard:
   - B1: Chọn phòng & ngày (Availability API → hiển thị phòng khả dụng)
   - B2: Nhập thông tin liên hệ + khách lưu trú
-  - B3: Review chính sách hủy theo từng RoomType đã chọn
+  - B3: Review option thanh toán/chính sách hủy theo từng RoomType đã chọn
   - B4: Đặt cọc (chọn payment method → redirect gateway)
 - Progress indicator
 

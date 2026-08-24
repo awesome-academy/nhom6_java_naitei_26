@@ -24,7 +24,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -53,7 +52,6 @@ import type { CancellationPolicy } from "@/types/cancellation-policy"
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024
 const MAX_IMAGES = 20
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"]
-const NO_POLICY_VALUE = "__none"
 
 const bedTypeLabels: Record<BedType, string> = {
   SINGLE: "Giường đơn",
@@ -95,7 +93,9 @@ const roomTypeSchema = z
     sizeSqm: z.number().positive("Diện tích phải lớn hơn 0").nullable(),
     isActive: z.boolean(),
     sortOrder: z.number().int().min(0),
-    cancellationPolicyCode: z.string().trim().max(30).nullable(),
+    payAtHotelEnabled: z.boolean(),
+    payAtHotelPriceAdjustmentPercent: z.number().min(0).max(100),
+    onlineCancellationPolicyCodes: z.array(z.string().trim().max(30)).max(20),
     beds: z
       .array(
         z.object({
@@ -122,11 +122,15 @@ const roomTypeSchema = z
         message: "Số trẻ em không được vượt quá sức chứa",
       })
     }
-    if (value.isActive && !value.cancellationPolicyCode) {
+    if (
+      value.isActive &&
+      !value.payAtHotelEnabled &&
+      value.onlineCancellationPolicyCodes.length === 0
+    ) {
       context.addIssue({
         code: "custom",
-        path: ["cancellationPolicyCode"],
-        message: "Loại phòng hoạt động cần có chính sách hủy",
+        path: ["onlineCancellationPolicyCodes"],
+        message: "Loại phòng hoạt động cần ít nhất một option bán",
       })
     }
     const bedTypes = value.beds.map((bed) => bed.bedType)
@@ -166,14 +170,6 @@ interface RoomTypeFormDialogProps {
   onSaved: () => Promise<void>
 }
 
-function getPreferredPolicyCode(cancellationPolicies: CancellationPolicy[]): string | null {
-  return (
-    cancellationPolicies.find((policy) => policy.code === "NON_REFUND") ??
-    cancellationPolicies[0] ??
-    null
-  )?.code ?? null
-}
-
 function defaultValues(roomType: RoomType | null): RoomTypeFormValues {
   return {
     code: roomType?.code ?? "",
@@ -188,7 +184,10 @@ function defaultValues(roomType: RoomType | null): RoomTypeFormValues {
     sizeSqm: roomType?.sizeSqm == null ? null : Number(roomType.sizeSqm),
     isActive: roomType?.isActive ?? true,
     sortOrder: roomType?.sortOrder ?? 0,
-    cancellationPolicyCode: roomType?.cancellationPolicy?.code ?? null,
+    payAtHotelEnabled: roomType?.payAtHotelEnabled ?? true,
+    payAtHotelPriceAdjustmentPercent: Number(roomType?.payAtHotelPriceAdjustmentPercent ?? 10),
+    onlineCancellationPolicyCodes:
+      roomType?.onlineCancellationPolicyOptions.map((option) => option.cancellationPolicy.code) ?? ["NON_REFUND"],
     beds: roomType?.beds.length
       ? roomType.beds.map((bed) => ({ ...bed }))
       : [{ bedType: "QUEEN", quantity: 1 }],
@@ -225,7 +224,8 @@ export function RoomTypeFormDialog({
   const beds = useFieldArray({ control: form.control, name: "beds" })
   const watchedBeds = useWatch({ control: form.control, name: "beds" })
   const selectedAmenities = useWatch({ control: form.control, name: "amenityCodes" })
-  const selectedCancellationPolicyCode = useWatch({ control: form.control, name: "cancellationPolicyCode" })
+  const selectedPolicyCodes = useWatch({ control: form.control, name: "onlineCancellationPolicyCodes" }) ?? []
+  const payAtHotelEnabled = useWatch({ control: form.control, name: "payAtHotelEnabled" })
   const selectedName = useWatch({ control: form.control, name: "name" })
   const isActive = useWatch({ control: form.control, name: "isActive" })
 
@@ -246,17 +246,6 @@ export function RoomTypeFormDialog({
   useEffect(() => {
     pendingImagesRef.current = pendingImages
   }, [pendingImages])
-
-  useEffect(() => {
-    if (!open || !isActive || form.getValues("cancellationPolicyCode")) return
-    const preferredPolicyCode = getPreferredPolicyCode(cancellationPolicies)
-    if (preferredPolicyCode) {
-      form.setValue("cancellationPolicyCode", preferredPolicyCode, {
-        shouldDirty: false,
-        shouldValidate: true,
-      })
-    }
-  }, [cancellationPolicies, form, isActive, open])
 
   useEffect(() => {
     return () => pendingImagesRef.current.forEach(
@@ -343,7 +332,9 @@ export function RoomTypeFormDialog({
       sizeSqm: values.sizeSqm,
       isActive: values.isActive,
       sortOrder: values.sortOrder,
-      cancellationPolicyCode: values.cancellationPolicyCode,
+      payAtHotelEnabled: values.payAtHotelEnabled,
+      payAtHotelPriceAdjustmentPercent: values.payAtHotelPriceAdjustmentPercent,
+      onlineCancellationPolicyCodes: values.onlineCancellationPolicyCodes,
     }
 
     try {
@@ -454,36 +445,71 @@ export function RoomTypeFormDialog({
                 </div>
               </div>
               <Field
-                label="Chính sách hủy"
-                error={form.formState.errors.cancellationPolicyCode?.message}
+                label="Option bán"
+                error={form.formState.errors.onlineCancellationPolicyCodes?.message}
               >
-                <Select
-                  value={selectedCancellationPolicyCode ?? NO_POLICY_VALUE}
-                  disabled={isActive && cancellationPolicies.length === 0}
-                  onValueChange={(value) => {
-                    form.setValue(
-                      "cancellationPolicyCode",
-                      value === NO_POLICY_VALUE ? null : value,
-                      { shouldDirty: true, shouldValidate: true }
-                    )
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Chọn chính sách hủy" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value={NO_POLICY_VALUE} disabled={isActive}>
-                        {isActive ? "Chọn chính sách" : "Không áp dụng"}
-                      </SelectItem>
-                      {cancellationPolicies.map((policy) => (
-                        <SelectItem key={policy.code} value={policy.code}>
-                          {policy.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                <div className="space-y-4 rounded-lg border p-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {cancellationPolicies.map((policy) => {
+                      const checked = selectedPolicyCodes.includes(policy.code)
+                      return (
+                        <label
+                          key={policy.code}
+                          className="flex cursor-pointer items-start gap-3 rounded-md border p-3"
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(nextChecked) => {
+                              const nextCodes = nextChecked
+                                ? [...selectedPolicyCodes, policy.code]
+                                : selectedPolicyCodes.filter((code) => code !== policy.code)
+                              form.setValue("onlineCancellationPolicyCodes", nextCodes, {
+                                shouldDirty: true,
+                                shouldValidate: true,
+                              })
+                            }}
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium">{policy.name}</span>
+                            <span className="block text-xs text-[var(--muted-foreground)]">
+                              Online · +{policy.priceAdjustmentPercent}%
+                            </span>
+                          </span>
+                        </label>
+                      )
+                    })}
+                    {cancellationPolicies.length === 0 && (
+                      <p className="text-sm text-[var(--muted-foreground)]">
+                        Chưa có policy active để chọn.
+                      </p>
+                    )}
+                  </div>
+                  <div className="grid gap-4 border-t pt-4 md:grid-cols-[1fr_180px]">
+                    <div className="flex items-center gap-3">
+                      <Switch
+                        checked={payAtHotelEnabled}
+                        onCheckedChange={(checked) => {
+                          form.setValue("payAtHotelEnabled", checked, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                        }}
+                      />
+                      <div>
+                        <Label>Thanh toán tại khách sạn</Label>
+                        <p className="text-xs text-[var(--muted-foreground)]">
+                          Luôn dùng non-refundable cho option này.
+                        </p>
+                      </div>
+                    </div>
+                    <NumberField
+                      form={form}
+                      name="payAtHotelPriceAdjustmentPercent"
+                      label="Phụ thu (%)"
+                      step="0.01"
+                    />
+                  </div>
+                </div>
                 {policyLoadError && (
                   <p className="text-xs text-[var(--destructive)]">
                     Không tải được danh sách chính sách hủy: {policyLoadError}
@@ -725,7 +751,13 @@ function Field({ label, error, children }: FieldProps) {
 
 interface NumberFieldProps {
   form: ReturnType<typeof useForm<RoomTypeFormValues>>
-  name: "basePrice" | "maxOccupancy" | "maxAdults" | "maxChildren" | "sortOrder"
+  name:
+    | "basePrice"
+    | "maxOccupancy"
+    | "maxAdults"
+    | "maxChildren"
+    | "sortOrder"
+    | "payAtHotelPriceAdjustmentPercent"
   label: string
   step?: string
 }

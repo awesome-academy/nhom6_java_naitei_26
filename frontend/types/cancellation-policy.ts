@@ -8,6 +8,7 @@ export interface CancellationPolicy {
   name: string
   description: string | null
   noShowChargePercent: number
+  priceAdjustmentPercent: number
   isDefault: boolean
   isActive: boolean
   rules: CancellationPolicyRule[]
@@ -20,6 +21,7 @@ export interface CancellationPolicyCreateRequest {
   name: string
   description: string | null
   noShowChargePercent: number
+  priceAdjustmentPercent: number
   isDefault: boolean
   isActive: boolean
   rules: CancellationPolicyRule[]

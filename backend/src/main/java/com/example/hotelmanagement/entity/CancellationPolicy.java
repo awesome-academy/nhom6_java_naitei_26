@@ -29,6 +29,10 @@ public class CancellationPolicy extends BaseEntity {
     @Builder.Default
     private BigDecimal noShowChargePercent = new BigDecimal("100.00");
 
+    @Column(name = "price_adjustment_percent", nullable = false, precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal priceAdjustmentPercent = BigDecimal.ZERO;
+
     @Column(name = "is_default", nullable = false)
     @Builder.Default
     private Boolean isDefault = false;

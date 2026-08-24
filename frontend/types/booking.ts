@@ -19,8 +19,13 @@ export interface DailyRate {
   rateOverrideId?: number | null;
 }
 export interface PriceCalculation {
-  roomId: number;
+  roomId: number | null;
   roomTypeId: number;
+  roomTypeCode: string;
+  paymentOption: "ONLINE" | "PAY_AT_HOTEL";
+  cancellationPolicyCode: string;
+  cancellationPolicyName: string;
+  priceAdjustmentPercent: number;
   checkInDate: string;
   checkOutDate: string;
   nights: number;
@@ -34,7 +39,9 @@ export interface PriceCalculation {
   currency: string;
 }
 export interface BookingRoomItem {
-  roomId: number;
+  roomTypeCode: string;
+  paymentOption: "ONLINE" | "PAY_AT_HOTEL";
+  cancellationPolicyCode: string;
   checkInDate: string;
   checkOutDate: string;
   adults: number;
@@ -59,6 +66,8 @@ export interface BookingRoom {
   roomSubtotal: number;
   cancellationPolicyCode: string | null;
   cancellationPolicyName: string | null;
+  paymentOption: "ONLINE" | "PAY_AT_HOTEL";
+  priceAdjustmentPercent: number;
   nights: { stayDate: string; price: number }[];
 }
 export interface Booking {
