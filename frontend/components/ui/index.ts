@@ -6,7 +6,7 @@ export { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbP
 export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./card"
 export { Checkbox } from "./checkbox"
 export { DataTable } from "./dataTable"
-export { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "./dropdownMenu"
+export { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "./DropdownMenu"
 export { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "./form"
 export { Input } from "./input"
 export { Label } from "./label"

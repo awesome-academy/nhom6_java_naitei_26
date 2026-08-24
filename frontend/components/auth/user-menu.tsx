@@ -15,7 +15,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdownMenu"
+} from "@/components/ui/DropdownMenu"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/lib/auth-context"
 import { logout } from "@/lib/api/auth"
