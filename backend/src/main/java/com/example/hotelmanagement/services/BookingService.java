@@ -9,6 +9,7 @@ import com.example.hotelmanagement.dto.booking.BookingRoomNightResponse;
 import com.example.hotelmanagement.dto.booking.BookingRoomResponse;
 import com.example.hotelmanagement.dto.pricing.DailyRateResponse;
 import com.example.hotelmanagement.entity.Booking;
+import com.example.hotelmanagement.entity.BookingGuest;
 import com.example.hotelmanagement.entity.BookingRoom;
 import com.example.hotelmanagement.entity.BookingRoomNight;
 import com.example.hotelmanagement.entity.BookingSource;
@@ -206,6 +207,13 @@ public class BookingService {
             }
 
             booking.getBookingRooms().add(bookingRoom);
+            booking.getBookingGuests().add(
+                    BookingGuest.builder()
+                            .booking(booking)
+                            .bookingRoom(bookingRoom)
+                            .fullName(normalizeOrDefault(item.guestFullName(), booking.getContactName()))
+                            .build()
+            );
             roomsTotal = roomsTotal.add(priceCalculation.roomsTotal());
             taxTotal = taxTotal.add(priceCalculation.taxTotal());
             totalAdults += item.adults();

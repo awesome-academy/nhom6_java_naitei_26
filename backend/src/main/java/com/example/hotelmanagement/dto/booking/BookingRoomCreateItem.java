@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
 
@@ -16,7 +17,8 @@ public record BookingRoomCreateItem(
         @NotNull LocalDate checkInDate,
         @NotNull LocalDate checkOutDate,
         @NotNull @Min(1) Integer adults,
-        @NotNull @Min(0) Integer children
+        @NotNull @Min(0) Integer children,
+        @NotBlank @Size(max = 150) String guestFullName
 ) {
     public BookingRoomCreateItem(
             Long roomId,
@@ -26,7 +28,7 @@ public record BookingRoomCreateItem(
             Integer children
     ) {
         this(String.valueOf(roomId), com.example.hotelmanagement.entity.enums.BookingPaymentOption.ONLINE,
-                "FLEXIBLE", checkInDate, checkOutDate, adults, children);
+                "FLEXIBLE", checkInDate, checkOutDate, adults, children, "Guest");
     }
 
     public Long roomId() {

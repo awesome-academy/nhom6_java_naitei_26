@@ -46,6 +46,7 @@ export interface BookingRoomItem {
   checkOutDate: string;
   adults: number;
   children: number;
+  guestFullName: string;
 }
 export interface BookingCreateRequest {
   contactName?: string;
