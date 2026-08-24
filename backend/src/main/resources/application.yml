@@ -115,3 +115,12 @@ app:
       client-secret: ${GOOGLE_CLIENT_SECRET:}
       redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/auth/oauth/google/callback}
       frontend-callback-url: ${GOOGLE_FRONTEND_CALLBACK_URL:http://localhost:3000/auth/google/callback}
+  payment:
+    default-provider: ${PAYMENT_DEFAULT_PROVIDER:SEPAY}
+    sepay:
+      checkout-endpoint: ${SEPAY_CHECKOUT_ENDPOINT:https://pay-sandbox.sepay.vn/v1/checkout/init}
+      merchant-id: ${SEPAY_MERCHANT_ID:}
+      secret-key: ${SEPAY_SECRET_KEY:}
+      success-url: ${SEPAY_SUCCESS_URL:}
+      error-url: ${SEPAY_ERROR_URL:}
+      cancel-url: ${SEPAY_CANCEL_URL:}

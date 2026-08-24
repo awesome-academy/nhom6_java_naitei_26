@@ -115,6 +115,11 @@ class PaymentAuthorizationTest {
                 new BigDecimal("1250000.00"),
                 "VND",
                 PaymentStatus.PENDING,
+                "SEPAY",
+                "https://pay-sandbox.sepay.vn/v1/checkout/init",
+                null,
+                null,
+                List.of(),
                 OffsetDateTime.of(2026, 8, 24, 8, 15, 0, 0, ZoneOffset.UTC),
                 OffsetDateTime.of(2026, 8, 24, 8, 0, 0, 0, ZoneOffset.UTC)
         );

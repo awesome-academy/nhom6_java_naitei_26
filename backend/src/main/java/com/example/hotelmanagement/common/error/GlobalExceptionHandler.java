@@ -4,6 +4,7 @@ import com.example.hotelmanagement.exceptions.AuthException;
 import com.example.hotelmanagement.exceptions.BookingRoomConflictException;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
+import com.example.hotelmanagement.exceptions.PaymentGatewayException;
 import com.example.hotelmanagement.exceptions.RateOverrideConflictException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.exceptions.RoomStatusConflictException;
@@ -132,6 +133,19 @@ public class GlobalExceptionHandler {
             request.getMethod(), sanitizeForLog(request.getRequestURI()), exception);
         return ResponseEntity.status(status).body(
             toError(status, "Image storage is temporarily unavailable", request, Map.of())
+        );
+    }
+
+    @ExceptionHandler(PaymentGatewayException.class)
+    public ResponseEntity<ApiErrorResponse> handlePaymentGateway(
+        PaymentGatewayException exception,
+        HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.BAD_GATEWAY;
+        log.error("Payment gateway request failed method={} path={}",
+            request.getMethod(), sanitizeForLog(request.getRequestURI()), exception);
+        return ResponseEntity.status(status).body(
+            toError(status, "Payment gateway is temporarily unavailable", request, Map.of())
         );
     }
 

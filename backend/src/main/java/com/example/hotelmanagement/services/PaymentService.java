@@ -1,6 +1,8 @@
 package com.example.hotelmanagement.services;
 
+import com.example.hotelmanagement.config.PaymentProperties;
 import com.example.hotelmanagement.dto.payment.PaymentCreateRequest;
+import com.example.hotelmanagement.dto.payment.PaymentGatewayCheckout;
 import com.example.hotelmanagement.dto.payment.PaymentResponse;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.Payment;
@@ -9,6 +11,7 @@ import com.example.hotelmanagement.entity.enums.PaymentMethod;
 import com.example.hotelmanagement.entity.enums.PaymentStatus;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
+import com.example.hotelmanagement.exceptions.PaymentGatewayException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.BookingRepository;
 import com.example.hotelmanagement.repositories.PaymentRepository;
@@ -28,6 +31,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -44,20 +48,27 @@ public class PaymentService {
 
     private final BookingRepository bookingRepository;
     private final PaymentRepository paymentRepository;
+    private final PaymentGatewayRegistry gatewayRegistry;
+    private final PaymentProperties paymentProperties;
     private final Clock clock;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public PaymentService(
             BookingRepository bookingRepository,
             PaymentRepository paymentRepository,
+            PaymentGatewayRegistry gatewayRegistry,
+            PaymentProperties paymentProperties,
             Clock clock
     ) {
         this.bookingRepository = bookingRepository;
         this.paymentRepository = paymentRepository;
+        this.gatewayRegistry = gatewayRegistry;
+        this.paymentProperties = paymentProperties;
         this.clock = clock;
     }
 
     @PreAuthorize(PermissionExpressions.PAYMENT_CREATE)
+    @Transactional(noRollbackFor = PaymentGatewayException.class)
     public PaymentResponse createPayment(
             String bookingPublicId,
             @Valid PaymentCreateRequest request,
@@ -92,6 +103,7 @@ public class PaymentService {
                 .amount(calculateOutstandingAmount(booking))
                 .currency(booking.getCurrency())
                 .status(PaymentStatus.PENDING)
+                .provider(resolveProvider(request.method()))
                 .idempotencyKey(normalizedIdempotencyKey)
                 .expiresAt(booking.getHoldExpiresAt())
                 .createdBy(userId)
@@ -99,7 +111,7 @@ public class PaymentService {
 
         try {
             Payment savedPayment = paymentRepository.saveAndFlush(payment);
-            return mapResponse(savedPayment);
+            return createCheckoutResponse(savedPayment);
         } catch (DataIntegrityViolationException exception) {
             log.warn(
                     "Database rejected payment creation bookingPublicId={} userId={}",
@@ -122,7 +134,11 @@ public class PaymentService {
         if (existingPayment.getMethod() != requestedMethod) {
             throw new BusinessValidationException("Idempotency key has already been used with another payment method");
         }
-        return mapResponse(existingPayment);
+        if (existingPayment.getProvider() == null) {
+            existingPayment.setProvider(resolveProvider(requestedMethod));
+            paymentRepository.saveAndFlush(existingPayment);
+        }
+        return createCheckoutResponse(existingPayment);
     }
 
     private void validateBookingOwner(Booking booking, Long userId) {
@@ -175,7 +191,20 @@ public class PaymentService {
         throw new BusinessValidationException("Unable to generate a unique payment code, please retry");
     }
 
-    private PaymentResponse mapResponse(Payment payment) {
+    private String resolveProvider(PaymentMethod method) {
+        return method == PaymentMethod.CASH
+                ? "MANUAL"
+                : gatewayRegistry.getGateway(paymentProperties.getDefaultProvider(), method).getProviderCode();
+    }
+
+    private PaymentResponse createCheckoutResponse(Payment payment) {
+        PaymentGatewayCheckout checkout = payment.getMethod() == PaymentMethod.CASH
+                ? null
+                : gatewayRegistry.getGateway(payment.getProvider(), payment.getMethod()).createCheckout(payment);
+        return mapResponse(payment, checkout);
+    }
+
+    private PaymentResponse mapResponse(Payment payment, PaymentGatewayCheckout checkout) {
         return new PaymentResponse(
                 payment.getPaymentCode(),
                 payment.getBooking().getPublicId(),
@@ -183,6 +212,11 @@ public class PaymentService {
                 payment.getAmount(),
                 payment.getCurrency(),
                 payment.getStatus(),
+                payment.getProvider(),
+                checkout == null ? null : checkout.paymentUrl(),
+                checkout == null ? null : checkout.deeplink(),
+                checkout == null ? null : checkout.qrCodeValue(),
+                checkout == null ? List.of() : checkout.checkoutFields(),
                 payment.getExpiresAt(),
                 payment.getCreatedAt()
         );
