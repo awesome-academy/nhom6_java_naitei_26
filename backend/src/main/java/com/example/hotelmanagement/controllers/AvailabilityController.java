@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import com.example.hotelmanagement.services.AvailabilityService;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -17,6 +19,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping(value = "/api/rooms", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Availability", description = "Find rooms available for a half-open stay range [check-in, check-out).")
 public class AvailabilityController {
 
     private final AvailabilityService availabilityService;
@@ -25,6 +28,7 @@ public class AvailabilityController {
         this.availabilityService = availabilityService;
     }
 
+    @Operation(summary = "Get Availability")
     @GetMapping("/availability")
     @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
     public ResponseEntity<Map<Long, List<Long>>> getAvailability(

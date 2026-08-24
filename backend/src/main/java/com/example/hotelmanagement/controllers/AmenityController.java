@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.amenity.AmenityCreateRequest;
 import com.example.hotelmanagement.dto.amenity.AmenityDetailResponse;
 import com.example.hotelmanagement.dto.amenity.AmenityFilterOptionResponse;
@@ -24,6 +26,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping(value = "/api/amenities", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Amenities", description = "Manage room amenities and filter options.")
 public class AmenityController {
 
     private final AmenityService amenityService;
@@ -32,24 +35,28 @@ public class AmenityController {
         this.amenityService = amenityService;
     }
 
+    @Operation(summary = "Get Amenities")
     @GetMapping
     @PreAuthorize(PermissionExpressions.ROOM_READ)
     public ResponseEntity<List<AmenityDetailResponse>> getAmenities() {
         return ResponseEntity.ok(amenityService.getAmenities());
     }
 
+    @Operation(summary = "Get Filter Options")
     @GetMapping("/filter-options")
     @PreAuthorize(PermissionExpressions.ROOM_READ)
     public ResponseEntity<List<AmenityFilterOptionResponse>> getFilterOptions() {
         return ResponseEntity.ok(amenityService.getFilterOptions());
     }
 
+    @Operation(summary = "Get Amenity")
     @GetMapping("/{code}")
     @PreAuthorize(PermissionExpressions.ROOM_READ)
     public ResponseEntity<AmenityDetailResponse> getAmenity(@PathVariable String code) {
         return ResponseEntity.ok(amenityService.getAmenity(code));
     }
 
+    @Operation(summary = "Create Amenity")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_CREATE)
     public ResponseEntity<AmenityDetailResponse> createAmenity(
@@ -59,6 +66,7 @@ public class AmenityController {
         return ResponseEntity.created(URI.create("/api/amenities/" + response.code())).body(response);
     }
 
+    @Operation(summary = "Update Amenity")
     @PutMapping(value = "/{code}", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<AmenityDetailResponse> updateAmenity(
@@ -68,6 +76,7 @@ public class AmenityController {
         return ResponseEntity.ok(amenityService.updateAmenity(code, request));
     }
 
+    @Operation(summary = "Delete Amenity")
     @DeleteMapping("/{code}")
     @PreAuthorize(PermissionExpressions.ROOM_DELETE)
     public ResponseEntity<Void> deleteAmenity(@PathVariable String code) {

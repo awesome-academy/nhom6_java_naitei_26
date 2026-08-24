@@ -62,7 +62,7 @@ export default function AdminRoomTypesPage() {
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
-      router.replace("/login?redirect=%2Fadmin%2Froom-types")
+      router.replace("/admin/login?redirect=%2Fadmin%2Froom-types")
     }
   }, [isAuthLoading, isAuthenticated, router])
 

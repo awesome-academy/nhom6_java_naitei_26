@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.cancellationpolicy.CancellationPolicyCreateRequest;
 import com.example.hotelmanagement.dto.cancellationpolicy.CancellationPolicyResponse;
 import com.example.hotelmanagement.dto.cancellationpolicy.CancellationPolicyUpdateRequest;
@@ -23,7 +25,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping(value = "/api/cancellation-policies", produces = MediaType.APPLICATION_JSON_VALUE)
-@PreAuthorize(PermissionExpressions.POLICY_MANAGE)
+@Tag(name = "Cancellation Policies", description = "Manage cancellation policies and refund tiers.")
 public class CancellationPolicyController {
 
     private final CancellationPolicyService cancellationPolicyService;
@@ -32,22 +34,29 @@ public class CancellationPolicyController {
         this.cancellationPolicyService = cancellationPolicyService;
     }
 
+    @Operation(summary = "Get Active Cancellation Policies")
     @GetMapping("/active")
     @PreAuthorize(PermissionExpressions.POLICY_USE_FOR_BOOKING)
     public ResponseEntity<List<CancellationPolicyResponse>> getActiveCancellationPolicies() {
         return ResponseEntity.ok(cancellationPolicyService.getActiveCancellationPolicies());
     }
 
+    @Operation(summary = "Get Cancellation Policies")
     @GetMapping
+    @PreAuthorize(PermissionExpressions.POLICY_USE_FOR_BOOKING)
     public ResponseEntity<List<CancellationPolicyResponse>> getCancellationPolicies() {
         return ResponseEntity.ok(cancellationPolicyService.getCancellationPolicies());
     }
 
+    @Operation(summary = "Get Cancellation Policy")
     @GetMapping("/{code}")
+    @PreAuthorize(PermissionExpressions.POLICY_USE_FOR_BOOKING)
     public ResponseEntity<CancellationPolicyResponse> getCancellationPolicy(@PathVariable String code) {
         return ResponseEntity.ok(cancellationPolicyService.getCancellationPolicy(code));
     }
 
+    @Operation(summary = "Create Cancellation Policy")
+    @PreAuthorize(PermissionExpressions.POLICY_MANAGE)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<CancellationPolicyResponse> createCancellationPolicy(
             @Valid @RequestBody CancellationPolicyCreateRequest request
@@ -57,6 +66,8 @@ public class CancellationPolicyController {
         return ResponseEntity.created(location).body(response);
     }
 
+    @Operation(summary = "Update Cancellation Policy")
+    @PreAuthorize(PermissionExpressions.POLICY_MANAGE)
     @PutMapping(value = "/{code}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<CancellationPolicyResponse> updateCancellationPolicy(
             @PathVariable String code,
@@ -65,6 +76,8 @@ public class CancellationPolicyController {
         return ResponseEntity.ok(cancellationPolicyService.updateCancellationPolicy(code, request));
     }
 
+    @Operation(summary = "Delete Cancellation Policy")
+    @PreAuthorize(PermissionExpressions.POLICY_MANAGE)
     @DeleteMapping("/{code}")
     public ResponseEntity<Void> deleteCancellationPolicy(@PathVariable String code) {
         cancellationPolicyService.deleteCancellationPolicy(code);

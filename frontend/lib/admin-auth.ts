@@ -1,0 +1,6 @@
+import type { UserSummary } from "@/types/auth"
+
+export function isAdminUser(user: UserSummary | null): boolean {
+  return user?.roles.includes("ADMIN") ?? false
+}
+

@@ -88,7 +88,7 @@ export default function AdminMaintenancePage() {
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
-      router.replace("/login?redirect=%2Fadmin%2Fmaintenance")
+      router.replace("/admin/login?redirect=%2Fadmin%2Fmaintenance")
     }
   }, [isAuthLoading, isAuthenticated, router])
 

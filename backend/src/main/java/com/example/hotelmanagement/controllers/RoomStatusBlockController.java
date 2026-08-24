@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.roomstatusblock.RoomStatusBlockCreateRequest;
 import com.example.hotelmanagement.dto.roomstatusblock.RoomStatusBlockExtendRequest;
 import com.example.hotelmanagement.dto.roomstatusblock.RoomStatusBlockResponse;
@@ -29,6 +31,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping(value = "/api/room-status-blocks", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Room Status Blocks", description = "Manage maintenance and operational blocks for rooms.")
 public class RoomStatusBlockController {
 
     private final RoomStatusBlockService roomStatusBlockService;
@@ -37,6 +40,7 @@ public class RoomStatusBlockController {
         this.roomStatusBlockService = roomStatusBlockService;
     }
 
+    @Operation(summary = "Get Blocks")
     @GetMapping
     @PreAuthorize(PermissionExpressions.ROOM_READ)
     public ResponseEntity<List<RoomStatusBlockResponse>> getBlocks(
@@ -46,6 +50,7 @@ public class RoomStatusBlockController {
         return ResponseEntity.ok(roomStatusBlockService.getBlocks(startDate, endDate));
     }
 
+    @Operation(summary = "Create Block")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomStatusBlockResponse> createBlock(
@@ -57,6 +62,7 @@ public class RoomStatusBlockController {
         return ResponseEntity.created(location).body(response);
     }
 
+    @Operation(summary = "Extend Block")
     @PatchMapping(value = "/{publicId}/extend", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomStatusBlockResponse> extendBlock(
@@ -66,6 +72,7 @@ public class RoomStatusBlockController {
         return ResponseEntity.ok(roomStatusBlockService.extendBlock(publicId, request));
     }
 
+    @Operation(summary = "Delete Block")
     @DeleteMapping("/{publicId}")
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<Void> deleteBlock(@PathVariable UUID publicId) {

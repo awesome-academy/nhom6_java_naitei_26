@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeAmenitiesRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeBedsRequest;
 import com.example.hotelmanagement.dto.roomtype.RoomTypeCreateRequest;
@@ -31,6 +33,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping(value = "/api/room-types", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Room Types", description = "Manage room types, beds, amenities, and images.")
 public class RoomTypeController {
 
     private final RoomTypeService roomTypeService;
@@ -44,24 +47,28 @@ public class RoomTypeController {
         this.roomTypeImageService = roomTypeImageService;
     }
 
+    @Operation(summary = "Get Room Types")
     @GetMapping
     @PreAuthorize(PermissionExpressions.ROOM_READ)
     public ResponseEntity<List<RoomTypeResponse>> getRoomTypes() {
         return ResponseEntity.ok(roomTypeService.getRoomTypes());
     }
 
+    @Operation(summary = "Get Room Type Stats")
     @GetMapping("/stats")
     @PreAuthorize(PermissionExpressions.ROOM_READ)
     public ResponseEntity<RoomTypeStatsResponse> getRoomTypeStats() {
         return ResponseEntity.ok(roomTypeService.getRoomTypeStats());
     }
 
+    @Operation(summary = "Get Room Type")
     @GetMapping("/{code}")
     @PreAuthorize(PermissionExpressions.ROOM_READ)
     public ResponseEntity<RoomTypeResponse> getRoomType(@PathVariable String code) {
         return ResponseEntity.ok(roomTypeService.getRoomType(code));
     }
 
+    @Operation(summary = "Create Room Type")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_CREATE)
     public ResponseEntity<RoomTypeResponse> createRoomType(
@@ -72,6 +79,7 @@ public class RoomTypeController {
         return ResponseEntity.created(location).body(response);
     }
 
+    @Operation(summary = "Update Room Type")
     @PutMapping(value = "/{code}", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomTypeResponse> updateRoomType(
@@ -81,6 +89,7 @@ public class RoomTypeController {
         return ResponseEntity.ok(roomTypeService.updateRoomType(code, request));
     }
 
+    @Operation(summary = "Delete Room Type")
     @DeleteMapping("/{code}")
     @PreAuthorize(PermissionExpressions.ROOM_DELETE)
     public ResponseEntity<Void> deleteRoomType(@PathVariable String code) {
@@ -88,6 +97,7 @@ public class RoomTypeController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "Replace Room Type Beds")
     @PutMapping(value = "/{code}/beds", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomTypeResponse> replaceRoomTypeBeds(
@@ -97,6 +107,7 @@ public class RoomTypeController {
         return ResponseEntity.ok(roomTypeService.replaceRoomTypeBeds(code, request));
     }
 
+    @Operation(summary = "Replace Room Type Amenities")
     @PutMapping(value = "/{code}/amenities", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomTypeResponse> replaceRoomTypeAmenities(
@@ -106,6 +117,7 @@ public class RoomTypeController {
         return ResponseEntity.ok(roomTypeService.replaceRoomTypeAmenities(code, request));
     }
 
+    @Operation(summary = "Create Room Type Image Upload Url")
     @PostMapping(value = "/{code}/images/upload-url", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomImageUploadUrlResponse> createRoomTypeImageUploadUrl(
@@ -115,6 +127,7 @@ public class RoomTypeController {
         return ResponseEntity.ok(roomTypeImageService.createUploadUrl(code, request));
     }
 
+    @Operation(summary = "confirm Room Type Image Upload")
     @PostMapping(value = "/{code}/images/confirm", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
     public ResponseEntity<RoomImageResponse> confirmRoomTypeImageUpload(

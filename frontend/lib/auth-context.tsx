@@ -57,7 +57,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       initAuthFromStorage()
-      setUser(readStoredUser())
+      const { accessToken, refreshToken } = getStoredTokens()
+      const storedUser = readStoredUser()
+
+      if (!storedUser || (!accessToken && !refreshToken)) {
+        clearTokens()
+        persistUser(null)
+        setUser(null)
+      } else {
+        setUser(storedUser)
+      }
       setIsLoading(false)
     }, 0)
     return () => window.clearTimeout(timer)
@@ -66,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const setAuth = useCallback(
     (newUser: UserSummary, accessToken: string, refreshToken: string) => {
       storeTokens(accessToken, refreshToken)
+      apiClient.setAccessToken(accessToken)
       persistUser(newUser)
       setUser(newUser)
     },
@@ -74,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearAuth = useCallback(() => {
     clearTokens()
+    apiClient.setAccessToken(null)
     persistUser(null)
     setUser(null)
   }, [])

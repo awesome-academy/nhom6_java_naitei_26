@@ -11,6 +11,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 public record RoomResponse(
+        Long roomId,
         String roomNumber,
         String roomTypeCode,
         String roomTypeName,

@@ -5,15 +5,13 @@ import { usePathname, useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui"
-import { Button } from "@/components/ui/button"
-import { UserMenu } from "@/components/auth/user-menu"
+import { SiteHeader } from "@/components/auth/site-header"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { logout, getStoredTokens } from "@/lib/api/auth"
 import {
   User,
   Calendar,
-  CreditCard,
   Settings,
   LogOut,
   ChevronRight,
@@ -43,7 +41,7 @@ interface ProfileLayoutProps {
 export function ProfileLayout({ children }: ProfileLayoutProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const { user, clearAuth, isAuthenticated, isLoading } = useAuth()
+  const { user, clearAuth } = useAuth()
 
   const handleLogout = async () => {
     try {
@@ -62,46 +60,7 @@ export function ProfileLayout({ children }: ProfileLayoutProps) {
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
-      {/* Header - matching marketing landing style */}
-      <header className="sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[var(--background)]/85 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded bg-[var(--accent)] text-white font-bold text-sm">
-              T
-            </div>
-            <span className="text-base font-mono font-bold tracking-wider uppercase text-[var(--foreground)]">
-              TripStay
-            </span>
-          </Link>
-          <nav className="hidden gap-8 md:flex">
-            <Link href="#rooms" className="text-sm font-mono font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-              Khách sạn
-            </Link>
-            <Link href="#how-it-works" className="text-sm font-mono font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-              Cách hoạt động
-            </Link>
-            <Link href="#pricing" className="text-sm font-mono font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-              Bảng giá
-            </Link>
-          </nav>
-          <div className="flex items-center gap-3">
-            {isLoading ? (
-              <div className="h-10 w-24" />
-            ) : isAuthenticated ? (
-              <UserMenu />
-            ) : (
-              <>
-                <Button variant="ghost" asChild className="hidden md:inline-flex">
-                  <Link href="/login">Đăng nhập</Link>
-                </Button>
-                <Button asChild className="bg-[var(--accent)] text-white hover:bg-[var(--accent)]/90">
-                  <Link href="/register">Đăng ký miễn phí</Link>
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
       <div className="mx-auto max-w-7xl px-6 py-8">
         <div className="grid gap-8 lg:grid-cols-[280px_1fr]">

@@ -52,7 +52,7 @@ export default function AdminPricingPage() {
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
-      router.replace("/login?redirect=%2Fadmin%2Fpricing")
+      router.replace("/admin/login?redirect=%2Fadmin%2Fpricing")
     }
   }, [isAuthLoading, isAuthenticated, router])
 

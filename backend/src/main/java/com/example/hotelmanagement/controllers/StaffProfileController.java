@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.staffprofile.StaffHireRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileUpdateRequest;
@@ -22,6 +24,7 @@ import java.net.URI;
 
 @RestController
 @RequestMapping(value = "/api/staff-profiles", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Staff Profiles", description = "Manage staff hiring, profile updates, and deactivation.")
 public class StaffProfileController {
 
     private final StaffProfileService staffProfileService;
@@ -30,6 +33,7 @@ public class StaffProfileController {
         this.staffProfileService = staffProfileService;
     }
 
+    @Operation(summary = "Hire Staff")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
     public ResponseEntity<StaffProfileResponse> hireStaff(@Valid @RequestBody StaffHireRequest request) {
@@ -37,12 +41,14 @@ public class StaffProfileController {
         return ResponseEntity.created(URI.create("/api/staff-profiles/" + response.employeeCode())).body(response);
     }
 
+    @Operation(summary = "Get Staff")
     @GetMapping("/{employeeCode}")
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
     public ResponseEntity<StaffProfileResponse> getStaff(@PathVariable String employeeCode) {
         return ResponseEntity.ok(staffProfileService.getStaff(employeeCode));
     }
 
+    @Operation(summary = "Edit Staff")
     @PatchMapping(value = "/{employeeCode}", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
     public ResponseEntity<StaffProfileResponse> editStaff(
@@ -52,6 +58,7 @@ public class StaffProfileController {
         return ResponseEntity.ok(staffProfileService.editStaff(employeeCode, request));
     }
 
+    @Operation(summary = "Deactivate Staff")
     @DeleteMapping("/{employeeCode}")
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
     public ResponseEntity<Void> deactivateStaff(@PathVariable String employeeCode) {

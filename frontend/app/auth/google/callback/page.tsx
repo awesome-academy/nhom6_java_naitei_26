@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { storeTokens } from "@/lib/api/auth"
+import { isAdminUser } from "@/lib/admin-auth"
 import { useAuth } from "@/lib/auth-context"
 import { useRouter } from "next/navigation"
 
@@ -62,6 +63,12 @@ function GoogleOAuthCallbackContent() {
 
         const { accessToken, refreshToken, user } = decoded
 
+        if (isAdminUser(user)) {
+          setStatus("error")
+          setErrorMessage("Tài khoản quản trị không đăng nhập bằng Google trên website khách hàng. Vui lòng dùng /admin/login.")
+          return
+        }
+
         // Store tokens
         storeTokens(accessToken, refreshToken)
 
@@ -72,11 +79,7 @@ function GoogleOAuthCallbackContent() {
 
         // Redirect after showing success message
         setTimeout(() => {
-          if (user.roles && (user.roles.includes("ADMIN") || user.roles.includes("STAFF"))) {
-            router.push("/admin")
-          } else {
-            router.push("/")
-          }
+          router.push("/")
           router.refresh()
         }, 1500)
       } catch (err) {

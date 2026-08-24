@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.booking.BookingCancelRequest;
 import com.example.hotelmanagement.dto.booking.BookingCreateRequest;
 import com.example.hotelmanagement.dto.booking.BookingResponse;
@@ -33,6 +35,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping(value = "/api/bookings", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Bookings", description = "Create bookings and manage stay lifecycle, rooms, and guests.")
 public class BookingController {
 
     private final BookingService bookingService;
@@ -52,6 +55,7 @@ public class BookingController {
         this.bookingGuestService = bookingGuestService;
     }
 
+    @Operation(summary = "Create Booking")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
     public ResponseEntity<BookingResponse> createBooking(
@@ -62,6 +66,7 @@ public class BookingController {
         return ResponseEntity.created(URI.create("/api/bookings/" + response.publicId())).body(response);
     }
 
+    @Operation(summary = "Check In")
     @PostMapping("/{publicId}/check-in")
     @PreAuthorize(PermissionExpressions.BOOKING_CHECK_IN)
     public ResponseEntity<BookingResponse> checkIn(
@@ -71,6 +76,7 @@ public class BookingController {
         return ResponseEntity.ok(bookingStateMachineService.checkIn(publicId, principal.getId()));
     }
 
+    @Operation(summary = "Check Out")
     @PostMapping("/{publicId}/check-out")
     @PreAuthorize(PermissionExpressions.BOOKING_CHECK_OUT)
     public ResponseEntity<BookingResponse> checkOut(
@@ -80,6 +86,7 @@ public class BookingController {
         return ResponseEntity.ok(bookingStateMachineService.checkOut(publicId, principal.getId()));
     }
 
+    @Operation(summary = "cancel")
     @PostMapping(value = "/{publicId}/cancel", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.BOOKING_CANCEL)
     public ResponseEntity<BookingResponse> cancel(
@@ -92,6 +99,7 @@ public class BookingController {
         );
     }
 
+    @Operation(summary = "assign Room")
     @PostMapping("/{publicId}/rooms/{bookingRoomId}/assign")
     @PreAuthorize(PermissionExpressions.BOOKING_ASSIGN_ROOM)
     public ResponseEntity<BookingRoomAssignmentResponse> assignRoom(
@@ -104,6 +112,7 @@ public class BookingController {
         );
     }
 
+    @Operation(summary = "Change Room")
     @PostMapping(value = "/{publicId}/rooms/{bookingRoomId}/change-room", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.BOOKING_ASSIGN_ROOM)
     public ResponseEntity<BookingRoomChangeResponse> changeRoom(
@@ -117,12 +126,14 @@ public class BookingController {
         );
     }
 
+    @Operation(summary = "Get Guests")
     @GetMapping("/{publicId}/guests")
     @PreAuthorize(PermissionExpressions.BOOKING_GUEST_MANAGE)
     public ResponseEntity<List<BookingGuestResponse>> getGuests(@PathVariable String publicId) {
         return ResponseEntity.ok(bookingGuestService.getGuests(publicId));
     }
 
+    @Operation(summary = "Add Guest")
     @PostMapping(value = "/{publicId}/guests", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.BOOKING_GUEST_MANAGE)
     public ResponseEntity<BookingGuestResponse> addGuest(
@@ -136,6 +147,7 @@ public class BookingController {
         )).body(response);
     }
 
+    @Operation(summary = "Reveal Guest Identity Document")
     @GetMapping("/{publicId}/guests/{guestId}/id-document")
     @PreAuthorize(PermissionExpressions.GUEST_READ_ID)
     public ResponseEntity<BookingGuestIdentityDocumentResponse> revealGuestIdentityDocument(

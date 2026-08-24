@@ -1,18 +1,26 @@
 "use client"
 
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { UserMenu } from "@/components/auth/user-menu"
 
+const mainNav = [
+  { href: "/", label: "Trang chủ" },
+  { href: "/booking", label: "Đặt phòng" },
+]
+
 export function SiteHeader() {
   const { isAuthenticated, isLoading } = useAuth()
+  const pathname = usePathname()
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[var(--background)]/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
         <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded bg-[var(--accent)] text-white font-bold text-sm">
+          <div className="flex size-8 items-center justify-center rounded bg-[var(--accent)] text-sm font-bold text-white">
             T
           </div>
           <span className="text-base font-mono font-bold tracking-wider uppercase text-[var(--foreground)]">
@@ -20,18 +28,20 @@ export function SiteHeader() {
           </span>
         </Link>
         <nav className="hidden gap-8 md:flex">
-          <Link href="#rooms" className="text-sm font-mono font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-            Khách sạn
-          </Link>
-          <Link href="#how-it-works" className="text-sm font-mono font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-            Cách hoạt động
-          </Link>
-          <Link href="#pricing" className="text-sm font-mono font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-            Bảng giá
-          </Link>
-          <Link href="/admin" className="text-sm font-mono font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-            Quản lý
-          </Link>
+          {mainNav.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "text-sm font-mono font-medium hover:text-[var(--foreground)]",
+                pathname === item.href
+                  ? "text-[var(--foreground)]"
+                  : "text-[var(--muted-foreground)]",
+              )}
+            >
+              {item.label}
+            </Link>
+          ))}
         </nav>
         <div className="flex items-center gap-3">
           {isLoading ? (

@@ -1,5 +1,7 @@
 package com.example.hotelmanagement.controllers;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.customerprofile.CustomerProfileCreateRequest;
 import com.example.hotelmanagement.dto.customerprofile.CustomerProfileResponse;
 import com.example.hotelmanagement.dto.customerprofile.CustomerProfileUpdateRequest;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(value = "/api/customer-profiles/me", produces = MediaType.APPLICATION_JSON_VALUE)
 @PreAuthorize("hasRole('CUSTOMER')")
+@Tag(name = "Customer Profiles", description = "Manage the authenticated customer profile.")
 public class CustomerProfileController {
 
     private final CustomerProfileService customerProfileService;
@@ -31,6 +34,7 @@ public class CustomerProfileController {
         this.customerProfileService = customerProfileService;
     }
 
+    @Operation(summary = "Create Own Profile")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public CustomerProfileResponse createOwnProfile(
@@ -40,11 +44,13 @@ public class CustomerProfileController {
         return customerProfileService.createOwnProfile(principal.getId(), request);
     }
 
+    @Operation(summary = "Get Own Profile")
     @GetMapping
     public ResponseEntity<CustomerProfileResponse> getOwnProfile(@AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.ok(customerProfileService.getOwnProfile(principal.getId()));
     }
 
+    @Operation(summary = "Update Own Profile")
     @PatchMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<CustomerProfileResponse> updateOwnProfile(
             @Valid @RequestBody CustomerProfileUpdateRequest request,
@@ -53,6 +59,7 @@ public class CustomerProfileController {
         return ResponseEntity.ok(customerProfileService.updateOwnProfile(principal.getId(), request));
     }
 
+    @Operation(summary = "Deactivate Own Account")
     @DeleteMapping
     public ResponseEntity<Void> deactivateOwnAccount(@AuthenticationPrincipal UserPrincipal principal) {
         customerProfileService.deactivateOwnAccount(principal.getId());

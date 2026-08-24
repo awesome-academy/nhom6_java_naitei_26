@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -33,6 +33,8 @@ import {
   X,
   ChevronDown,
 } from "lucide-react"
+import { isAdminUser } from "@/lib/admin-auth"
+import { useAuth } from "@/lib/auth-context"
 
 const adminNav = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -53,8 +55,50 @@ interface AdminLayoutProps {
 }
 
 export function AdminLayout({ children }: AdminLayoutProps) {
+  const router = useRouter()
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const { user, isAuthenticated, isLoading, clearAuth } = useAuth()
+  const isAdminLoginPage = pathname === "/admin/login"
+  const hasAdminAccess = isAdminUser(user)
+  const adminInitials = user?.fullName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(-2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || "AD"
+
+  useEffect(() => {
+    if (isAdminLoginPage || isLoading) return
+
+    const redirect = encodeURIComponent(pathname || "/admin")
+    if (!isAuthenticated) {
+      router.replace(`/admin/login?redirect=${redirect}`)
+      return
+    }
+
+    if (!hasAdminAccess) {
+      router.replace(`/admin/login?redirect=${redirect}&reason=forbidden`)
+    }
+  }, [hasAdminAccess, isAdminLoginPage, isAuthenticated, isLoading, pathname, router])
+
+  function handleLogout() {
+    clearAuth()
+    router.replace("/admin/login")
+  }
+
+  if (isAdminLoginPage) {
+    return <>{children}</>
+  }
+
+  if (isLoading || !isAuthenticated || !hasAdminAccess) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-sm text-muted-foreground">Đang kiểm tra quyền quản trị...</div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-screen bg-[var(--background)]">
@@ -108,12 +152,12 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           <div className={cn("flex items-center gap-3", !sidebarOpen && "justify-center")}>
             <Avatar className="h-9 w-9">
               <AvatarImage src="/avatars/admin.jpg" />
-              <AvatarFallback className="bg-[var(--accent)] text-white text-sm">AD</AvatarFallback>
+              <AvatarFallback className="bg-[var(--accent)] text-white text-sm">{adminInitials}</AvatarFallback>
             </Avatar>
             {sidebarOpen && (
               <div className="flex-1 overflow-hidden">
-                <p className="truncate text-sm font-medium text-white">Admin User</p>
-                <p className="truncate text-xs text-gray-400">admin@tripstay.com</p>
+                <p className="truncate text-sm font-medium text-white">{user?.fullName ?? "Admin"}</p>
+                <p className="truncate text-xs text-gray-400">{user?.email ?? ""}</p>
               </div>
             )}
           </div>
@@ -152,9 +196,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                 <Button variant="ghost" className="flex items-center gap-2">
                   <Avatar className="h-8 w-8">
                     <AvatarImage src="/avatars/admin.jpg" />
-                    <AvatarFallback className="bg-[var(--accent)] text-white text-xs">AD</AvatarFallback>
+                    <AvatarFallback className="bg-[var(--accent)] text-white text-xs">{adminInitials}</AvatarFallback>
                   </Avatar>
-                  <span className="hidden md:inline text-sm font-medium">Admin</span>
+                  <span className="hidden md:inline text-sm font-medium">{user?.fullName ?? "Admin"}</span>
                   <ChevronDown className="h-4 w-4 text-[var(--muted-foreground)]" />
                 </Button>
               </DropdownMenuTrigger>
@@ -168,8 +212,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                   <Link href="/admin/settings">Cài đặt</Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-[var(--destructive)]">
-                  <LogOut className="mr-2 h-4 w-4" />
+                <DropdownMenuItem className="text-[var(--destructive)]" onClick={handleLogout}>
+                  <LogOut data-icon="inline-start" />
                   Đăng xuất
                 </DropdownMenuItem>
               </DropdownMenuContent>
