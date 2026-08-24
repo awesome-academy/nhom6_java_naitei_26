@@ -53,6 +53,31 @@ class CancellationPolicyRepositoryTest {
         assertTrue(cancellationPolicyRepository.findByCodeIgnoreCase("non_refund").isPresent());
     }
 
+    @Test
+    void activeListExcludesInactivePoliciesAndOrdersDefaultFirst() {
+        CancellationPolicy inactive = policy("NON_REFUND", false, false);
+        addRule(inactive, 0, "0.00");
+        cancellationPolicyRepository.saveAndFlush(inactive);
+
+        CancellationPolicy moderate = policy("MODERATE", false, true);
+        addRule(moderate, 0, "0.00");
+        cancellationPolicyRepository.saveAndFlush(moderate);
+
+        CancellationPolicy flexible = policy("FLEXIBLE", true, true);
+        addRule(flexible, 72, "100.00");
+        addRule(flexible, 0, "0.00");
+        cancellationPolicyRepository.saveAndFlush(flexible);
+        entityManager.clear();
+
+        var policies = cancellationPolicyRepository
+                .findAllByIsActiveTrueOrderByIsDefaultDescCodeAsc();
+
+        assertEquals(2, policies.size());
+        assertEquals("FLEXIBLE", policies.get(0).getCode());
+        assertEquals("MODERATE", policies.get(1).getCode());
+        assertEquals(2, policies.get(0).getRules().size());
+    }
+
     private CancellationPolicy policy(String code, boolean isDefault, boolean isActive) {
         return CancellationPolicy.builder()
                 .code(code)

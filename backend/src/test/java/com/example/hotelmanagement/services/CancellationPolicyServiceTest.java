@@ -83,6 +83,23 @@ class CancellationPolicyServiceTest {
     }
 
     @Test
+    void getActiveCancellationPoliciesReturnsRepositoryResultsInOrder() {
+        CancellationPolicy flexible = policy("FLEXIBLE", true, true);
+        addRule(flexible, 0, "0.00");
+        CancellationPolicy moderate = policy("MODERATE", false, true);
+        addRule(moderate, 0, "0.00");
+        when(cancellationPolicyRepository.findAllByIsActiveTrueOrderByIsDefaultDescCodeAsc())
+                .thenReturn(List.of(flexible, moderate));
+
+        var responses = cancellationPolicyService.getActiveCancellationPolicies();
+
+        assertEquals(List.of("FLEXIBLE", "MODERATE"), responses.stream()
+                .map(item -> item.code())
+                .toList());
+        assertTrue(responses.stream().allMatch(item -> item.isActive()));
+    }
+
+    @Test
     void createCancellationPolicyRejectsDuplicateCode() {
         CancellationPolicyCreateRequest request = createRequest(List.of(rule(0, "0.00")));
         when(cancellationPolicyRepository.existsByCodeIgnoreCase("FLEXIBLE")).thenReturn(true);

@@ -32,6 +32,12 @@ public class CancellationPolicyController {
         this.cancellationPolicyService = cancellationPolicyService;
     }
 
+    @GetMapping("/active")
+    @PreAuthorize(PermissionExpressions.POLICY_USE_FOR_BOOKING)
+    public ResponseEntity<List<CancellationPolicyResponse>> getActiveCancellationPolicies() {
+        return ResponseEntity.ok(cancellationPolicyService.getActiveCancellationPolicies());
+    }
+
     @GetMapping
     public ResponseEntity<List<CancellationPolicyResponse>> getCancellationPolicies() {
         return ResponseEntity.ok(cancellationPolicyService.getCancellationPolicies());
