@@ -20,9 +20,11 @@ public final class PermissionExpressions {
     public static final String BOOKING_CHECK_IN = "hasAuthority('booking:check_in')";
     public static final String BOOKING_CHECK_OUT = "hasAuthority('booking:check_out')";
     public static final String INVOICE_ISSUE = "hasAuthority('invoice:issue')";
+    public static final String INVOICE_VOID = "hasAuthority('invoice:void')";
     public static final String BOOKING_ASSIGN_ROOM = "hasAuthority('booking:assign_room')";
     public static final String BOOKING_GUEST_MANAGE = "hasAuthority('booking:assign_room')";
     public static final String GUEST_READ_ID = "hasAuthority('guest:read_id')";
+    public static final String SETTINGS_MANAGE = "hasAuthority('settings:manage')";
 
     private PermissionExpressions() {
     }

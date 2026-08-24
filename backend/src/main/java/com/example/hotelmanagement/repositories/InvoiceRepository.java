@@ -17,6 +17,8 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
 
     boolean existsByBooking_Id(Long bookingId);
 
+    boolean existsByInvoiceNumber(String invoiceNumber);
+
     @EntityGraph(attributePaths = {"booking", "items"})
     Optional<Invoice> findByPublicId(String publicId);
 

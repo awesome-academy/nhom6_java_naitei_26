@@ -3,6 +3,8 @@ package com.example.hotelmanagement.services;
 import com.example.hotelmanagement.dto.invoice.InvoiceAdjustmentRequest;
 import com.example.hotelmanagement.dto.invoice.InvoiceItemResponse;
 import com.example.hotelmanagement.dto.invoice.InvoiceResponse;
+import com.example.hotelmanagement.dto.invoice.InvoiceVoidRequest;
+import com.example.hotelmanagement.dto.invoice.InvoiceVoidResponse;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.BookingRoom;
 import com.example.hotelmanagement.entity.BookingRoomNight;
@@ -10,6 +12,7 @@ import com.example.hotelmanagement.entity.CustomerProfile;
 import com.example.hotelmanagement.entity.FolioCharge;
 import com.example.hotelmanagement.entity.Invoice;
 import com.example.hotelmanagement.entity.InvoiceItem;
+import com.example.hotelmanagement.entity.StaffProfile;
 import com.example.hotelmanagement.entity.enums.BookingStatus;
 import com.example.hotelmanagement.entity.enums.InvoiceLineType;
 import com.example.hotelmanagement.entity.enums.InvoicePaymentStatus;
@@ -20,6 +23,7 @@ import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.FolioChargeRepository;
 import com.example.hotelmanagement.repositories.InvoiceItemRepository;
 import com.example.hotelmanagement.repositories.InvoiceRepository;
+import com.example.hotelmanagement.repositories.StaffProfileRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,7 +33,10 @@ import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -56,19 +63,28 @@ public class InvoiceService {
     private static final int SORT_ORDER_STEP = 10;
     private static final String ROOM_REFERENCE_TYPE = "BOOKING_ROOM_NIGHT";
     private static final String SERVICE_REFERENCE_TYPE = "FOLIO_CHARGE";
+    private static final String INVOICE_NUMBER_PREFIX = "INV";
+    private static final int INVOICE_NUMBER_MAX_ATTEMPTS = 5;
 
     private final InvoiceRepository invoiceRepository;
     private final InvoiceItemRepository invoiceItemRepository;
     private final FolioChargeRepository folioChargeRepository;
+    private final StaffProfileRepository staffProfileRepository;
+    private final Clock clock;
+    private final SecureRandom secureRandom = new SecureRandom();
 
     public InvoiceService(
             InvoiceRepository invoiceRepository,
             InvoiceItemRepository invoiceItemRepository,
-            FolioChargeRepository folioChargeRepository
+            FolioChargeRepository folioChargeRepository,
+            StaffProfileRepository staffProfileRepository,
+            Clock clock
     ) {
         this.invoiceRepository = invoiceRepository;
         this.invoiceItemRepository = invoiceItemRepository;
         this.folioChargeRepository = folioChargeRepository;
+        this.staffProfileRepository = staffProfileRepository;
+        this.clock = clock;
     }
 
     public InvoiceResponse createDraftForCheckout(Booking booking) {
@@ -160,6 +176,126 @@ public class InvoiceService {
         recalculateTotals(invoice);
 
         return mapResponse(invoiceRepository.saveAndFlush(invoice));
+    }
+
+    @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
+    public InvoiceResponse issue(String invoicePublicId, Long actorUserId) {
+        Invoice invoice = getInvoiceForUpdate(invoicePublicId);
+        if (invoice.getStatus() != InvoiceStatus.DRAFT) {
+            throw new BusinessValidationException("Only a DRAFT invoice can be issued");
+        }
+        StaffProfile staff = getActingStaff(actorUserId, "issue");
+
+        invoice.setInvoiceNumber(generateInvoiceNumber());
+        invoice.setIssuedAt(OffsetDateTime.now(clock));
+        invoice.setIssuedBy(staff.getId());
+        invoice.setStatus(InvoiceStatus.ISSUED);
+
+        return mapResponse(invoiceRepository.saveAndFlush(invoice));
+    }
+
+    /**
+     * BR-013: an ISSUED invoice is never edited. Voiding it and, when requested, cloning its
+     * lines into a fresh DRAFT (linked via replacesInvoice) is the only correction path.
+     */
+    @PreAuthorize(PermissionExpressions.INVOICE_VOID)
+    public InvoiceVoidResponse voidInvoice(
+            String invoicePublicId,
+            Long actorUserId,
+            @Valid InvoiceVoidRequest request
+    ) {
+        if (request == null) {
+            throw new BusinessValidationException("Invoice void request is required");
+        }
+        Invoice invoice = getInvoiceForUpdate(invoicePublicId);
+        if (invoice.getStatus() != InvoiceStatus.ISSUED) {
+            throw new BusinessValidationException("Only an ISSUED invoice can be voided");
+        }
+        StaffProfile staff = getActingStaff(actorUserId, "void");
+        String reason = normalizeRequiredText(request.reason(), "Void reason", 2000);
+
+        invoice.setVoidedAt(OffsetDateTime.now(clock));
+        invoice.setVoidedBy(staff.getId());
+        invoice.setVoidReason(reason);
+        invoice.setStatus(InvoiceStatus.VOID);
+        Invoice voidedInvoice = invoiceRepository.saveAndFlush(invoice);
+
+        Invoice replacement = request.createReplacement()
+                ? createReplacementDraft(voidedInvoice)
+                : null;
+
+        return new InvoiceVoidResponse(
+                mapResponse(voidedInvoice),
+                replacement == null ? null : mapResponse(replacement)
+        );
+    }
+
+    private Invoice createReplacementDraft(Invoice voidedInvoice) {
+        Invoice replacement = Invoice.builder()
+                .publicId(UUID.randomUUID().toString())
+                .booking(voidedInvoice.getBooking())
+                .replacesInvoice(voidedInvoice)
+                .status(InvoiceStatus.DRAFT)
+                .paymentStatus(InvoicePaymentStatus.UNPAID)
+                .buyerName(voidedInvoice.getBuyerName())
+                .buyerAddress(voidedInvoice.getBuyerAddress())
+                .buyerTaxCode(voidedInvoice.getBuyerTaxCode())
+                .buyerEmail(voidedInvoice.getBuyerEmail())
+                .subtotal(ZERO_MONEY)
+                .discountTotal(ZERO_MONEY)
+                .taxTotal(ZERO_MONEY)
+                .totalAmount(ZERO_MONEY)
+                .paidAmount(ZERO_MONEY)
+                .refundedAmount(ZERO_MONEY)
+                .currency(voidedInvoice.getCurrency())
+                .build();
+
+        List<InvoiceItem> clonedItems = voidedInvoice.getItems().stream()
+                .map(item -> InvoiceItem.builder()
+                        .invoice(replacement)
+                        .lineType(item.getLineType())
+                        .description(item.getDescription())
+                        .quantity(item.getQuantity())
+                        .unitPrice(item.getUnitPrice())
+                        .lineSubtotal(item.getLineSubtotal())
+                        .discountAmount(item.getDiscountAmount())
+                        .taxPercent(item.getTaxPercent())
+                        .taxAmount(item.getTaxAmount())
+                        .lineTotal(item.getLineTotal())
+                        .referenceType(item.getReferenceType())
+                        .referenceId(item.getReferenceId())
+                        .sortOrder(item.getSortOrder())
+                        .build())
+                .toList();
+        replacement.getItems().addAll(clonedItems);
+        recalculateTotals(replacement);
+
+        return invoiceRepository.saveAndFlush(replacement);
+    }
+
+    private StaffProfile getActingStaff(Long actorUserId, String action) {
+        return staffProfileRepository.findByUser_Id(actorUserId)
+                .orElseThrow(() -> new BusinessValidationException(
+                        "Only staff can " + action + " an invoice"
+                ));
+    }
+
+    private String generateInvoiceNumber() {
+        int year = LocalDate.now(clock).getYear();
+        for (int attempt = 0; attempt < INVOICE_NUMBER_MAX_ATTEMPTS; attempt++) {
+            String candidate = INVOICE_NUMBER_PREFIX + "-" + year + "-"
+                    + String.format("%06d", secureRandom.nextInt(1_000_000));
+            if (!invoiceRepository.existsByInvoiceNumber(candidate)) {
+                return candidate;
+            }
+        }
+        throw new BusinessValidationException("Unable to generate a unique invoice number, please retry");
+    }
+
+    private Invoice getInvoiceForUpdate(String invoicePublicId) {
+        String normalizedPublicId = normalizePublicId(invoicePublicId, "Invoice public id");
+        return invoiceRepository.findForUpdateByPublicId(normalizedPublicId)
+                .orElseThrow(() -> new ResourceNotFoundException("Invoice", normalizedPublicId));
     }
 
     public InvoiceResponse removeAdjustment(String invoicePublicId, Long itemId) {
@@ -350,9 +486,7 @@ public class InvoiceService {
     }
 
     private Invoice getDraftForUpdate(String invoicePublicId) {
-        String normalizedPublicId = normalizePublicId(invoicePublicId, "Invoice public id");
-        Invoice invoice = invoiceRepository.findForUpdateByPublicId(normalizedPublicId)
-                .orElseThrow(() -> new ResourceNotFoundException("Invoice", normalizedPublicId));
+        Invoice invoice = getInvoiceForUpdate(invoicePublicId);
         if (invoice.getStatus() != InvoiceStatus.DRAFT) {
             throw new BusinessValidationException(
                     "Invoice adjustments can only be changed while the invoice is DRAFT"

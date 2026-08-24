@@ -1,13 +1,19 @@
 package com.example.hotelmanagement.controllers;
 
 import com.example.hotelmanagement.dto.invoice.InvoiceAdjustmentRequest;
+import com.example.hotelmanagement.dto.invoice.InvoicePdfResponse;
 import com.example.hotelmanagement.dto.invoice.InvoiceResponse;
+import com.example.hotelmanagement.dto.invoice.InvoiceVoidRequest;
+import com.example.hotelmanagement.dto.invoice.InvoiceVoidResponse;
 import com.example.hotelmanagement.security.PermissionExpressions;
+import com.example.hotelmanagement.security.UserPrincipal;
+import com.example.hotelmanagement.services.InvoicePdfService;
 import com.example.hotelmanagement.services.InvoiceService;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,9 +28,34 @@ import org.springframework.web.bind.annotation.RestController;
 public class InvoiceController {
 
     private final InvoiceService invoiceService;
+    private final InvoicePdfService invoicePdfService;
 
-    public InvoiceController(InvoiceService invoiceService) {
+    public InvoiceController(InvoiceService invoiceService, InvoicePdfService invoicePdfService) {
         this.invoiceService = invoiceService;
+        this.invoicePdfService = invoicePdfService;
+    }
+
+    @GetMapping("/invoices/{invoicePublicId}/pdf")
+    public ResponseEntity<InvoicePdfResponse> getPdf(@PathVariable String invoicePublicId) {
+        return ResponseEntity.ok(invoicePdfService.getDownloadUrl(invoicePublicId));
+    }
+
+    @PostMapping("/invoices/{invoicePublicId}/issue")
+    public ResponseEntity<InvoiceResponse> issue(
+            @PathVariable String invoicePublicId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(invoiceService.issue(invoicePublicId, principal.getId()));
+    }
+
+    @PostMapping(value = "/invoices/{invoicePublicId}/void", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize(PermissionExpressions.INVOICE_VOID)
+    public ResponseEntity<InvoiceVoidResponse> voidInvoice(
+            @PathVariable String invoicePublicId,
+            @Valid @RequestBody InvoiceVoidRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(invoiceService.voidInvoice(invoicePublicId, principal.getId(), request));
     }
 
     @GetMapping("/invoices/{invoicePublicId}")
