@@ -1,7 +1,9 @@
 package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.payment.PaymentCreateRequest;
+import com.example.hotelmanagement.dto.payment.PaymentGatewayCheckout;
 import com.example.hotelmanagement.dto.payment.PaymentResponse;
+import com.example.hotelmanagement.config.PaymentProperties;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.CustomerProfile;
 import com.example.hotelmanagement.entity.Payment;
@@ -26,6 +28,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -51,12 +54,39 @@ class PaymentServiceTest {
     private BookingRepository bookingRepository;
     @Mock
     private PaymentRepository paymentRepository;
+    @Mock
+    private PaymentGatewayRegistry paymentGatewayRegistry;
+    @Mock
+    private PaymentGatewayService paymentGatewayService;
 
     private PaymentService paymentService;
 
     @BeforeEach
     void setUp() {
-        paymentService = new PaymentService(bookingRepository, paymentRepository, FIXED_CLOCK);
+        PaymentProperties paymentProperties = new PaymentProperties();
+        paymentProperties.setDefaultProvider("SEPAY");
+        org.mockito.Mockito.lenient()
+                .when(paymentGatewayRegistry.getGateway(anyString(), any(PaymentMethod.class)))
+                .thenReturn(paymentGatewayService);
+        org.mockito.Mockito.lenient().when(paymentGatewayService.getProviderCode()).thenReturn("SEPAY");
+        org.mockito.Mockito.lenient().when(paymentGatewayService.createCheckout(any(Payment.class)))
+                .thenReturn(new PaymentGatewayCheckout(
+                        "SEPAY",
+                        "https://pay-sandbox.sepay.vn/v1/checkout/init",
+                        null,
+                        null,
+                        List.of(new com.example.hotelmanagement.dto.payment.PaymentGatewayFormField(
+                                "merchant",
+                                "sandbox-merchant"
+                        ))
+                ));
+        paymentService = new PaymentService(
+                bookingRepository,
+                paymentRepository,
+                paymentGatewayRegistry,
+                paymentProperties,
+                FIXED_CLOCK
+        );
     }
 
     @Test
@@ -83,6 +113,9 @@ class PaymentServiceTest {
         assertThat(response.amount()).isEqualByComparingTo("1250000.00");
         assertThat(response.currency()).isEqualTo("VND");
         assertThat(response.status()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(response.provider()).isEqualTo("SEPAY");
+        assertThat(response.paymentUrl()).isEqualTo("https://pay-sandbox.sepay.vn/v1/checkout/init");
+        assertThat(response.checkoutFields()).hasSize(1);
         assertThat(response.expiresAt()).isEqualTo(booking.getHoldExpiresAt());
 
         ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
@@ -104,6 +137,7 @@ class PaymentServiceTest {
                 .amount(money("1250000.00"))
                 .currency("VND")
                 .status(PaymentStatus.PENDING)
+                .provider("SEPAY")
                 .idempotencyKey(IDEMPOTENCY_KEY)
                 .expiresAt(booking.getHoldExpiresAt())
                 .build();
