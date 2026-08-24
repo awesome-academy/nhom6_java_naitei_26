@@ -129,7 +129,7 @@ class AuthServiceTest {
         assertThat(savedUser.getUserRoles()).hasSize(1);
         assertThat(response.message()).isNotBlank();
         verify(authTokenService).createToken(savedUser, EMAIL_VERIFICATION, null);
-        verify(emailService).sendVerificationEmail("guest@example.com", "Guest User", "verification-token");
+        verify(emailService).sendVerificationEmail("guest@example.com", "Nguyen Van A", "verification-token");
     }
 
     @Test

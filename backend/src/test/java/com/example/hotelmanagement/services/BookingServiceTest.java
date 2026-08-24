@@ -7,6 +7,7 @@ import com.example.hotelmanagement.dto.booking.BookingResponse;
 import com.example.hotelmanagement.dto.booking.BookingRoomCreateItem;
 import com.example.hotelmanagement.dto.pricing.DailyRateResponse;
 import com.example.hotelmanagement.entity.Booking;
+import com.example.hotelmanagement.entity.BookingGuest;
 import com.example.hotelmanagement.entity.BookingRoom;
 import com.example.hotelmanagement.entity.BookingSource;
 import com.example.hotelmanagement.entity.CancellationPolicy;
@@ -20,6 +21,7 @@ import com.example.hotelmanagement.entity.enums.StatusChangeSource;
 import com.example.hotelmanagement.entity.enums.UserStatus;
 import com.example.hotelmanagement.exceptions.BookingRoomConflictException;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
+import com.example.hotelmanagement.repositories.BookingGuestRepository;
 import com.example.hotelmanagement.repositories.BookingRepository;
 import com.example.hotelmanagement.repositories.BookingRoomRepository;
 import com.example.hotelmanagement.repositories.BookingSourceRepository;
@@ -65,6 +67,8 @@ class BookingServiceTest {
     @Mock
     private BookingRepository bookingRepository;
     @Mock
+    private BookingGuestRepository bookingGuestRepository;
+    @Mock
     private BookingRoomRepository bookingRoomRepository;
     @Mock
     private BookingSourceRepository bookingSourceRepository;
@@ -84,6 +88,7 @@ class BookingServiceTest {
         bookingService = new BookingService(
                 bookingRepository,
                 bookingRoomRepository,
+                bookingGuestRepository,
                 bookingSourceRepository,
                 customerProfileRepository,
                 roomRepository,
@@ -150,7 +155,7 @@ class BookingServiceTest {
         assertThat(response.currency()).isEqualTo("VND");
         assertThat(response.holdExpiresAt()).isEqualTo(OffsetDateTime.now(FIXED_CLOCK).plusMinutes(15));
         assertThat(response.rooms()).hasSize(1);
-        assertThat(response.rooms().getFirst().roomNumber()).isEqualTo("A101");
+        assertThat(response.rooms().getFirst().roomNumber()).isNull();
         assertThat(response.rooms().getFirst().nights()).hasSize(2);
         assertThat(response.rooms().getFirst().nights().getFirst().price()).isEqualByComparingTo("1000000.00");
 
@@ -368,6 +373,66 @@ class BookingServiceTest {
         verify(bookingRepository, never()).saveAndFlush(any());
     }
 
+    @Test
+    void removePendingBookingRoomDeletesRoomAndRecalculatesTotals() {
+        Booking booking = createPendingBookingWithRooms();
+        BookingRoom roomToRemove = booking.getBookingRooms().stream()
+                .filter(room -> room.getId().equals(11L))
+                .findFirst()
+                .orElseThrow();
+
+        when(bookingRepository.findByPublicIdAndCustomerProfile_User_Id("booking-public-id", USER_ID))
+                .thenReturn(Optional.of(booking));
+        when(bookingRepository.saveAndFlush(booking)).thenReturn(booking);
+
+        BookingResponse response = bookingService.removePendingBookingRoom(
+                "booking-public-id",
+                11L,
+                USER_ID
+        );
+
+        assertThat(response.rooms()).hasSize(1);
+        assertThat(response.roomsTotal()).isEqualByComparingTo("500000.00");
+        assertThat(response.taxTotal()).isEqualByComparingTo("50000.00");
+        assertThat(response.totalAmount()).isEqualByComparingTo("550000.00");
+        verify(bookingGuestRepository).deleteAllByBookingRoomId(11L);
+        verify(bookingRoomRepository).delete(roomToRemove);
+        verify(bookingRepository).saveAndFlush(booking);
+    }
+
+    @Test
+    void deletePendingBookingCancelsAndHidesPendingBookingForCurrentCustomer() {
+        Booking booking = createPendingBookingWithRooms();
+        when(bookingRepository.findByPublicIdAndCustomerProfile_User_Id("booking-public-id", USER_ID))
+                .thenReturn(Optional.of(booking));
+        when(bookingRepository.saveAndFlush(booking)).thenReturn(booking);
+
+        bookingService.deletePendingBooking("booking-public-id", USER_ID);
+
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+        assertThat(booking.getCancelledBy()).isEqualTo(USER_ID);
+        assertThat(booking.getCancellationReason()).isEqualTo("Customer removed pending booking before payment");
+        assertThat(booking.getStatusHistory()).isEmpty();
+        verify(bookingRepository).saveAndFlush(booking);
+        verify(bookingRepository, never()).delete(any());
+    }
+
+    @Test
+    void getMyBookingsHidesCustomerRemovedPendingBookings() {
+        Booking visibleBooking = createPendingBookingWithRooms();
+        Booking removedBooking = createPendingBookingWithRooms();
+        removedBooking.setPublicId("removed-booking-public-id");
+        removedBooking.setStatus(BookingStatus.CANCELLED);
+        removedBooking.setCancellationReason("Customer removed pending booking before payment");
+        when(bookingRepository.findAllByCustomerProfile_User_IdOrderByCreatedAtDesc(USER_ID))
+                .thenReturn(List.of(removedBooking, visibleBooking));
+
+        List<BookingResponse> responses = bookingService.getMyBookings(USER_ID);
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.getFirst().publicId()).isEqualTo("booking-public-id");
+    }
+
     private CustomerProfile createCustomerProfile() {
         User user = User.builder()
                 .publicId("user-public-id")
@@ -412,6 +477,70 @@ class BookingServiceTest {
                 .build();
         room.setId(roomId);
         return room;
+    }
+
+    private Booking createPendingBookingWithRooms() {
+        CustomerProfile customerProfile = createCustomerProfile();
+        BookingSource source = createSource();
+        Booking booking = Booking.builder()
+                .publicId("booking-public-id")
+                .bookingCode("BK-2026-000001")
+                .customerProfile(customerProfile)
+                .source(source)
+                .sourceCommissionPercentSnapshot(BigDecimal.ZERO)
+                .status(BookingStatus.PENDING)
+                .contactName("Nguyen Van A")
+                .contactEmail("guest@example.com")
+                .contactPhone("0900000000")
+                .adults(3)
+                .children(0)
+                .roomsTotal(money("1500000.00"))
+                .taxTotal(money("150000.00"))
+                .roomTaxPercentSnapshot(money("10.00"))
+                .totalAmount(money("1650000.00"))
+                .currency("VND")
+                .holdExpiresAt(OffsetDateTime.now(FIXED_CLOCK).plusMinutes(15))
+                .build();
+
+        BookingRoom roomA = createBookingRoom(11L, booking, createRoom(10L, "A101", "DLX", "Deluxe"), "1000000.00", 2);
+        BookingRoom roomB = createBookingRoom(12L, booking, createRoom(20L, "B202", "STD", "Standard"), "500000.00", 1);
+        booking.getBookingRooms().add(roomA);
+        booking.getBookingRooms().add(roomB);
+        booking.getBookingGuests().add(BookingGuest.builder()
+                .booking(booking)
+                .bookingRoom(roomA)
+                .fullName("Nguyen Van A")
+                .build());
+        booking.getBookingGuests().add(BookingGuest.builder()
+                .booking(booking)
+                .bookingRoom(roomB)
+                .fullName("Tran Van B")
+                .build());
+        return booking;
+    }
+
+    private BookingRoom createBookingRoom(
+            Long id,
+            Booking booking,
+            Room room,
+            String roomSubtotal,
+            int guestCount
+    ) {
+        BookingRoom bookingRoom = BookingRoom.builder()
+                .booking(booking)
+                .room(room)
+                .roomType(room.getRoomType())
+                .roomTypeCodeSnapshot(room.getRoomType().getCode())
+                .roomTypeNameSnapshot(room.getRoomType().getName())
+                .checkInDate(LocalDate.of(2026, 9, 1))
+                .checkOutDate(LocalDate.of(2026, 9, 2))
+                .roomSubtotal(money(roomSubtotal))
+                .cancellationPolicy(room.getRoomType().getCancellationPolicy())
+                .status(com.example.hotelmanagement.entity.enums.BookingRoomStatus.RESERVED)
+                .guestCount(guestCount)
+                .build();
+        bookingRoom.setId(id);
+        return bookingRoom;
     }
 
     private static BigDecimal money(String value) {

@@ -539,7 +539,7 @@
 #### BE-6.3 | Invoice State Machine — Issue & Void (BR-013) | Priority: Urgent | 23/08 | Est: 4h
 
 - `InvoiceService.issue()`: chuyển DRAFT → ISSUED
-- Cấp `invoice_number` (BK-2026-XXXX)
+- Cấp `invoice_number` (INV-2026-XXXXXX)
 - Ghi `issued_at`, `issued_by`
 - **Trigger immutability (theo DATABASE_DESIGN mục 8.4, BR-013):**
   - `trg_invoices_before_update`: chặn UPDATE các cột chứng từ sau ISSUED

@@ -102,7 +102,7 @@ class InvoiceServiceTest {
         assertThat(savedInvoice.getInvoiceNumber()).isNull();
         assertThat(savedInvoice.getIssuedAt()).isNull();
         assertThat(savedInvoice.getBuyerName()).isEqualTo("Nguyen Van A");
-        assertThat(savedInvoice.getBuyerAddress()).isEqualTo("12 Nguyen Trai, Da Nang, VN");
+        assertThat(savedInvoice.getBuyerAddress()).isEqualTo("12 Nguyen Trai, Đà Nẵng, VN");
         assertThat(savedInvoice.getBuyerEmail()).isEqualTo("guest@example.com");
         assertThat(response.items()).hasSize(3);
 

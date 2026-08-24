@@ -42,6 +42,7 @@ class RoomTypeAuthorizationTest {
           "maxOccupancy": 2,
           "maxAdults": 2,
           "basePrice": 1500000.00,
+          "onlineCancellationPolicyCodes": ["NON_REFUND"],
           "beds": [{"bedType": "QUEEN", "quantity": 1}],
           "amenityCodes": ["WIFI", "AC"]
         }
@@ -53,7 +54,8 @@ class RoomTypeAuthorizationTest {
           "maxAdults": 2,
           "maxChildren": 1,
           "basePrice": 1700000.00,
-          "currency": "VND"
+          "currency": "VND",
+          "onlineCancellationPolicyCodes": ["NON_REFUND"]
         }
         """;
     private static final String BEDS_REQUEST = """
@@ -249,6 +251,7 @@ class RoomTypeAuthorizationTest {
     private RoomTypeResponse createResponse() {
         return new RoomTypeResponse(
             ROOM_TYPE_CODE,
+            1L,
             "Deluxe",
             "deluxe",
             null,
@@ -262,7 +265,10 @@ class RoomTypeAuthorizationTest {
             null,
             true,
             10,
-            null,
+            true,
+            BigDecimal.ZERO,
+            List.of(),
+            List.of(),
             List.of(),
             List.of(),
             List.of(),

@@ -196,7 +196,7 @@ class AvailabilityRepositoryTest {
             Room room,
             BookingRoomStatus status,
             LocalDate checkInDate,
-        LocalDate checkOutDate
+            LocalDate checkOutDate
     ) {
         bookingSequence++;
         jdbcTemplate.update("""
@@ -208,12 +208,14 @@ class AvailabilityRepositoryTest {
                     room_type_name_snapshot,
                     check_in_date,
                     check_out_date,
+                    payment_option,
+                    price_adjustment_percent_snapshot,
                     room_subtotal,
                     status,
                     guest_count,
                     created_at,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ONLINE', 0.00, 0, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
                 (long) bookingSequence,
                 room.getId(),

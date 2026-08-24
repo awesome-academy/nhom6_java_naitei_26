@@ -3,13 +3,12 @@ package com.example.hotelmanagement.services;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationRequest;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationResponse;
 import com.example.hotelmanagement.dto.pricing.DailyRateResponse;
-import com.example.hotelmanagement.entity.Room;
+import com.example.hotelmanagement.entity.CancellationPolicy;
 import com.example.hotelmanagement.entity.RoomType;
+import com.example.hotelmanagement.entity.enums.BookingPaymentOption;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.PricingConfigurationException;
-import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.HotelSettingsRepository;
-import com.example.hotelmanagement.repositories.RoomRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,9 +18,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -30,13 +29,14 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class BookingCalculatorServiceTest {
 
-    private static final Long ROOM_ID = 10L;
     private static final Long ROOM_TYPE_ID = 20L;
+    private static final String ROOM_TYPE_CODE = "DLX";
+    private static final String POLICY_CODE = "FLEXIBLE";
     private static final LocalDate CHECK_IN_DATE = LocalDate.of(2026, 8, 21);
     private static final LocalDate CHECK_OUT_DATE = LocalDate.of(2026, 8, 23);
 
     @Mock
-    private RoomRepository roomRepository;
+    private BookingOptionResolverService bookingOptionResolverService;
 
     @Mock
     private HotelSettingsRepository hotelSettingsRepository;
@@ -49,18 +49,19 @@ class BookingCalculatorServiceTest {
     @BeforeEach
     void setUp() {
         bookingCalculatorService = new BookingCalculatorService(
-                roomRepository,
                 hotelSettingsRepository,
-                rateEngineService
+                rateEngineService,
+                bookingOptionResolverService
         );
     }
 
     @Test
     void calculatePriceReturnsRoomInvoicePreview() {
-        Room room = createRoom(2, 2, 4);
+        RoomType roomType = createRoomType(2, 2, 4);
         BookingPriceCalculationRequest request = createRequest(2, 1);
-        when(roomRepository.findByIdAndDeletedAtIsNull(ROOM_ID)).thenReturn(Optional.of(room));
-        when(rateEngineService.calculateDailyRates(ROOM_ID, CHECK_IN_DATE, CHECK_OUT_DATE))
+        when(bookingOptionResolverService.resolve(ROOM_TYPE_CODE, BookingPaymentOption.ONLINE, POLICY_CODE))
+                .thenReturn(createSelection(roomType));
+        when(rateEngineService.calculateDailyRatesForRoomType(roomType, CHECK_IN_DATE, CHECK_OUT_DATE))
                 .thenReturn(List.of(
                         new DailyRateResponse(CHECK_IN_DATE, money("1000.00")),
                         new DailyRateResponse(CHECK_IN_DATE.plusDays(1), money("1500.00"))
@@ -70,8 +71,10 @@ class BookingCalculatorServiceTest {
 
         BookingPriceCalculationResponse response = bookingCalculatorService.calculatePrice(request);
 
-        assertEquals(ROOM_ID, response.roomId());
+        assertNull(response.roomId());
         assertEquals(ROOM_TYPE_ID, response.roomTypeId());
+        assertEquals(ROOM_TYPE_CODE, response.roomTypeCode());
+        assertEquals(POLICY_CODE, response.cancellationPolicyCode());
         assertEquals(2, response.nights());
         assertEquals(money("2500.00"), response.roomsTotal());
         assertEquals(money("10.00"), response.roomTaxPercentSnapshot());
@@ -83,10 +86,11 @@ class BookingCalculatorServiceTest {
 
     @Test
     void calculatePriceUsesZeroTaxWhenSettingIsMissing() {
-        Room room = createRoom(2, 2, 4);
+        RoomType roomType = createRoomType(2, 2, 4);
         BookingPriceCalculationRequest request = createRequest(2, 0);
-        when(roomRepository.findByIdAndDeletedAtIsNull(ROOM_ID)).thenReturn(Optional.of(room));
-        when(rateEngineService.calculateDailyRates(ROOM_ID, CHECK_IN_DATE, CHECK_OUT_DATE))
+        when(bookingOptionResolverService.resolve(ROOM_TYPE_CODE, BookingPaymentOption.ONLINE, POLICY_CODE))
+                .thenReturn(createSelection(roomType));
+        when(rateEngineService.calculateDailyRatesForRoomType(roomType, CHECK_IN_DATE, CHECK_OUT_DATE))
                 .thenReturn(List.of(
                         new DailyRateResponse(CHECK_IN_DATE, money("1000.00")),
                         new DailyRateResponse(CHECK_IN_DATE.plusDays(1), money("1000.00"))
@@ -104,7 +108,9 @@ class BookingCalculatorServiceTest {
     @Test
     void calculatePriceRejectsInvalidDatesBeforeLoadingRoom() {
         BookingPriceCalculationRequest request = new BookingPriceCalculationRequest(
-                ROOM_ID,
+                ROOM_TYPE_CODE,
+                BookingPaymentOption.ONLINE,
+                POLICY_CODE,
                 CHECK_IN_DATE,
                 CHECK_IN_DATE,
                 1,
@@ -116,42 +122,31 @@ class BookingCalculatorServiceTest {
                 () -> bookingCalculatorService.calculatePrice(request)
         );
 
-        verify(roomRepository, never()).findByIdAndDeletedAtIsNull(ROOM_ID);
-    }
-
-    @Test
-    void calculatePriceRejectsMissingRoom() {
-        BookingPriceCalculationRequest request = createRequest(1, 0);
-        when(roomRepository.findByIdAndDeletedAtIsNull(ROOM_ID)).thenReturn(Optional.empty());
-
-        assertThrows(
-                ResourceNotFoundException.class,
-                () -> bookingCalculatorService.calculatePrice(request)
-        );
-
-        verify(rateEngineService, never()).calculateDailyRates(ROOM_ID, CHECK_IN_DATE, CHECK_OUT_DATE);
+        verify(bookingOptionResolverService, never()).resolve(ROOM_TYPE_CODE, BookingPaymentOption.ONLINE, POLICY_CODE);
     }
 
     @Test
     void calculatePriceRejectsGuestCountAboveOccupancy() {
-        Room room = createRoom(2, 2, 2);
+        RoomType roomType = createRoomType(2, 2, 2);
         BookingPriceCalculationRequest request = createRequest(2, 1);
-        when(roomRepository.findByIdAndDeletedAtIsNull(ROOM_ID)).thenReturn(Optional.of(room));
+        when(bookingOptionResolverService.resolve(ROOM_TYPE_CODE, BookingPaymentOption.ONLINE, POLICY_CODE))
+                .thenReturn(createSelection(roomType));
 
         assertThrows(
                 BusinessValidationException.class,
                 () -> bookingCalculatorService.calculatePrice(request)
         );
 
-        verify(rateEngineService, never()).calculateDailyRates(ROOM_ID, CHECK_IN_DATE, CHECK_OUT_DATE);
+        verify(rateEngineService, never()).calculateDailyRatesForRoomType(roomType, CHECK_IN_DATE, CHECK_OUT_DATE);
     }
 
     @Test
     void calculatePriceRejectsInvalidTaxPercent() {
-        Room room = createRoom(2, 2, 4);
+        RoomType roomType = createRoomType(2, 2, 4);
         BookingPriceCalculationRequest request = createRequest(1, 0);
-        when(roomRepository.findByIdAndDeletedAtIsNull(ROOM_ID)).thenReturn(Optional.of(room));
-        when(rateEngineService.calculateDailyRates(ROOM_ID, CHECK_IN_DATE, CHECK_OUT_DATE))
+        when(bookingOptionResolverService.resolve(ROOM_TYPE_CODE, BookingPaymentOption.ONLINE, POLICY_CODE))
+                .thenReturn(createSelection(roomType));
+        when(rateEngineService.calculateDailyRatesForRoomType(roomType, CHECK_IN_DATE, CHECK_OUT_DATE))
                 .thenReturn(List.of(new DailyRateResponse(CHECK_IN_DATE, money("1000.00"))));
         when(hotelSettingsRepository.getDecimalValue("default_room_tax_percent"))
                 .thenReturn(money("120.00"));
@@ -164,7 +159,9 @@ class BookingCalculatorServiceTest {
 
     private BookingPriceCalculationRequest createRequest(int adults, int children) {
         return new BookingPriceCalculationRequest(
-                ROOM_ID,
+                ROOM_TYPE_CODE,
+                BookingPaymentOption.ONLINE,
+                POLICY_CODE,
                 CHECK_IN_DATE,
                 CHECK_OUT_DATE,
                 adults,
@@ -172,7 +169,7 @@ class BookingCalculatorServiceTest {
         );
     }
 
-    private Room createRoom(
+    private RoomType createRoomType(
             int maxAdults,
             int maxChildren,
             int maxOccupancy
@@ -190,14 +187,20 @@ class BookingCalculatorServiceTest {
                 .isActive(true)
                 .build();
         roomType.setId(ROOM_TYPE_ID);
+        return roomType;
+    }
 
-        Room room = Room.builder()
-                .roomNumber("A101")
-                .roomType(roomType)
-                .isActive(true)
+    private BookingOptionSelection createSelection(RoomType roomType) {
+        CancellationPolicy policy = CancellationPolicy.builder()
+                .code(POLICY_CODE)
+                .name("Flexible")
                 .build();
-        room.setId(ROOM_ID);
-        return room;
+        return new BookingOptionSelection(
+                roomType,
+                BookingPaymentOption.ONLINE,
+                policy,
+                BigDecimal.ZERO
+        );
     }
 
     private BigDecimal money(String value) {

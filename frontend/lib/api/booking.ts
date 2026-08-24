@@ -10,6 +10,13 @@ import type { RoomType } from "@/types/room-type";
 export const getBookingRoomTypes = () =>
   apiClient.get<RoomType[]>("/api/room-types");
 export const getBookingRooms = () => apiClient.get<Room[]>("/api/rooms");
+export const getMyBookings = () => apiClient.get<Booking[]>("/api/bookings/me");
+export const deletePendingBooking = (bookingPublicId: string) =>
+  apiClient.delete<void>(`/api/bookings/${bookingPublicId}`);
+export const deletePendingBookingRoom = (
+  bookingPublicId: string,
+  bookingRoomId: number,
+) => apiClient.delete<Booking | void>(`/api/bookings/${bookingPublicId}/rooms/${bookingRoomId}`);
 export const getAvailability = (checkInDate: string, checkOutDate: string) =>
   apiClient.get<Record<string, number[]>>(
     `/api/rooms/availability?checkInDate=${checkInDate}&checkOutDate=${checkOutDate}`,
