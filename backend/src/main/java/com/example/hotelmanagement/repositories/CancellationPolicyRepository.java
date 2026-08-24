@@ -18,6 +18,9 @@ public interface CancellationPolicyRepository extends JpaRepository<Cancellation
     List<CancellationPolicy> findAllByOrderByIsDefaultDescCodeAsc();
 
     @EntityGraph(attributePaths = "rules")
+    List<CancellationPolicy> findAllByIsActiveTrueOrderByIsDefaultDescCodeAsc();
+
+    @EntityGraph(attributePaths = "rules")
     Optional<CancellationPolicy> findByCodeIgnoreCase(String code);
 
     @EntityGraph(attributePaths = "rules")

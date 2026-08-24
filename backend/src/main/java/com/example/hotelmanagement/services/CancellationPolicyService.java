@@ -64,6 +64,15 @@ public class CancellationPolicyService {
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.POLICY_USE_FOR_BOOKING)
+    public List<CancellationPolicyResponse> getActiveCancellationPolicies() {
+        return cancellationPolicyRepository.findAllByIsActiveTrueOrderByIsDefaultDescCodeAsc()
+                .stream()
+                .map(this::mapPolicyResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     @PreAuthorize(PermissionExpressions.POLICY_MANAGE)
     public CancellationPolicyResponse getCancellationPolicy(String code) {
         return mapPolicyResponse(getExistingPolicy(code));

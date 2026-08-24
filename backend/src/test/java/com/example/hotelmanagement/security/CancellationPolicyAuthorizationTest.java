@@ -19,6 +19,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -68,13 +69,21 @@ class CancellationPolicyAuthorizationTest {
     void cancellationPolicyEndpointsRequireAuthentication() throws Exception {
         mockMvc.perform(get("/api/cancellation-policies"))
                 .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/cancellation-policies/active"))
+                .andExpect(status().isUnauthorized());
 
         verifyNoInteractions(cancellationPolicyService);
     }
 
     @Test
     @WithMockUser(authorities = "booking:create")
-    void bookingPermissionCannotManageCancellationPolicies() throws Exception {
+    void bookingPermissionCanReadActivePoliciesButCannotManageThem() throws Exception {
+        CancellationPolicyResponse response = response();
+        when(cancellationPolicyService.getActiveCancellationPolicies())
+                .thenReturn(List.of(response));
+
+        mockMvc.perform(get("/api/cancellation-policies/active"))
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/cancellation-policies"))
                 .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/cancellation-policies")
@@ -82,19 +91,23 @@ class CancellationPolicyAuthorizationTest {
                         .content(CREATE_REQUEST))
                 .andExpect(status().isForbidden());
 
-        verifyNoInteractions(cancellationPolicyService);
+        verify(cancellationPolicyService).getActiveCancellationPolicies();
+        verifyNoMoreInteractions(cancellationPolicyService);
     }
 
     @Test
     @WithMockUser(authorities = "policy:manage")
     void policyPermissionAllowsCrudOperations() throws Exception {
         CancellationPolicyResponse response = response();
+        when(cancellationPolicyService.getActiveCancellationPolicies()).thenReturn(List.of(response));
         when(cancellationPolicyService.getCancellationPolicies()).thenReturn(List.of(response));
         when(cancellationPolicyService.getCancellationPolicy(POLICY_CODE)).thenReturn(response);
         when(cancellationPolicyService.createCancellationPolicy(any())).thenReturn(response);
         when(cancellationPolicyService.updateCancellationPolicy(eq(POLICY_CODE), any()))
                 .thenReturn(response);
 
+        mockMvc.perform(get("/api/cancellation-policies/active"))
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/cancellation-policies"))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/cancellation-policies/{code}", POLICY_CODE))
@@ -114,6 +127,7 @@ class CancellationPolicyAuthorizationTest {
         mockMvc.perform(delete("/api/cancellation-policies/{code}", POLICY_CODE))
                 .andExpect(status().isNoContent());
 
+        verify(cancellationPolicyService).getActiveCancellationPolicies();
         verify(cancellationPolicyService).getCancellationPolicies();
         verify(cancellationPolicyService).getCancellationPolicy(POLICY_CODE);
         verify(cancellationPolicyService).createCancellationPolicy(any());
