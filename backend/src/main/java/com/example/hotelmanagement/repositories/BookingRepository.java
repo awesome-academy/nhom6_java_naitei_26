@@ -10,9 +10,17 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.List;
+import java.util.Set;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, Long> {
@@ -74,4 +82,45 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
             @Param("from") OffsetDateTime from,
             @Param("toExclusive") OffsetDateTime toExclusive
     );
+
+    @Query("""
+            SELECT COUNT(booking) FROM Booking booking
+            WHERE booking.status = :status
+            """)
+    long countByStatus(@Param("status") BookingStatus status);
+
+    @Query("""
+            SELECT booking FROM Booking booking
+            LEFT JOIN FETCH booking.source
+            LEFT JOIN FETCH booking.bookingRooms br
+            LEFT JOIN FETCH br.room
+            WHERE booking.publicId = :publicId
+            """)
+    Optional<Booking> findForStaffDetailByPublicId(@Param("publicId") String publicId);
+
+    @Query("""
+            SELECT booking FROM Booking booking
+            LEFT JOIN FETCH booking.source
+            LEFT JOIN FETCH booking.bookingRooms
+            WHERE booking.status IN :statuses
+            ORDER BY booking.createdAt DESC
+            """)
+    Page<Booking> findAllByStatusIn(@Param("statuses") Set<BookingStatus> statuses, Pageable pageable);
+
+    @Query("""
+            SELECT booking FROM Booking booking
+            LEFT JOIN FETCH booking.source
+            LEFT JOIN FETCH booking.bookingRooms
+            WHERE booking.source.code = :sourceCode
+            ORDER BY booking.createdAt DESC
+            """)
+    Page<Booking> findAllBySourceCode(@Param("sourceCode") String sourceCode, Pageable pageable);
+
+    @Query("""
+            SELECT booking FROM Booking booking
+            LEFT JOIN FETCH booking.source
+            LEFT JOIN FETCH booking.bookingRooms
+            ORDER BY booking.createdAt DESC
+            """)
+    Page<Booking> findAllOrderByCreatedAtDesc(Pageable pageable);
 }
