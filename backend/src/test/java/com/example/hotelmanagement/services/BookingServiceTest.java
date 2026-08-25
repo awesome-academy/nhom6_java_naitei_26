@@ -26,6 +26,7 @@ import com.example.hotelmanagement.repositories.BookingRepository;
 import com.example.hotelmanagement.repositories.BookingRoomRepository;
 import com.example.hotelmanagement.repositories.BookingSourceRepository;
 import com.example.hotelmanagement.repositories.CustomerProfileRepository;
+import com.example.hotelmanagement.repositories.HotelSettingsRepository;
 import com.example.hotelmanagement.repositories.RoomRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -75,6 +76,8 @@ class BookingServiceTest {
     @Mock
     private CustomerProfileRepository customerProfileRepository;
     @Mock
+    private HotelSettingsRepository hotelSettingsRepository;
+    @Mock
     private RoomRepository roomRepository;
     @Mock
     private BookingCalculatorService bookingCalculatorService;
@@ -91,6 +94,7 @@ class BookingServiceTest {
                 bookingGuestRepository,
                 bookingSourceRepository,
                 customerProfileRepository,
+                hotelSettingsRepository,
                 roomRepository,
                 bookingCalculatorService,
                 cancellationPolicyService,
@@ -103,6 +107,8 @@ class BookingServiceTest {
             bookingRoom.setCancellationPolicySnapshot("{\"code\":\"" + policy.getCode() + "\"}");
             return null;
         }).when(cancellationPolicyService).applyPolicySnapshot(any(BookingRoom.class), any(CancellationPolicy.class));
+        lenient().when(hotelSettingsRepository.getDecimalValue(HotelSettingsService.DEPOSIT_PERCENT_KEY))
+                .thenReturn(money("30.00"));
     }
 
     @Test
@@ -152,6 +158,8 @@ class BookingServiceTest {
         assertThat(response.taxTotal()).isEqualByComparingTo("200000.00");
         assertThat(response.roomTaxPercentSnapshot()).isEqualByComparingTo("10.00");
         assertThat(response.totalAmount()).isEqualByComparingTo("2200000.00");
+        assertThat(response.depositPercentSnapshot()).isEqualByComparingTo("30.00");
+        assertThat(response.requiredDepositAmount()).isEqualByComparingTo("660000.00");
         assertThat(response.currency()).isEqualTo("VND");
         assertThat(response.holdExpiresAt()).isEqualTo(OffsetDateTime.now(FIXED_CLOCK).plusMinutes(15));
         assertThat(response.rooms()).hasSize(1);

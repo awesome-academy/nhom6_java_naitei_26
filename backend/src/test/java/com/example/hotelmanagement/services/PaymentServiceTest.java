@@ -90,7 +90,7 @@ class PaymentServiceTest {
     }
 
     @Test
-    void createPaymentCreatesPendingPaymentForBookingOutstandingBalance() {
+    void createPaymentCreatesPendingPaymentForOutstandingDeposit() {
         Booking booking = createPayableBooking();
         when(bookingRepository.findForUpdateByPublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(booking));
         when(paymentRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
@@ -110,7 +110,7 @@ class PaymentServiceTest {
         assertThat(response.paymentCode()).matches("^PAY-2026-[0-9A-F]{20}$");
         assertThat(response.bookingPublicId()).isEqualTo(BOOKING_PUBLIC_ID);
         assertThat(response.method()).isEqualTo(PaymentMethod.INTERNET_BANKING);
-        assertThat(response.amount()).isEqualByComparingTo("1250000.00");
+        assertThat(response.amount()).isEqualByComparingTo("375000.00");
         assertThat(response.currency()).isEqualTo("VND");
         assertThat(response.status()).isEqualTo(PaymentStatus.PENDING);
         assertThat(response.provider()).isEqualTo("SEPAY");
@@ -122,7 +122,7 @@ class PaymentServiceTest {
         verify(paymentRepository).saveAndFlush(paymentCaptor.capture());
         Payment savedPayment = paymentCaptor.getValue();
         assertThat(savedPayment.getBooking()).isSameAs(booking);
-        assertThat(savedPayment.getAmount()).isEqualByComparingTo("1250000.00");
+        assertThat(savedPayment.getAmount()).isEqualByComparingTo("375000.00");
         assertThat(savedPayment.getCreatedBy()).isEqualTo(USER_ID);
         assertThat(savedPayment.getIdempotencyKey()).isEqualTo(IDEMPOTENCY_KEY);
     }
@@ -225,6 +225,8 @@ class PaymentServiceTest {
                 .customerProfile(createCustomerProfile())
                 .status(BookingStatus.PENDING)
                 .totalAmount(money("1250000.00"))
+                .depositPercentSnapshot(money("30.00"))
+                .requiredDepositAmount(money("375000.00"))
                 .paidAmount(BigDecimal.ZERO)
                 .currency("VND")
                 .holdExpiresAt(OffsetDateTime.now(FIXED_CLOCK).plusMinutes(15))

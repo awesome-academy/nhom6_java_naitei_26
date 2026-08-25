@@ -236,6 +236,8 @@ public class BookingStateMachineService {
                 booking.getTaxTotal(),
                 booking.getRoomTaxPercentSnapshot(),
                 booking.getTotalAmount(),
+                booking.getDepositPercentSnapshot(),
+                booking.getRequiredDepositAmount(),
                 booking.getCurrency(),
                 booking.getHoldExpiresAt(),
                 booking.getBookingRooms().stream().map(this::mapRoomResponse).toList(),
