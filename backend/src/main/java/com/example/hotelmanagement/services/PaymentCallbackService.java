@@ -9,16 +9,21 @@ import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.InvalidPaymentCallbackException;
 import com.example.hotelmanagement.repositories.PaymentEventRepository;
 import com.example.hotelmanagement.repositories.PaymentRepository;
+import com.example.hotelmanagement.security.PermissionExpressions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class PaymentCallbackService {
@@ -28,6 +33,17 @@ public class PaymentCallbackService {
     private static final int MAX_LOG_VALUE_LENGTH = 120;
     private static final int MAX_FAILURE_MESSAGE_LENGTH = 2_000;
     private static final int OK_STATUS = 200;
+    // A verified gateway settlement remains the ledger truth even if the local checkout was
+    // cancelled, failed, or expired before its callback arrived.
+    private static final Set<PaymentStatus> SUCCESS_SETTLEABLE_STATUSES = Collections.unmodifiableSet(
+            EnumSet.of(
+                    PaymentStatus.PENDING,
+                    PaymentStatus.PROCESSING,
+                    PaymentStatus.FAILED,
+                    PaymentStatus.CANCELLED,
+                    PaymentStatus.EXPIRED
+            )
+    );
 
     private final PaymentGatewayRegistry gatewayRegistry;
     private final PaymentRepository paymentRepository;
@@ -62,12 +78,7 @@ public class PaymentCallbackService {
             String receivedIp
     ) {
         String rawPayload = callbackRequest.rawPayload();
-        if (rawPayload == null || rawPayload.isBlank()) {
-            throw new BusinessValidationException("Payment callback payload is required");
-        }
-        if (rawPayload.length() > MAX_CALLBACK_LENGTH) {
-            throw new BusinessValidationException("Payment callback payload is too large");
-        }
+        validateRawPayload(rawPayload);
 
         PaymentGatewayService gateway = gatewayRegistry.getGateway(provider);
         PaymentGatewayCallback callback;
@@ -83,6 +94,32 @@ public class PaymentCallbackService {
             return;
         }
 
+        processCallback(callback, rawPayload, receivedIp, "IPN_RECEIVED");
+    }
+
+    @Transactional
+    @PreAuthorize(PermissionExpressions.PAYMENT_CREATE)
+    public void handleTrustedCallback(
+            PaymentGatewayCallback callback,
+            String rawPayload,
+            String receivedIp
+    ) {
+        validateRawPayload(rawPayload);
+        if (callback == null
+                || !callback.signatureValid()
+                || !MockWalletPaymentGatewayService.PROVIDER_CODE.equals(callback.provider())) {
+            throw new BusinessValidationException("Trusted mock wallet callback must be verified");
+        }
+        processCallback(callback, rawPayload, receivedIp, "SIMULATOR_RESULT");
+    }
+
+    private void processCallback(
+            PaymentGatewayCallback callback,
+            String rawPayload,
+            String receivedIp,
+            String eventType
+    ) {
+
         if (callback.signatureValid()
                 && callback.providerEventId() != null
                 && paymentEventRepository.existsByProviderAndProviderEventId(
@@ -96,7 +133,7 @@ public class PaymentCallbackService {
                 ? Optional.empty()
                 : paymentRepository.findForUpdateByPaymentCode(callback.paymentCode());
         Payment payment = paymentOptional.orElse(null);
-        PaymentEvent event = buildEvent(callback, payment, rawPayload, receivedIp);
+        PaymentEvent event = buildEvent(callback, payment, rawPayload, receivedIp, eventType);
         boolean hasNewVerifiedSuccess = false;
 
         if (!callback.signatureValid()) {
@@ -140,8 +177,7 @@ public class PaymentCallbackService {
                 );
                 return false;
             }
-            if (payment.getStatus() == PaymentStatus.PENDING
-                    || payment.getStatus() == PaymentStatus.PROCESSING) {
+            if (SUCCESS_SETTLEABLE_STATUSES.contains(payment.getStatus())) {
                 OffsetDateTime verifiedAt = OffsetDateTime.now(clock);
                 payment.setStatus(PaymentStatus.SUCCEEDED);
                 payment.setProviderTxnId(callback.providerTransactionId());
@@ -191,11 +227,12 @@ public class PaymentCallbackService {
             PaymentGatewayCallback callback,
             Payment payment,
             String rawPayload,
-            String receivedIp
+            String receivedIp,
+            String eventType
     ) {
         return PaymentEvent.builder()
                 .payment(payment)
-                .eventType("IPN_RECEIVED")
+                .eventType(eventType)
                 .provider(callback.provider())
                 .providerEventId(callback.providerEventId())
                 .signatureValid(callback.signatureValid())
@@ -204,6 +241,15 @@ public class PaymentCallbackService {
                 .receivedIp(receivedIp)
                 .processedAt(OffsetDateTime.now(clock))
                 .build();
+    }
+
+    private void validateRawPayload(String rawPayload) {
+        if (rawPayload == null || rawPayload.isBlank()) {
+            throw new BusinessValidationException("Payment callback payload is required");
+        }
+        if (rawPayload.length() > MAX_CALLBACK_LENGTH) {
+            throw new BusinessValidationException("Payment callback payload is too large");
+        }
     }
 
     private void saveMalformedEvent(String provider, String rawPayload, String receivedIp) {

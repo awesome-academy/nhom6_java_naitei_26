@@ -41,3 +41,7 @@ app:
   auth:
     max-failed-login-attempts: 5
     lock-duration: 15m
+  payment:
+    mock-wallet:
+      enabled: true
+      checkout-base-url: http://localhost:3000/payment/mock-wallet

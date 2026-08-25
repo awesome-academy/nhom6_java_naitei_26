@@ -22,3 +22,8 @@ logging:
   level:
     root: INFO
     org.springframework.security: DEBUG
+
+app:
+  payment:
+    mock-wallet:
+      enabled: ${PAYMENT_MOCK_WALLET_ENABLED:true}

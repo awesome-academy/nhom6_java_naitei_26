@@ -4,6 +4,7 @@ import com.example.hotelmanagement.config.PaymentProperties;
 import com.example.hotelmanagement.dto.payment.PaymentCreateRequest;
 import com.example.hotelmanagement.dto.payment.PaymentGatewayCheckout;
 import com.example.hotelmanagement.dto.payment.PaymentResponse;
+import com.example.hotelmanagement.dto.payment.PaymentStatusResponse;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.Payment;
 import com.example.hotelmanagement.entity.enums.BookingStatus;
@@ -20,6 +21,7 @@ import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,8 +32,11 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -43,8 +48,14 @@ public class PaymentService {
     private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
     private static final int PAYMENT_CODE_MAX_ATTEMPTS = 5;
     private static final int PAYMENT_CODE_RANDOM_BYTES = 10;
-    private static final Set<PaymentStatus> ACTIVE_PAYMENT_STATUSES =
-            Set.of(PaymentStatus.PENDING, PaymentStatus.PROCESSING);
+    private static final Set<PaymentStatus> ACTIVE_PAYMENT_STATUSES = Collections.unmodifiableSet(
+            EnumSet.of(PaymentStatus.PENDING, PaymentStatus.PROCESSING)
+    );
+    private static final Set<PaymentStatus> RETRYABLE_PAYMENT_STATUSES = Collections.unmodifiableSet(
+            EnumSet.of(PaymentStatus.FAILED, PaymentStatus.CANCELLED, PaymentStatus.EXPIRED)
+    );
+    private static final String CUSTOMER_CANCELLED_CODE = "CUSTOMER_CANCELLED";
+    private static final String PAYMENT_EXPIRED_CODE = "PAYMENT_LINK_EXPIRED";
 
     private final BookingRepository bookingRepository;
     private final PaymentRepository paymentRepository;
@@ -86,15 +97,18 @@ public class PaymentService {
         }
 
         validateBookingIsPayable(booking);
-        paymentRepository.findFirstByBooking_IdAndStatusInOrderByCreatedAtDesc(
+        Optional<Payment> activePayment = paymentRepository.findFirstByBooking_IdAndStatusInOrderByCreatedAtDesc(
                         booking.getId(),
                         ACTIVE_PAYMENT_STATUSES
-                )
-                .ifPresent(payment -> {
-                    throw new BusinessValidationException(
-                            "A payment is already pending for this booking"
-                    );
-                });
+                );
+        if (activePayment.isPresent()) {
+            Payment payment = activePayment.get();
+            if (expireIfNeeded(payment)) {
+                paymentRepository.saveAndFlush(payment);
+            } else {
+                throw new BusinessValidationException("A payment is already pending for this booking");
+            }
+        }
 
         Payment payment = Payment.builder()
                 .paymentCode(generatePaymentCode())
@@ -105,7 +119,7 @@ public class PaymentService {
                 .status(PaymentStatus.PENDING)
                 .provider(resolveProvider(request.method()))
                 .idempotencyKey(normalizedIdempotencyKey)
-                .expiresAt(booking.getHoldExpiresAt())
+                .expiresAt(calculatePaymentExpiresAt(booking))
                 .createdBy(userId)
                 .build();
 
@@ -123,6 +137,45 @@ public class PaymentService {
         }
     }
 
+    @PreAuthorize(PermissionExpressions.PAYMENT_CREATE)
+    public PaymentStatusResponse getPayment(
+            String bookingPublicId,
+            String paymentCode,
+            Long userId
+    ) {
+        Payment payment = getOwnedPaymentForUpdate(bookingPublicId, paymentCode, userId);
+        if (expireIfNeeded(payment)) {
+            paymentRepository.saveAndFlush(payment);
+        }
+        return mapStatusResponse(payment);
+    }
+
+    @PreAuthorize(PermissionExpressions.PAYMENT_CREATE)
+    public PaymentStatusResponse cancelPayment(
+            String bookingPublicId,
+            String paymentCode,
+            Long userId
+    ) {
+        Payment payment = getOwnedPaymentForUpdate(bookingPublicId, paymentCode, userId);
+        if (expireIfNeeded(payment)) {
+            paymentRepository.saveAndFlush(payment);
+            return mapStatusResponse(payment);
+        }
+        if (payment.getStatus() == PaymentStatus.CANCELLED) {
+            return mapStatusResponse(payment);
+        }
+        if (!ACTIVE_PAYMENT_STATUSES.contains(payment.getStatus())) {
+            throw new BusinessValidationException(
+                    "Only pending or processing payments can be cancelled"
+            );
+        }
+
+        payment.setStatus(PaymentStatus.CANCELLED);
+        payment.setFailureCode(CUSTOMER_CANCELLED_CODE);
+        payment.setFailureMessage("Payment was cancelled by the customer");
+        return mapStatusResponse(paymentRepository.saveAndFlush(payment));
+    }
+
     private PaymentResponse returnIdempotentPayment(
             Payment existingPayment,
             Booking booking,
@@ -134,18 +187,36 @@ public class PaymentService {
         if (existingPayment.getMethod() != requestedMethod) {
             throw new BusinessValidationException("Idempotency key has already been used with another payment method");
         }
+        boolean paymentChanged = expireIfNeeded(existingPayment);
         if (existingPayment.getProvider() == null) {
             existingPayment.setProvider(resolveProvider(requestedMethod));
+            paymentChanged = true;
+        }
+        if (paymentChanged) {
             paymentRepository.saveAndFlush(existingPayment);
         }
         return createCheckoutResponse(existingPayment);
     }
 
+    private Payment getOwnedPaymentForUpdate(
+            String bookingPublicId,
+            String paymentCode,
+            Long userId
+    ) {
+        Payment payment = paymentRepository.findForUpdateByPaymentCode(paymentCode)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment", paymentCode));
+        if (!payment.getBooking().getPublicId().equals(bookingPublicId)) {
+            throw new ResourceNotFoundException("Payment", paymentCode);
+        }
+        validateBookingOwner(payment.getBooking(), userId);
+        return payment;
+    }
+
     private void validateBookingOwner(Booking booking, Long userId) {
         if (booking.getCustomerProfile() == null
                 || booking.getCustomerProfile().getUser() == null
-                || !userId.equals(booking.getCustomerProfile().getUser().getId())) {
-            throw new BusinessValidationException("You cannot create a payment for this booking");
+                || !Objects.equals(userId, booking.getCustomerProfile().getUser().getId())) {
+            throw new AccessDeniedException("You cannot access payments for this booking");
         }
     }
 
@@ -168,6 +239,30 @@ public class PaymentService {
         }
         BigDecimal paidAmount = booking.getPaidAmount() == null ? BigDecimal.ZERO : booking.getPaidAmount();
         return booking.getRequiredDepositAmount().subtract(paidAmount);
+    }
+
+    private OffsetDateTime calculatePaymentExpiresAt(Booking booking) {
+        if (paymentProperties.getCheckoutTtl() == null
+                || paymentProperties.getCheckoutTtl().isZero()
+                || paymentProperties.getCheckoutTtl().isNegative()) {
+            throw new BusinessValidationException("Payment checkout TTL must be greater than zero");
+        }
+        OffsetDateTime gatewayExpiry = OffsetDateTime.now(clock).plus(paymentProperties.getCheckoutTtl());
+        return gatewayExpiry.isBefore(booking.getHoldExpiresAt())
+                ? gatewayExpiry
+                : booking.getHoldExpiresAt();
+    }
+
+    private boolean expireIfNeeded(Payment payment) {
+        if (!ACTIVE_PAYMENT_STATUSES.contains(payment.getStatus())
+                || payment.getExpiresAt() == null
+                || payment.getExpiresAt().isAfter(OffsetDateTime.now(clock))) {
+            return false;
+        }
+        payment.setStatus(PaymentStatus.EXPIRED);
+        payment.setFailureCode(PAYMENT_EXPIRED_CODE);
+        payment.setFailureMessage("Payment link has expired");
+        return true;
     }
 
     private String normalizeIdempotencyKey(String idempotencyKey) {
@@ -195,13 +290,18 @@ public class PaymentService {
     }
 
     private String resolveProvider(PaymentMethod method) {
-        return method == PaymentMethod.CASH
-                ? "MANUAL"
-                : gatewayRegistry.getGateway(paymentProperties.getDefaultProvider(), method).getProviderCode();
+        if (method == PaymentMethod.CASH) {
+            return "MANUAL";
+        }
+        String configuredProvider = method == PaymentMethod.E_WALLET
+                ? paymentProperties.getEWalletProvider()
+                : paymentProperties.getDefaultProvider();
+        return gatewayRegistry.getGateway(configuredProvider, method).getProviderCode();
     }
 
     private PaymentResponse createCheckoutResponse(Payment payment) {
         PaymentGatewayCheckout checkout = payment.getMethod() == PaymentMethod.CASH
+                || !ACTIVE_PAYMENT_STATUSES.contains(payment.getStatus())
                 ? null
                 : gatewayRegistry.getGateway(payment.getProvider(), payment.getMethod()).createCheckout(payment);
         return mapResponse(payment, checkout);
@@ -223,5 +323,36 @@ public class PaymentService {
                 payment.getExpiresAt(),
                 payment.getCreatedAt()
         );
+    }
+
+    private PaymentStatusResponse mapStatusResponse(Payment payment) {
+        return new PaymentStatusResponse(
+                payment.getPaymentCode(),
+                payment.getBooking().getPublicId(),
+                payment.getMethod(),
+                payment.getAmount(),
+                payment.getCurrency(),
+                payment.getStatus(),
+                payment.getProvider(),
+                payment.getFailureCode(),
+                payment.getFailureMessage(),
+                payment.getExpiresAt(),
+                isRetryable(payment),
+                payment.getCreatedAt(),
+                payment.getUpdatedAt()
+        );
+    }
+
+    private boolean isRetryable(Payment payment) {
+        Booking booking = payment.getBooking();
+        if (!RETRYABLE_PAYMENT_STATUSES.contains(payment.getStatus())
+                || booking.getStatus() != BookingStatus.PENDING
+                || booking.getHoldExpiresAt() == null
+                || !booking.getHoldExpiresAt().isAfter(OffsetDateTime.now(clock))
+                || booking.getRequiredDepositAmount() == null) {
+            return false;
+        }
+        BigDecimal paidAmount = booking.getPaidAmount() == null ? BigDecimal.ZERO : booking.getPaidAmount();
+        return booking.getRequiredDepositAmount().subtract(paidAmount).signum() > 0;
     }
 }

@@ -1,10 +1,12 @@
 package com.example.hotelmanagement.security;
 
 import com.example.hotelmanagement.dto.payment.PaymentResponse;
+import com.example.hotelmanagement.dto.payment.PaymentStatusResponse;
 import com.example.hotelmanagement.entity.User;
 import com.example.hotelmanagement.entity.enums.PaymentMethod;
 import com.example.hotelmanagement.entity.enums.PaymentStatus;
 import com.example.hotelmanagement.entity.enums.UserStatus;
+import com.example.hotelmanagement.services.MockWalletPaymentService;
 import com.example.hotelmanagement.services.PaymentService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +30,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -44,6 +47,8 @@ class PaymentAuthorizationTest {
 
     @MockBean
     private PaymentService paymentService;
+    @MockBean
+    private MockWalletPaymentService mockWalletPaymentService;
 
     @Test
     void endpointRequiresAuthentication() throws Exception {
@@ -96,6 +101,69 @@ class PaymentAuthorizationTest {
         );
     }
 
+    @Test
+    void paymentStatusRequiresAuthentication() throws Exception {
+        mockMvc.perform(get(
+                        "/api/bookings/{bookingPublicId}/payments/{paymentCode}",
+                        BOOKING_PUBLIC_ID,
+                        "PAY-2026-0123456789ABCDEF0123"
+                ))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    void bookingCreatorCanReadAndCancelPayment() throws Exception {
+        var authentication = UsernamePasswordAuthenticationToken.authenticated(
+                principal(42L),
+                null,
+                List.of(new SimpleGrantedAuthority("booking:create"))
+        );
+        String paymentCode = "PAY-2026-0123456789ABCDEF0123";
+        when(paymentService.getPayment(BOOKING_PUBLIC_ID, paymentCode, 42L))
+                .thenReturn(statusResponse(PaymentStatus.PENDING));
+        when(paymentService.cancelPayment(BOOKING_PUBLIC_ID, paymentCode, 42L))
+                .thenReturn(statusResponse(PaymentStatus.CANCELLED));
+
+        mockMvc.perform(get(
+                        "/api/bookings/{bookingPublicId}/payments/{paymentCode}",
+                        BOOKING_PUBLIC_ID,
+                        paymentCode
+                ).with(authentication(authentication)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post(
+                        "/api/bookings/{bookingPublicId}/payments/{paymentCode}/cancel",
+                        BOOKING_PUBLIC_ID,
+                        paymentCode
+                ).with(authentication(authentication)))
+                .andExpect(status().isOk());
+
+        verify(paymentService).getPayment(BOOKING_PUBLIC_ID, paymentCode, 42L);
+        verify(paymentService).cancelPayment(BOOKING_PUBLIC_ID, paymentCode, 42L);
+    }
+
+    @Test
+    void mockWalletResultRequiresBookingPermission() throws Exception {
+        var authentication = UsernamePasswordAuthenticationToken.authenticated(
+                principal(42L),
+                null,
+                List.of(new SimpleGrantedAuthority("room:read"))
+        );
+
+        mockMvc.perform(post(
+                        "/api/bookings/{bookingPublicId}/payments/{paymentCode}/mock-wallet/result",
+                        BOOKING_PUBLIC_ID,
+                        "PAY-2026-0123456789ABCDEF0123"
+                )
+                        .with(authentication(authentication))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"result\":\"SUCCEEDED\"}"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(mockWalletPaymentService);
+    }
+
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder createRequest() {
         return post("/api/bookings/{bookingPublicId}/payments", BOOKING_PUBLIC_ID)
                 .header("Idempotency-Key", "payment-attempt-001")
@@ -122,6 +190,25 @@ class PaymentAuthorizationTest {
                 List.of(),
                 OffsetDateTime.of(2026, 8, 24, 8, 15, 0, 0, ZoneOffset.UTC),
                 OffsetDateTime.of(2026, 8, 24, 8, 0, 0, 0, ZoneOffset.UTC)
+        );
+    }
+
+    private PaymentStatusResponse statusResponse(PaymentStatus status) {
+        OffsetDateTime now = OffsetDateTime.of(2026, 8, 24, 8, 0, 0, 0, ZoneOffset.UTC);
+        return new PaymentStatusResponse(
+                "PAY-2026-0123456789ABCDEF0123",
+                BOOKING_PUBLIC_ID,
+                PaymentMethod.INTERNET_BANKING,
+                new BigDecimal("1250000.00"),
+                "VND",
+                status,
+                "SEPAY",
+                null,
+                null,
+                now.plusMinutes(10),
+                status == PaymentStatus.CANCELLED,
+                now,
+                now
         );
     }
 
