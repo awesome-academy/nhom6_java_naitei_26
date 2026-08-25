@@ -44,6 +44,7 @@ export function DataTable<T>({
   pagination,
   actions,
 }: DataTableProps<T>) {
+  const safeData = data ?? []
   // Handle both old format (1-indexed: pageSize, total) and new format (0-indexed: size, totalItems)
   const pageSize = pagination?.size ?? pagination?.pageSize ?? 20
   const totalItems = pagination?.totalItems ?? pagination?.total ?? 0
@@ -81,7 +82,7 @@ export function DataTable<T>({
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)]">
-            {data.length === 0 ? (
+            {safeData.length === 0 ? (
               <tr>
                 <td
                   colSpan={columns.length + (actions ? 1 : 0)}
@@ -91,7 +92,7 @@ export function DataTable<T>({
                 </td>
               </tr>
             ) : (
-              data.map((row) => (
+              safeData.map((row) => (
                 <tr
                   key={keyExtractor(row)}
                   className={cn(

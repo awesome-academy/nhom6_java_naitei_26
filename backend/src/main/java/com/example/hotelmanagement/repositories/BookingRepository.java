@@ -55,6 +55,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     })
     List<Booking> findAllByCustomerProfile_User_IdOrderByCreatedAtDesc(Long userId);
 
+    long countByCustomerProfile_User_Id(Long userId);
+
     @EntityGraph(attributePaths = {
             "source",
             "bookingRooms",

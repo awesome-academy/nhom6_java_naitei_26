@@ -44,6 +44,15 @@ export {
   FormMessage,
 } from "./form";
 export { Input } from "./input";
+export {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "./pagination";
 export { Label } from "./label";
 export { Separator } from "./separator";
 export {
