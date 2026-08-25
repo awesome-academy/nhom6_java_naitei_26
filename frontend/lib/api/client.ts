@@ -152,9 +152,10 @@ export class ApiClient {
     return this.request<T>(endpoint, { method: "GET" })
   }
 
-  post<T>(endpoint: string, body: unknown): Promise<T> {
+  post<T>(endpoint: string, body: unknown, headers?: HeadersInit): Promise<T> {
     return this.request<T>(endpoint, {
       method: "POST",
+      headers,
       body: JSON.stringify(body),
     })
   }
