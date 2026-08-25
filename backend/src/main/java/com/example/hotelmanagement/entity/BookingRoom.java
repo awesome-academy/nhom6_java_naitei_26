@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.entity;
 
 import com.example.hotelmanagement.entity.enums.BookingRoomStatus;
+import com.example.hotelmanagement.entity.enums.BookingPaymentOption;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -46,6 +47,15 @@ public class BookingRoom extends BaseEntity {
 
     @Column(name = "cancellation_policy_snapshot", columnDefinition = "JSON")
     private String cancellationPolicySnapshot;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_option", nullable = false, length = 30)
+    @Builder.Default
+    private BookingPaymentOption paymentOption = BookingPaymentOption.ONLINE;
+
+    @Column(name = "price_adjustment_percent_snapshot", nullable = false, precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal priceAdjustmentPercentSnapshot = BigDecimal.ZERO;
 
     @Column(name = "check_in_date", nullable = false)
     private LocalDate checkInDate;

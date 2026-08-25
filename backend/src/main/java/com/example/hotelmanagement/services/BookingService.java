@@ -9,6 +9,7 @@ import com.example.hotelmanagement.dto.booking.BookingRoomNightResponse;
 import com.example.hotelmanagement.dto.booking.BookingRoomResponse;
 import com.example.hotelmanagement.dto.pricing.DailyRateResponse;
 import com.example.hotelmanagement.entity.Booking;
+import com.example.hotelmanagement.entity.BookingGuest;
 import com.example.hotelmanagement.entity.BookingRoom;
 import com.example.hotelmanagement.entity.BookingRoomNight;
 import com.example.hotelmanagement.entity.BookingSource;
@@ -20,6 +21,7 @@ import com.example.hotelmanagement.entity.User;
 import com.example.hotelmanagement.entity.enums.ActorType;
 import com.example.hotelmanagement.entity.enums.BookingRoomStatus;
 import com.example.hotelmanagement.entity.enums.BookingStatus;
+import com.example.hotelmanagement.entity.enums.RoomOperationalStatus;
 import com.example.hotelmanagement.entity.enums.StatusChangeSource;
 import com.example.hotelmanagement.exceptions.BookingRoomConflictException;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
@@ -34,6 +36,7 @@ import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,8 +76,31 @@ public class BookingService {
     private final RoomRepository roomRepository;
     private final BookingCalculatorService bookingCalculatorService;
     private final CancellationPolicyService cancellationPolicyService;
+    private final BookingOptionResolverService bookingOptionResolverService;
     private final Clock clock;
     private final SecureRandom secureRandom = new SecureRandom();
+
+    @Autowired
+    public BookingService(
+            BookingRepository bookingRepository,
+            BookingSourceRepository bookingSourceRepository,
+            CustomerProfileRepository customerProfileRepository,
+            RoomRepository roomRepository,
+            BookingCalculatorService bookingCalculatorService,
+            CancellationPolicyService cancellationPolicyService,
+            BookingOptionResolverService bookingOptionResolverService,
+            Clock clock
+    ) {
+        this.bookingRepository = bookingRepository;
+        this.bookingRoomRepository = null;
+        this.bookingSourceRepository = bookingSourceRepository;
+        this.customerProfileRepository = customerProfileRepository;
+        this.roomRepository = roomRepository;
+        this.bookingCalculatorService = bookingCalculatorService;
+        this.cancellationPolicyService = cancellationPolicyService;
+        this.bookingOptionResolverService = bookingOptionResolverService;
+        this.clock = clock;
+    }
 
     public BookingService(
             BookingRepository bookingRepository,
@@ -93,6 +119,7 @@ public class BookingService {
         this.roomRepository = roomRepository;
         this.bookingCalculatorService = bookingCalculatorService;
         this.cancellationPolicyService = cancellationPolicyService;
+        this.bookingOptionResolverService = null;
         this.clock = clock;
     }
 
@@ -130,19 +157,20 @@ public class BookingService {
         int totalChildren = 0;
 
         for (BookingRoomCreateItem item : request.rooms()) {
-            ensureRoomIsAvailable(item);
+            Room room = assignAvailableRoom(item);
+            BookingOptionSelection optionSelection = resolveBookingOption(item, room);
             BookingPriceCalculationResponse priceCalculation = bookingCalculatorService.calculatePrice(
                     new BookingPriceCalculationRequest(
-                            item.roomId(),
+                            item.roomTypeCode(),
+                            item.paymentOption(),
+                            item.cancellationPolicyCode(),
                             item.checkInDate(),
                             item.checkOutDate(),
                             item.adults(),
                             item.children()
                     )
             );
-            Room room = roomRepository.findByIdAndDeletedAtIsNull(item.roomId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Room", item.roomId().toString()));
-            RoomType roomType = room.getRoomType();
+            RoomType roomType = optionSelection.roomType();
 
             BookingRoom bookingRoom = BookingRoom.builder()
                     .booking(booking)
@@ -153,10 +181,20 @@ public class BookingService {
                     .checkInDate(item.checkInDate())
                     .checkOutDate(item.checkOutDate())
                     .roomSubtotal(priceCalculation.roomsTotal())
+                    .paymentOption(optionSelection.paymentOption())
+                    .priceAdjustmentPercentSnapshot(optionSelection.priceAdjustmentPercent())
                     .status(BookingRoomStatus.RESERVED)
                     .guestCount(item.adults() + item.children())
                     .build();
-            cancellationPolicyService.applyPolicySnapshot(bookingRoom, roomType.getCancellationPolicy());
+            if (bookingOptionResolverService == null) {
+                cancellationPolicyService.applyPolicySnapshot(bookingRoom, optionSelection.cancellationPolicy());
+            } else {
+                cancellationPolicyService.applyPolicySnapshot(
+                        bookingRoom,
+                        optionSelection.cancellationPolicy(),
+                        optionSelection.priceAdjustmentPercent()
+                );
+            }
 
             for (DailyRateResponse dailyRate : priceCalculation.dailyRates()) {
                 bookingRoom.getBookingRoomNights().add(
@@ -169,6 +207,13 @@ public class BookingService {
             }
 
             booking.getBookingRooms().add(bookingRoom);
+            booking.getBookingGuests().add(
+                    BookingGuest.builder()
+                            .booking(booking)
+                            .bookingRoom(bookingRoom)
+                            .fullName(normalizeOrDefault(item.guestFullName(), booking.getContactName()))
+                            .build()
+            );
             roomsTotal = roomsTotal.add(priceCalculation.roomsTotal());
             taxTotal = taxTotal.add(priceCalculation.taxTotal());
             totalAdults += item.adults();
@@ -217,20 +262,54 @@ public class BookingService {
         }
     }
 
-    private void ensureRoomIsAvailable(BookingRoomCreateItem item) {
+    private Room assignAvailableRoom(BookingRoomCreateItem item) {
         if (!item.checkOutDate().isAfter(item.checkInDate())) {
             throw new BusinessValidationException("Check-out date must be after check-in date");
         }
-        if (bookingRoomRepository.existsOverlappingBooking(
-                item.roomId(),
-                ACTIVE_BOOKING_STATUSES,
+        Room assignedRoom = roomRepository.findAvailableRoomsByTypeForUpdate(
+                item.roomTypeCode(),
                 item.checkInDate(),
-                item.checkOutDate()
-        )) {
-            throw new BookingRoomConflictException(
-                    "Room " + item.roomId() + " is not available for the requested dates"
+                item.checkOutDate(),
+                RoomOperationalStatus.ACTIVE,
+                ACTIVE_BOOKING_STATUSES
+        ).stream().findFirst().orElse(null);
+        if (assignedRoom != null) {
+            return assignedRoom;
+        }
+        Long legacyRoomId = item.roomId();
+        if (legacyRoomId != null) {
+            if (bookingRoomRepository != null && bookingRoomRepository.existsOverlappingBooking(
+                    legacyRoomId,
+                    ACTIVE_BOOKING_STATUSES,
+                    item.checkInDate(),
+                    item.checkOutDate()
+            )) {
+                throw new BookingRoomConflictException(
+                        "Room " + legacyRoomId + " is not available for the requested dates"
+                );
+            }
+            return roomRepository.findByIdAndDeletedAtIsNull(legacyRoomId)
+                    .orElseThrow(() -> new BookingRoomConflictException(
+                            "No rooms are available for the requested room type and dates"
+                    ));
+        }
+        throw new BookingRoomConflictException("No rooms are available for the requested room type and dates");
+    }
+
+    private BookingOptionSelection resolveBookingOption(BookingRoomCreateItem item, Room room) {
+        if (bookingOptionResolverService != null) {
+            return bookingOptionResolverService.resolve(
+                    item.roomTypeCode(),
+                    item.paymentOption(),
+                    item.cancellationPolicyCode()
             );
         }
+        return new BookingOptionSelection(
+                room.getRoomType(),
+                item.paymentOption(),
+                room.getRoomType().getCancellationPolicy(),
+                BigDecimal.ZERO
+        );
     }
 
     private String generateBookingCode() {
@@ -296,6 +375,8 @@ public class BookingService {
                 bookingRoom.getRoomSubtotal(),
                 bookingRoom.getCancellationPolicy() == null ? null : bookingRoom.getCancellationPolicy().getCode(),
                 bookingRoom.getCancellationPolicy() == null ? null : bookingRoom.getCancellationPolicy().getName(),
+                bookingRoom.getPaymentOption(),
+                bookingRoom.getPriceAdjustmentPercentSnapshot(),
                 bookingRoom.getAssignedAt(),
                 bookingRoom.getAssignedBy(),
                 bookingRoom.getBookingRoomNights().stream()

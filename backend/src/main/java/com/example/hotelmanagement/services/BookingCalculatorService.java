@@ -3,13 +3,10 @@ package com.example.hotelmanagement.services;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationRequest;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationResponse;
 import com.example.hotelmanagement.dto.pricing.DailyRateResponse;
-import com.example.hotelmanagement.entity.Room;
 import com.example.hotelmanagement.entity.RoomType;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.PricingConfigurationException;
-import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.HotelSettingsRepository;
-import com.example.hotelmanagement.repositories.RoomRepository;
 import jakarta.validation.Valid;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,18 +27,18 @@ public class BookingCalculatorService {
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
     private static final BigDecimal ZERO_MONEY = money("0.00");
 
-    private final RoomRepository roomRepository;
     private final HotelSettingsRepository hotelSettingsRepository;
     private final RateEngineService rateEngineService;
+    private final BookingOptionResolverService bookingOptionResolverService;
 
     public BookingCalculatorService(
-            RoomRepository roomRepository,
             HotelSettingsRepository hotelSettingsRepository,
-            RateEngineService rateEngineService
+            RateEngineService rateEngineService,
+            BookingOptionResolverService bookingOptionResolverService
     ) {
-        this.roomRepository = roomRepository;
         this.hotelSettingsRepository = hotelSettingsRepository;
         this.rateEngineService = rateEngineService;
+        this.bookingOptionResolverService = bookingOptionResolverService;
     }
 
     public BookingPriceCalculationResponse calculatePrice(
@@ -49,17 +46,20 @@ public class BookingCalculatorService {
     ) {
         validateRequest(request);
 
-        Room room = roomRepository.findByIdAndDeletedAtIsNull(request.roomId())
-                .orElseThrow(() -> new ResourceNotFoundException("Room", request.roomId().toString()));
-        RoomType roomType = getRoomType(room);
-        validateRoomCanBeBooked(room, roomType);
-        validateOccupancy(request, room, roomType);
+        BookingOptionSelection selection = bookingOptionResolverService.resolve(
+                request.roomTypeCode(),
+                request.paymentOption(),
+                request.cancellationPolicyCode()
+        );
+        RoomType roomType = selection.roomType();
+        validateRoomCanBeBooked(roomType);
+        validateOccupancy(request, roomType);
 
-        List<DailyRateResponse> dailyRates = rateEngineService.calculateDailyRates(
-                request.roomId(),
+        List<DailyRateResponse> dailyRates = applyPriceAdjustment(rateEngineService.calculateDailyRatesForRoomType(
+                roomType,
                 request.checkInDate(),
                 request.checkOutDate()
-        );
+        ), selection.priceAdjustmentPercent());
         BigDecimal roomsTotal = dailyRates.stream()
                 .map(DailyRateResponse::price)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
@@ -70,8 +70,13 @@ public class BookingCalculatorService {
         BigDecimal totalAmount = roomsTotal.add(taxTotal).setScale(2, RoundingMode.HALF_UP);
 
         return new BookingPriceCalculationResponse(
-                room.getId(),
+                null,
                 roomType.getId(),
+                roomType.getCode(),
+                selection.paymentOption(),
+                selection.cancellationPolicy().getCode(),
+                selection.cancellationPolicy().getName(),
+                selection.priceAdjustmentPercent(),
                 request.checkInDate(),
                 request.checkOutDate(),
                 ChronoUnit.DAYS.between(request.checkInDate(), request.checkOutDate()),
@@ -90,8 +95,14 @@ public class BookingCalculatorService {
         if (request == null) {
             throw new BusinessValidationException("Booking price calculation request is required");
         }
-        if (request.roomId() == null || request.roomId() <= 0) {
-            throw new BusinessValidationException("Room id must be a positive number");
+        if (request.roomTypeCode() == null || request.roomTypeCode().isBlank()) {
+            throw new BusinessValidationException("Room type code is required");
+        }
+        if (request.paymentOption() == null) {
+            throw new BusinessValidationException("Payment option is required");
+        }
+        if (request.cancellationPolicyCode() == null || request.cancellationPolicyCode().isBlank()) {
+            throw new BusinessValidationException("Cancellation policy code is required");
         }
         if (request.checkInDate() == null || request.checkOutDate() == null) {
             throw new BusinessValidationException("Check-in date and check-out date are required");
@@ -107,19 +118,7 @@ public class BookingCalculatorService {
         }
     }
 
-    private RoomType getRoomType(Room room) {
-        if (room.getRoomType() == null || room.getRoomType().getId() == null) {
-            throw new PricingConfigurationException(
-                    "Room " + room.getId() + " does not have a valid room type"
-            );
-        }
-        return room.getRoomType();
-    }
-
-    private void validateRoomCanBeBooked(Room room, RoomType roomType) {
-        if (!Boolean.TRUE.equals(room.getIsActive())) {
-            throw new BusinessValidationException("Only active rooms can be priced for booking");
-        }
+    private void validateRoomCanBeBooked(RoomType roomType) {
         if (!Boolean.TRUE.equals(roomType.getIsActive())) {
             throw new BusinessValidationException("Only active room types can be priced for booking");
         }
@@ -127,13 +126,10 @@ public class BookingCalculatorService {
 
     private void validateOccupancy(
             BookingPriceCalculationRequest request,
-            Room room,
             RoomType roomType
     ) {
         int totalGuests = request.adults() + request.children();
-        Integer maxOccupancy = room.getMaxOccupancyOverride() != null
-                ? room.getMaxOccupancyOverride()
-                : roomType.getMaxOccupancy();
+        Integer maxOccupancy = roomType.getMaxOccupancy();
         if (maxOccupancy == null || maxOccupancy < 1) {
             throw new PricingConfigurationException(
                     "Room type " + roomType.getId() + " has no valid max occupancy"
@@ -173,6 +169,23 @@ public class BookingCalculatorService {
         }
         String defaultCurrency = hotelSettingsRepository.getStringValue(DEFAULT_CURRENCY_KEY);
         return defaultCurrency == null || defaultCurrency.isBlank() ? "VND" : defaultCurrency;
+    }
+
+    private List<DailyRateResponse> applyPriceAdjustment(
+            List<DailyRateResponse> dailyRates,
+            BigDecimal adjustmentPercent
+    ) {
+        BigDecimal normalizedAdjustment = adjustmentPercent == null ? BigDecimal.ZERO : adjustmentPercent;
+        if (normalizedAdjustment.signum() == 0) {
+            return dailyRates;
+        }
+        BigDecimal multiplier = BigDecimal.ONE.add(normalizedAdjustment.divide(ONE_HUNDRED, 6, RoundingMode.HALF_UP));
+        return dailyRates.stream()
+                .map(dailyRate -> new DailyRateResponse(
+                        dailyRate.date(),
+                        dailyRate.price().multiply(multiplier).setScale(2, RoundingMode.HALF_UP)
+                ))
+                .toList();
     }
 
     private static BigDecimal money(String value) {

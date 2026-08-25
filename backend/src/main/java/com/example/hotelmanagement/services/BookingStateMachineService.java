@@ -256,6 +256,8 @@ public class BookingStateMachineService {
                 bookingRoom.getRoomSubtotal(),
                 bookingRoom.getCancellationPolicy() == null ? null : bookingRoom.getCancellationPolicy().getCode(),
                 bookingRoom.getCancellationPolicy() == null ? null : bookingRoom.getCancellationPolicy().getName(),
+                bookingRoom.getPaymentOption(),
+                bookingRoom.getPriceAdjustmentPercentSnapshot(),
                 bookingRoom.getAssignedAt(),
                 bookingRoom.getAssignedBy(),
                 bookingRoom.getBookingRoomNights().stream()

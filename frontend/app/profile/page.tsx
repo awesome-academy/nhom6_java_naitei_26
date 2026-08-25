@@ -23,6 +23,7 @@ import {
   type CustomerProfile,
   type Province,
 } from "@/lib/api/customer-profile"
+import { getStoredTokens } from "@/lib/api/auth"
 
 const profileSchema = z.object({
   fullName: z.string().min(2, "Họ tên phải có ít nhất 2 ký tự"),
@@ -108,7 +109,7 @@ export default function ProfilePage() {
         const error = err as { status?: number }
         if (error.status === 401) {
           if (typeof window !== "undefined") {
-            const refreshToken = localStorage.getItem("refresh_token")
+            const { refreshToken } = getStoredTokens()
             if (!refreshToken) {
               window.location.href = "/login?redirect=/profile"
             }

@@ -41,6 +41,21 @@ public interface RateOverrideRepository extends JpaRepository<RateOverride, Long
             LEFT JOIN FETCH rateOverride.room targetRoom
             LEFT JOIN FETCH rateOverride.roomType targetRoomType
             WHERE rateOverride.isActive = true
+              AND rateOverride.startDate < :checkOutDate
+              AND rateOverride.endDate > :checkInDate
+              AND targetRoomType.id = :roomTypeId
+            """)
+    List<RateOverride> findActiveRoomTypeOverridesForPricing(
+            @Param("roomTypeId") Long roomTypeId,
+            @Param("checkInDate") LocalDate checkInDate,
+            @Param("checkOutDate") LocalDate checkOutDate
+    );
+
+    @Query("""
+            SELECT rateOverride FROM RateOverride rateOverride
+            LEFT JOIN FETCH rateOverride.room targetRoom
+            LEFT JOIN FETCH rateOverride.roomType targetRoomType
+            WHERE rateOverride.isActive = true
               AND rateOverride.priority = :priority
               AND rateOverride.startDate < :endDate
               AND rateOverride.endDate > :startDate

@@ -9,6 +9,7 @@ public record CancellationPolicySnapshot(
         String code,
         String name,
         @JsonProperty("no_show_charge_percent") BigDecimal noShowChargePercent,
+        @JsonProperty("price_adjustment_percent") BigDecimal priceAdjustmentPercent,
         List<CancellationPolicyRuleSnapshot> rules
 ) {
 }

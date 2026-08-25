@@ -2,6 +2,7 @@ package com.example.hotelmanagement.dto.roomtype;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -32,11 +33,52 @@ public record RoomTypeCreateRequest(
         @DecimalMin(value = "0.01") @Digits(integer = 4, fraction = 2) BigDecimal sizeSqm,
         Boolean isActive,
         @Min(0) Integer sortOrder,
-        @Size(max = 30) @Pattern(regexp = "^[A-Za-z0-9_]*$") String cancellationPolicyCode,
+        Boolean payAtHotelEnabled,
+        @DecimalMin("0.00") @DecimalMax("100.00") @Digits(integer = 3, fraction = 2)
+        BigDecimal payAtHotelPriceAdjustmentPercent,
+        @NotNull @Size(max = 20)
+        Set<@NotBlank @Size(max = 30) @Pattern(regexp = "^[A-Za-z0-9_]+$") String> onlineCancellationPolicyCodes,
 
         @NotEmpty @Size(max = 6) List<@Valid RoomTypeBedRequest> beds,
 
         @NotNull @Size(max = 100)
         Set<@NotBlank @Size(max = 40) @Pattern(regexp = "^[A-Za-z0-9_]+$") String> amenityCodes
 ) {
+    public RoomTypeCreateRequest(
+            String code,
+            String name,
+            String description,
+            Integer maxOccupancy,
+            Integer maxAdults,
+            Integer maxChildren,
+            BigDecimal basePrice,
+            String currency,
+            BigDecimal extraBedPrice,
+            BigDecimal sizeSqm,
+            Boolean isActive,
+            Integer sortOrder,
+            String cancellationPolicyCode,
+            List<RoomTypeBedRequest> beds,
+            Set<String> amenityCodes
+    ) {
+        this(
+                code,
+                name,
+                description,
+                maxOccupancy,
+                maxAdults,
+                maxChildren,
+                basePrice,
+                currency,
+                extraBedPrice,
+                sizeSqm,
+                isActive,
+                sortOrder,
+                cancellationPolicyCode != null,
+                new BigDecimal("10.00"),
+                cancellationPolicyCode == null ? Set.of() : Set.of(cancellationPolicyCode),
+                beds,
+                amenityCodes
+        );
+    }
 }

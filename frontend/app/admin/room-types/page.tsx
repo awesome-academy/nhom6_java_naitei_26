@@ -198,11 +198,17 @@ export default function AdminRoomTypesPage() {
     },
     {
       key: "cancellationPolicy",
-      header: "Chính sách hủy",
+      header: "Option bán",
       render: (roomType: RoomType) => (
-        <span className={roomType.cancellationPolicy === null ? "text-[var(--muted-foreground)]" : undefined}>
-          {roomType.cancellationPolicy?.name ?? "Chưa gắn"}
-        </span>
+        <div className="flex min-w-48 flex-wrap gap-1">
+          {roomType.onlineCancellationPolicyOptions.map((option) => (
+            <Badge key={option.cancellationPolicy.code} variant="secondary">
+              Online: {option.cancellationPolicy.name}
+            </Badge>
+          ))}
+          {roomType.payAtHotelEnabled && <Badge variant="outline">Tại khách sạn</Badge>}
+          {roomType.bookingOptions.length === 0 && <span className="text-[var(--muted-foreground)]">Chưa gắn</span>}
+        </div>
       ),
     },
     {

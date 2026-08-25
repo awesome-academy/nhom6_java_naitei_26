@@ -63,8 +63,15 @@ public class RoomType extends BaseEntity {
     @Builder.Default
     private Integer sortOrder = 0;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "cancellation_policy_id")
+    @Column(name = "pay_at_hotel_enabled", nullable = false)
+    @Builder.Default
+    private Boolean payAtHotelEnabled = true;
+
+    @Column(name = "pay_at_hotel_price_adjustment_percent", nullable = false, precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal payAtHotelPriceAdjustmentPercent = new BigDecimal("10.00");
+
+    @Transient
     private CancellationPolicy cancellationPolicy;
 
     @Column(name = "deleted_at")
@@ -86,6 +93,10 @@ public class RoomType extends BaseEntity {
     @OneToMany(mappedBy = "roomType", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private Set<RoomTypeImage> images = new HashSet<>();
+
+    @OneToMany(mappedBy = "roomType", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private Set<RoomTypeCancellationPolicy> cancellationPolicyOptions = new HashSet<>();
 
     @OneToMany(mappedBy = "roomType", cascade = CascadeType.ALL)
     @Builder.Default

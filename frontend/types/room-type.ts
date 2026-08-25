@@ -35,8 +35,24 @@ export interface RoomTypeImage {
   sortOrder: number
 }
 
+export type BookingPaymentOption = "ONLINE" | "PAY_AT_HOTEL"
+
+export interface RoomTypePolicyOption {
+  cancellationPolicy: CancellationPolicy
+  isActive: boolean
+  sortOrder: number
+}
+
+export interface RoomTypeBookingOption {
+  optionKey: string
+  paymentOption: BookingPaymentOption
+  cancellationPolicy: CancellationPolicy
+  priceAdjustmentPercent: number
+}
+
 export interface RoomType {
   code: string
+  roomTypeId: number
   name: string
   slug: string
   description: string | null
@@ -50,7 +66,10 @@ export interface RoomType {
   sizeSqm: number | null
   isActive: boolean
   sortOrder: number
-  cancellationPolicy: CancellationPolicy | null
+  payAtHotelEnabled: boolean
+  payAtHotelPriceAdjustmentPercent: number
+  onlineCancellationPolicyOptions: RoomTypePolicyOption[]
+  bookingOptions: RoomTypeBookingOption[]
   beds: RoomTypeBed[]
   amenities: Amenity[]
   images: RoomTypeImage[]
@@ -77,7 +96,9 @@ export interface RoomTypeCreateRequest {
   sizeSqm: number | null
   isActive: boolean
   sortOrder: number
-  cancellationPolicyCode: string | null
+  payAtHotelEnabled: boolean
+  payAtHotelPriceAdjustmentPercent: number
+  onlineCancellationPolicyCodes: string[]
   beds: RoomTypeBed[]
   amenityCodes: string[]
 }

@@ -1,35 +1,45 @@
 import type { ApiErrorResponse } from "@/types/auth"
-import { getStoredTokens, storeTokens, clearTokens } from "./tokens"
+import {
+  clearTokens,
+  getCurrentAuthSessionScope,
+  getStoredTokens,
+  storeTokens,
+  type AuthSessionScope,
+} from "./tokens"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"
 
 export class ApiClient {
-  private accessToken: string | null = null
-
-  setAccessToken(token: string | null) {
-    this.accessToken = token
+  private accessTokens: Record<AuthSessionScope, string | null> = {
+    customer: null,
+    admin: null,
   }
 
-  getAccessToken(): string | null {
-    if (this.accessToken) {
-      return this.accessToken
+  setAccessToken(
+    token: string | null,
+    scope: AuthSessionScope = getCurrentAuthSessionScope()
+  ) {
+    this.accessTokens[scope] = token
+  }
+
+  getAccessToken(scope: AuthSessionScope = getCurrentAuthSessionScope()): string | null {
+    if (this.accessTokens[scope]) {
+      return this.accessTokens[scope]
     }
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("access_token")
-      if (stored) {
-        this.accessToken = stored
-        return stored
-      }
+    const { accessToken } = getStoredTokens(scope)
+    if (accessToken) {
+      this.accessTokens[scope] = accessToken
+      return accessToken
     }
     return null
   }
 
-  private clearAccessToken() {
-    this.accessToken = null
+  private clearAccessToken(scope: AuthSessionScope) {
+    this.accessTokens[scope] = null
   }
 
-  private async refreshAccessToken(): Promise<boolean> {
-    const { refreshToken } = getStoredTokens()
+  private async refreshAccessToken(scope: AuthSessionScope): Promise<boolean> {
+    const { refreshToken } = getStoredTokens(scope)
     if (!refreshToken) {
       return false
     }
@@ -46,8 +56,8 @@ export class ApiClient {
       }
 
       const data = await response.json()
-      storeTokens(data.accessToken, data.refreshToken)
-      this.accessToken = data.accessToken
+      storeTokens(data.accessToken, data.refreshToken, scope)
+      this.accessTokens[scope] = data.accessToken
       return true
     } catch {
       return false
@@ -59,6 +69,7 @@ export class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`
+    const scope = getCurrentAuthSessionScope()
 
     const headers = new Headers({
       "Content-Type": "application/json",
@@ -76,11 +87,11 @@ export class ApiClient {
       }
     }
 
-    let token = this.getAccessToken()
+    let token = this.getAccessToken(scope)
     if (!token) {
-      const refreshed = await this.refreshAccessToken()
+      const refreshed = await this.refreshAccessToken(scope)
       if (refreshed) {
-        token = this.getAccessToken()
+        token = this.getAccessToken(scope)
       }
     }
 
@@ -95,9 +106,9 @@ export class ApiClient {
 
     // Auto-refresh token on 401
     if (response.status === 401 && token) {
-      const refreshed = await this.refreshAccessToken()
+      const refreshed = await this.refreshAccessToken(scope)
       if (refreshed) {
-        const newToken = this.getAccessToken()
+        const newToken = this.getAccessToken(scope)
         headers.set("Authorization", `Bearer ${newToken}`)
         response = await fetch(url, {
           ...options,
@@ -105,8 +116,8 @@ export class ApiClient {
         })
       } else {
         // Refresh failed - clear tokens
-        clearTokens()
-        this.clearAccessToken()
+        clearTokens(scope)
+        this.clearAccessToken(scope)
       }
     }
 

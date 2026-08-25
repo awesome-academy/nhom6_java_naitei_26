@@ -79,6 +79,47 @@ public interface RoomRepository extends JpaRepository<Room, Long>, JpaSpecificat
             @Param("blockingStatuses") Set<BookingRoomStatus> blockingStatuses
     );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = {
+            "roomType",
+            "roomType.cancellationPolicyOptions",
+            "roomType.cancellationPolicyOptions.cancellationPolicy",
+            "roomType.cancellationPolicyOptions.cancellationPolicy.rules"
+    })
+    @Query("""
+            SELECT room
+            FROM Room room
+            WHERE room.deletedAt IS NULL
+              AND room.isActive = true
+              AND room.operationalStatus = :operationalStatus
+              AND room.roomType.deletedAt IS NULL
+              AND room.roomType.isActive = true
+              AND UPPER(room.roomType.code) = UPPER(:roomTypeCode)
+              AND NOT EXISTS (
+                    SELECT bookingRoom.id
+                    FROM BookingRoom bookingRoom
+                    WHERE bookingRoom.room.id = room.id
+                      AND bookingRoom.status IN :blockingStatuses
+                      AND bookingRoom.checkInDate < :checkOutDate
+                      AND bookingRoom.checkOutDate > :checkInDate
+                  )
+              AND NOT EXISTS (
+                    SELECT block.id
+                    FROM RoomStatusBlock block
+                    WHERE block.room.id = room.id
+                      AND block.startDate < :checkOutDate
+                      AND block.endDate > :checkInDate
+                  )
+            ORDER BY room.id ASC
+            """)
+    List<Room> findAvailableRoomsByTypeForUpdate(
+            @Param("roomTypeCode") String roomTypeCode,
+            @Param("checkInDate") LocalDate checkInDate,
+            @Param("checkOutDate") LocalDate checkOutDate,
+            @Param("operationalStatus") RoomOperationalStatus operationalStatus,
+            @Param("blockingStatuses") Set<BookingRoomStatus> blockingStatuses
+    );
+
     @Override
     @EntityGraph(attributePaths = {"roomType", "roomType.amenities", "amenities", "images"})
     List<Room> findAll(Specification<Room> specification, Sort sort);

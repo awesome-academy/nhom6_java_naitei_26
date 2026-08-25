@@ -51,6 +51,7 @@ const policyFormSchema = z
       .max(120, "Tên policy tối đa 120 ký tự"),
     description: z.string().trim().max(10_000, "Mô tả tối đa 10.000 ký tự"),
     noShowChargePercent: percentSchema,
+    priceAdjustmentPercent: percentSchema,
     isDefault: z.boolean(),
     isActive: z.boolean(),
     rules: z
@@ -107,6 +108,7 @@ function getDefaultValues(policy: CancellationPolicy | null): PolicyFormValues {
       name: "",
       description: "",
       noShowChargePercent: "100",
+      priceAdjustmentPercent: "0",
       isDefault: false,
       isActive: true,
       rules: [{ minHoursBefore: "0", refundPercent: "0" }],
@@ -118,6 +120,7 @@ function getDefaultValues(policy: CancellationPolicy | null): PolicyFormValues {
     name: policy.name,
     description: policy.description ?? "",
     noShowChargePercent: String(policy.noShowChargePercent),
+    priceAdjustmentPercent: String(policy.priceAdjustmentPercent),
     isDefault: policy.isDefault,
     isActive: policy.isActive,
     rules: [...policy.rules]
@@ -187,6 +190,7 @@ export function PolicyFormDialog({
         name: values.name.trim(),
         description: values.description.trim() || null,
         noShowChargePercent: Number(values.noShowChargePercent),
+        priceAdjustmentPercent: Number(values.priceAdjustmentPercent),
         isDefault: values.isDefault,
         isActive: values.isActive,
         rules: mapRules(values.rules),
@@ -243,6 +247,17 @@ export function PolicyFormDialog({
                   inputMode="decimal"
                   placeholder="100"
                   {...form.register("noShowChargePercent")}
+                />
+              </Field>
+
+              <Field
+                label="Tăng giá online (%)"
+                error={form.formState.errors.priceAdjustmentPercent?.message}
+              >
+                <Input
+                  inputMode="decimal"
+                  placeholder="0"
+                  {...form.register("priceAdjustmentPercent")}
                 />
               </Field>
 
