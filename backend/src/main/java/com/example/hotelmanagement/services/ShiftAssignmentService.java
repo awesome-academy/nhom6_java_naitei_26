@@ -9,6 +9,7 @@ import com.example.hotelmanagement.entity.ShiftAssignment;
 import com.example.hotelmanagement.entity.StaffProfile;
 import com.example.hotelmanagement.entity.enums.AssignmentStatus;
 import com.example.hotelmanagement.entity.enums.EmploymentStatus;
+import com.example.hotelmanagement.entity.enums.UserStatus;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
@@ -169,7 +170,9 @@ public class ShiftAssignmentService {
         StaffProfile staffProfile = staffProfileRepository
                 .findByEmployeeCodeIgnoreCase(normalizedEmployeeCode)
                 .orElseThrow(() -> new ResourceNotFoundException("Staff", normalizedEmployeeCode));
-        if (staffProfile.getEmploymentStatus() != EmploymentStatus.ACTIVE) {
+        if (staffProfile.getEmploymentStatus() != EmploymentStatus.ACTIVE
+                || staffProfile.getUser().getStatus() != UserStatus.ACTIVE
+                || staffProfile.getUser().getEmailVerifiedAt() == null) {
             throw new BusinessValidationException("Only active Staff can be assigned to a shift");
         }
         return staffProfile;

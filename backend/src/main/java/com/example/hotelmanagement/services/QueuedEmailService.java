@@ -81,6 +81,24 @@ public class QueuedEmailService implements EmailService {
 
     @Override
     @Transactional
+    public void sendStaffInvitationEmail(String toEmail, String fullName, String token) {
+        String invitationUrl = authProperties.frontendStaffInvitationUrl() + "?token=" + token;
+        queueTemplate(
+                EmailTemplateCode.STAFF_INVITATION,
+                toEmail,
+                null,
+                null,
+                Map.of(
+                        "invitationLink", invitationUrl,
+                        "token", valueOrEmpty(token),
+                        "email", valueOrEmpty(toEmail),
+                        "fullName", valueOrEmpty(fullName)
+                )
+        );
+    }
+
+    @Override
+    @Transactional
     public void sendPasswordResetEmail(String toEmail, String fullName, String token) {
         String resetUrl = authProperties.frontendResetUrl() + "?token=" + token;
         queueTemplate(

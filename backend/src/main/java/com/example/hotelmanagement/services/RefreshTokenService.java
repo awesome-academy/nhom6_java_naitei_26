@@ -7,6 +7,7 @@ import com.example.hotelmanagement.repositories.AuthRefreshTokenRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -19,6 +20,11 @@ public class RefreshTokenService {
 
     private final AuthRefreshTokenRepository authRefreshTokenRepository;
     private final Clock clock;
+
+    @Transactional
+    public void revokeAllForUser(User user) {
+        authRefreshTokenRepository.revokeAllForUser(user, now());
+    }
 
     public void storeRefreshToken(String jwtId, User user, Instant expiresAt) {
         AuthRefreshToken refreshToken = AuthRefreshToken.builder()

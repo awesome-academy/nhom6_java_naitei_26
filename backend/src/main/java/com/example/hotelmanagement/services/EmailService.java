@@ -9,6 +9,8 @@ public interface EmailService {
 
     void sendVerificationEmail(String toEmail, String fullName, String token);
 
+    void sendStaffInvitationEmail(String toEmail, String fullName, String token);
+
     void sendPasswordResetEmail(String toEmail, String fullName, String token);
 
     void sendAccountActivatedEmail(User user);

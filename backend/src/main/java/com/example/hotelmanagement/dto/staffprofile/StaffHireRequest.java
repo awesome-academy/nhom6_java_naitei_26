@@ -12,7 +12,7 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-@Schema(name = "StaffHireRequest", description = "Payload to hire a staff member. Creates the user account if it does not exist yet.")
+@Schema(name = "StaffHireRequest", description = "Payload to create an independent Staff account and send an invitation.")
 public record StaffHireRequest(
         @NotBlank
         @Email
@@ -23,16 +23,14 @@ public record StaffHireRequest(
         @Size(max = 150)
         String fullName,
 
+        @NotBlank
+        @Size(min = 12, max = 64)
+        String temporaryPassword,
+
         @Size(max = 20)
         @Pattern(regexp = "^[0-9+() .-]*$")
         String phone,
 
-        @NotBlank
-        @Size(max = 20)
-        @Pattern(regexp = "^[A-Za-z0-9_-]+$")
-        String employeeCode,
-
-        @NotBlank
         @Size(max = 80)
         String position,
 

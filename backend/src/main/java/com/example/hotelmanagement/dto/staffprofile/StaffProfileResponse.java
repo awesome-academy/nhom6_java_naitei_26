@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.dto.staffprofile;
 
 import com.example.hotelmanagement.entity.enums.EmploymentStatus;
+import com.example.hotelmanagement.entity.enums.UserStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
@@ -35,6 +36,10 @@ public record StaffProfileResponse(
 
     @Schema(description = "Employment status")
     EmploymentStatus employmentStatus,
+
+    UserStatus accountStatus,
+
+    OffsetDateTime emailVerifiedAt,
 
     @Schema(description = "Base salary. Admin-only field.", nullable = true)
     BigDecimal baseSalary,

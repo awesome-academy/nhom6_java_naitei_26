@@ -56,6 +56,7 @@ export {
   FormMessage,
 } from "./form";
 export { Input } from "./input";
+export { Popover, PopoverContent, PopoverTrigger } from "./popover";
 export {
   Pagination,
   PaginationContent,
@@ -77,6 +78,7 @@ export {
 export {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,

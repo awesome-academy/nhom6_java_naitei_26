@@ -14,7 +14,7 @@ Tài liệu này mô tả flow hiện tại của hệ thống authentication. T
 | `RefreshTokenService` | Lưu, kiểm tra, revoke refresh token trong DB theo `jti`. |
 | `JwtAuthenticationFilter` | Đọc access token từ header Bearer cho các API protected. |
 | `users` | Lưu tài khoản, password hash, trạng thái, số lần login sai, thời điểm khóa. |
-| `user_roles` / `roles` / `permissions` | Gán role và suy ra permission trả về trong token/user summary. |
+| `user_roles` / `roles` / `permissions` | Lưu đúng một role hiện tại cho User và suy ra permission trả về trong token/user summary. |
 | `user_social_accounts` | Lưu liên kết tài khoản OAuth với user nội bộ. |
 | `OAuthProperties` | Cấu hình Google OAuth credentials từ environment. |
 
@@ -139,7 +139,7 @@ Các bước:
 3. Nếu email đã tồn tại và user chưa bị soft delete, trả `409`.
 4. Password không lưu plaintext; backend chỉ lưu BCrypt hash cost 12 vào `users.password_hash`.
 5. User mới có `status = PENDING_VERIFICATION`, vì email verification thuộc BE-2.2.
-6. User được gán role `CUSTOMER` từ seed Flyway.
+6. User được gán đúng một role `CUSTOMER` từ seed Flyway; mọi luồng đổi role phải thay bản ghi role hiện tại, không thêm role thứ hai.
 7. Backend sinh access token và refresh token.
 8. Refresh token được lưu ở bảng `auth_refresh_tokens` bằng `jti`; đây là phần server-side revoke/validate.
 9. Response trả token pair và user summary cho frontend.
@@ -149,6 +149,12 @@ Rẽ nhánh quan trọng:
 - Email trùng: dừng flow, không hash password, không tạo user.
 - Thiếu seed role `CUSTOMER`: báo lỗi hệ thống vì migration/seed chưa đúng.
 - Register hiện vẫn trả token dù email chưa verified; frontend nhìn `user.status` để biết tài khoản đang `PENDING_VERIFICATION`.
+
+### Admin tạo Staff qua invitation
+
+Admin không nâng Customer thành Staff. `POST /api/staff-profiles` luôn tạo User mới với role duy nhất `STAFF`, tạo StaffProfile độc lập và để User ở `PENDING_VERIFICATION`. Backend gửi token `STAFF_INVITATION` dùng một lần; Staff mở link, xác thực email và đặt mật khẩu chính thức, sau đó User chuyển sang `ACTIVE`. Mật khẩu tạm do Admin nhập chỉ lưu dưới dạng hash và không gửi trong email.
+
+Admin có thể reset mật khẩu Staff qua `PATCH /api/staff-profiles/{employeeCode}/password`; backend không yêu cầu mật khẩu cũ và thu hồi toàn bộ refresh token hiện tại của Staff.
 
 ## 2. Login
 
@@ -569,7 +575,7 @@ Các bước:
 1. Frontend gửi access token trong header `Authorization: Bearer <accessToken>`.
 2. Filter parse access token và kiểm tra chữ ký, expiry, claim `typ = access`.
 3. Filter load user mới nhất từ database bằng `publicId`.
-4. Nếu user không hợp lệ, request không được authenticate và sẽ bị Spring Security trả `401`.
+4. Nếu user không hợp lệ, request không được authenticate và sẽ bị Spring Security trả `401`. User `DEACTIVATED`, bao gồm Staff đã `TERMINATED`, không thể tiếp tục dùng token cũ.
 5. Nếu user hợp lệ, filter set `Authentication` vào `SecurityContext`.
 6. Controller/service phía sau có thể dùng principal, roles và permissions.
 

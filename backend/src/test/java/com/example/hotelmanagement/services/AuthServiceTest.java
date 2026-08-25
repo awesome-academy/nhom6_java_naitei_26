@@ -97,7 +97,8 @@ class AuthServiceTest {
                 Duration.ofHours(24),
                 Duration.ofMinutes(30),
                 "http://localhost:3000/auth/verify-email",
-                "http://localhost:3000/auth/reset-password"
+                "http://localhost:3000/auth/reset-password",
+                "http://localhost:3000/auth/staff-invitation"
             ),
             FIXED_CLOCK
         );

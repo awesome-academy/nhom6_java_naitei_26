@@ -128,6 +128,7 @@ public class AuthTokenService {
     private Duration resolveTokenTtl(AuthTokenType tokenType) {
         return switch (tokenType) {
             case EMAIL_VERIFICATION -> authProperties.emailVerificationTokenTtl();
+            case STAFF_INVITATION -> authProperties.emailVerificationTokenTtl();
             case PASSWORD_RESET -> authProperties.passwordResetTokenTtl();
             case EMAIL_CHANGE -> authProperties.emailVerificationTokenTtl();
         };

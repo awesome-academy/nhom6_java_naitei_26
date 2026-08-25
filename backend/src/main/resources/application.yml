@@ -117,6 +117,7 @@ app:
     password-reset-token-ttl: ${AUTH_PASSWORD_RESET_TOKEN_TTL:30m}
     frontend-verify-url: ${FRONTEND_VERIFY_URL:http://localhost:3000/auth/verify-email}
     frontend-reset-url: ${FRONTEND_RESET_URL:http://localhost:3000/auth/reset-password}
+    frontend-staff-invitation-url: ${FRONTEND_STAFF_INVITATION_URL:http://localhost:3000/staff-invitation}
   guest-document:
     encryption-key: ${GUEST_DOCUMENT_ENCRYPTION_KEY:}
     lookup-hmac-key: ${GUEST_DOCUMENT_LOOKUP_HMAC_KEY:}

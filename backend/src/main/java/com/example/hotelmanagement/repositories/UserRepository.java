@@ -49,6 +49,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
               WHERE userRole.user = user
                 AND userRole.role.code = 'CUSTOMER'
           )
+          AND NOT EXISTS (
+              SELECT userRole FROM UserRole userRole
+              WHERE userRole.user = user
+                AND userRole.role.code = 'STAFF'
+          )
           AND (
               :search = ''
               OR LOWER(user.fullName) LIKE LOWER(CONCAT('%', :search, '%'))
@@ -66,4 +71,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByPhoneAndDeletedAtIsNull(String phone);
 
     boolean existsByEmailIgnoreCaseAndDeletedAtIsNull(String email);
+
+    boolean existsByEmailIgnoreCase(String email);
 }

@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.security;
 
 import com.example.hotelmanagement.services.StaffProfileService;
+import com.example.hotelmanagement.entity.enums.EmploymentStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -16,6 +17,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -60,5 +62,31 @@ class StaffProfileEndpointSecurityTest {
                 .andExpect(content().json("[]"));
 
         verify(staffProfileService).getStaffProfiles(true);
+    }
+
+    @Test
+    @WithMockUser(authorities = "staff:manage")
+    void managementEndpointDoesNotFallThroughToEmployeeCodeRoute() throws Exception {
+        when(staffProfileService.getStaffManagementProfiles(false)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/staff-profiles/management"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[]"));
+
+        verify(staffProfileService).getStaffManagementProfiles(false);
+    }
+
+    @Test
+    @WithMockUser(authorities = "staff:manage")
+    void statusEndpointAllowsStaffManagePermission() throws Exception {
+        when(staffProfileService.updateEmploymentStatus("EMP-0001", EmploymentStatus.ON_LEAVE))
+                .thenReturn(null);
+
+        mockMvc.perform(patch("/api/staff-profiles/EMP-0001/status")
+                        .contentType("application/json")
+                        .content("{\"employmentStatus\":\"ON_LEAVE\"}"))
+                .andExpect(status().isOk());
+
+        verify(staffProfileService).updateEmploymentStatus("EMP-0001", EmploymentStatus.ON_LEAVE);
     }
 }
