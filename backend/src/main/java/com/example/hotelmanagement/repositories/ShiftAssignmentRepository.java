@@ -31,17 +31,36 @@ public interface ShiftAssignmentRepository extends JpaRepository<ShiftAssignment
             String employeeCode
     );
 
-    boolean existsByStaffProfileIdAndShiftIdAndWorkDate(
-            Long staffId,
-            Long shiftId,
-            LocalDate workDate
-    );
-
-    boolean existsByStaffProfileIdAndShiftIdAndWorkDateAndIdNot(
+    @Query("""
+            SELECT CASE WHEN COUNT(assignment) > 0 THEN true ELSE false END
+            FROM ShiftAssignment assignment
+            WHERE assignment.staffProfile.id = :staffId
+              AND assignment.shift.id = :shiftId
+              AND assignment.workDate = :workDate
+              AND assignment.status IN :statuses
+            """)
+    boolean existsByStaffProfileIdAndShiftIdAndWorkDateAndStatusIn(
             Long staffId,
             Long shiftId,
             LocalDate workDate,
-            Long assignmentId
+            @Param("statuses") Set<AssignmentStatus> statuses
+    );
+
+    @Query("""
+            SELECT CASE WHEN COUNT(assignment) > 0 THEN true ELSE false END
+            FROM ShiftAssignment assignment
+            WHERE assignment.staffProfile.id = :staffId
+              AND assignment.shift.id = :shiftId
+              AND assignment.workDate = :workDate
+              AND assignment.id <> :assignmentId
+              AND assignment.status IN :statuses
+            """)
+    boolean existsByStaffProfileIdAndShiftIdAndWorkDateAndIdNotAndStatusIn(
+            Long staffId,
+            Long shiftId,
+            LocalDate workDate,
+            Long assignmentId,
+            @Param("statuses") Set<AssignmentStatus> statuses
     );
 
     @Query("""

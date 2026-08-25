@@ -27,6 +27,18 @@ export {
 export { Checkbox } from "./checkbox";
 export { DataTable } from "./dataTable";
 export {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogOverlay,
+  DialogPortal,
+  DialogTitle,
+  DialogTrigger,
+} from "./dialog";
+export {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,

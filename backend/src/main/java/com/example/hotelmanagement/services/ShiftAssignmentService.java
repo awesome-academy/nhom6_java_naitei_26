@@ -133,8 +133,8 @@ public class ShiftAssignmentService {
         Shift shift = getActiveShift(request.shiftCode());
         ShiftPeriod period = calculateShiftPeriod(request.workDate(), shift);
 
-        validateDuplicateAssignment(staffProfile, shift, request.workDate(), assignment.getId());
         if (EFFECTIVE_STATUSES.contains(request.status())) {
+            validateDuplicateAssignment(staffProfile, shift, request.workDate(), assignment.getId());
             validateOverlap(staffProfile, period, assignment.getId());
         }
 
@@ -215,16 +215,18 @@ public class ShiftAssignmentService {
             Long excludedAssignmentId
     ) {
         boolean duplicate = excludedAssignmentId == null
-                ? shiftAssignmentRepository.existsByStaffProfileIdAndShiftIdAndWorkDate(
-                        staffProfile.getId(),
-                        shift.getId(),
-                        workDate
-                )
-                : shiftAssignmentRepository.existsByStaffProfileIdAndShiftIdAndWorkDateAndIdNot(
+                ? shiftAssignmentRepository.existsByStaffProfileIdAndShiftIdAndWorkDateAndStatusIn(
                         staffProfile.getId(),
                         shift.getId(),
                         workDate,
-                        excludedAssignmentId
+                        EFFECTIVE_STATUSES
+                )
+                : shiftAssignmentRepository.existsByStaffProfileIdAndShiftIdAndWorkDateAndIdNotAndStatusIn(
+                        staffProfile.getId(),
+                        shift.getId(),
+                        workDate,
+                        excludedAssignmentId,
+                        EFFECTIVE_STATUSES
                 );
         if (duplicate) {
             throw new DuplicateResourceException(

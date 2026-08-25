@@ -2,6 +2,7 @@ package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.staffprofile.StaffHireRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileResponse;
+import com.example.hotelmanagement.dto.staffprofile.StaffListResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileUpdateRequest;
 import com.example.hotelmanagement.entity.Role;
 import com.example.hotelmanagement.entity.StaffProfile;
@@ -27,6 +28,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -184,6 +186,35 @@ class StaffProfileServiceTest {
 
         assertThatThrownBy(() -> staffProfileService.getStaff("EMP-9999"))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void getStaffProfilesReturnsOnlySchedulingFieldsForActiveStaff() {
+        User user = createUser(5L, "staff@example.com");
+        StaffProfile profile = StaffProfile.builder()
+                .user(user)
+                .employeeCode("EMP-0001")
+                .position("Receptionist")
+                .department("Front Office")
+                .hiredAt(LocalDate.of(2026, 1, 1))
+                .employmentStatus(EmploymentStatus.ACTIVE)
+                .baseSalary(new BigDecimal("800.00"))
+                .build();
+        when(staffProfileRepository
+                .findByEmploymentStatusAndUser_DeletedAtIsNullOrderByEmployeeCodeAsc(EmploymentStatus.ACTIVE))
+                .thenReturn(List.of(profile));
+
+        List<StaffListResponse> response = staffProfileService.getStaffProfiles(true);
+
+        assertThat(response).singleElement().satisfies(staff -> {
+            assertThat(staff.employeeCode()).isEqualTo("EMP-0001");
+            assertThat(staff.fullName()).isEqualTo("Staff");
+            assertThat(staff.position()).isEqualTo("Receptionist");
+            assertThat(staff.department()).isEqualTo("Front Office");
+            assertThat(staff.employmentStatus()).isEqualTo(EmploymentStatus.ACTIVE);
+        });
+        verify(staffProfileRepository)
+                .findByEmploymentStatusAndUser_DeletedAtIsNullOrderByEmployeeCodeAsc(EmploymentStatus.ACTIVE);
     }
 
     private User createUser(Long id, String email) {

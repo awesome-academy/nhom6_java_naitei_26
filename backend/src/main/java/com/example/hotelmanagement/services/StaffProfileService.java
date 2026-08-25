@@ -2,6 +2,7 @@ package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.staffprofile.StaffHireRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileResponse;
+import com.example.hotelmanagement.dto.staffprofile.StaffListResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileUpdateRequest;
 import com.example.hotelmanagement.entity.Role;
 import com.example.hotelmanagement.entity.StaffProfile;
@@ -30,6 +31,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.Base64;
+import java.util.List;
 import java.util.Locale;
 
 @Service
@@ -97,6 +99,17 @@ public class StaffProfileService {
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
     public StaffProfileResponse getStaff(String employeeCode) {
         return mapResponse(getExistingProfile(employeeCode));
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
+    public List<StaffListResponse> getStaffProfiles(boolean activeOnly) {
+        List<StaffProfile> profiles = activeOnly
+                ? staffProfileRepository.findByEmploymentStatusAndUser_DeletedAtIsNullOrderByEmployeeCodeAsc(
+                        EmploymentStatus.ACTIVE
+                )
+                : staffProfileRepository.findByUser_DeletedAtIsNullOrderByEmployeeCodeAsc();
+        return profiles.stream().map(this::mapListResponse).toList();
     }
 
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
@@ -212,6 +225,17 @@ public class StaffProfileService {
                 profile.getBaseSalary(),
                 profile.getCreatedAt(),
                 profile.getUpdatedAt()
+        );
+    }
+
+    private StaffListResponse mapListResponse(StaffProfile profile) {
+        User user = profile.getUser();
+        return new StaffListResponse(
+                profile.getEmployeeCode(),
+                user.getFullName(),
+                profile.getPosition(),
+                profile.getDepartment(),
+                profile.getEmploymentStatus()
         );
     }
 }

@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.staffprofile.StaffHireRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileResponse;
+import com.example.hotelmanagement.dto.staffprofile.StaffListResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileUpdateRequest;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import com.example.hotelmanagement.services.StaffProfileService;
@@ -18,9 +19,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.util.List;
 
 @RestController
 @RequestMapping(value = "/api/staff-profiles", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -39,6 +42,15 @@ public class StaffProfileController {
     public ResponseEntity<StaffProfileResponse> hireStaff(@Valid @RequestBody StaffHireRequest request) {
         StaffProfileResponse response = staffProfileService.hireStaff(request);
         return ResponseEntity.created(URI.create("/api/staff-profiles/" + response.employeeCode())).body(response);
+    }
+
+    @Operation(summary = "Get Staff")
+    @GetMapping
+    @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
+    public ResponseEntity<List<StaffListResponse>> getStaffProfiles(
+            @RequestParam(defaultValue = "true") boolean active
+    ) {
+        return ResponseEntity.ok(staffProfileService.getStaffProfiles(active));
     }
 
     @Operation(summary = "Get Staff")
