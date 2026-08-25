@@ -869,7 +869,9 @@ export default function BookingPage() {
             Mã đặt phòng <span className="font-semibold text-foreground">{booking.bookingCode}</span>.
             Tạm thời FE đang xác nhận thanh toán thành công sau khi tạo booking. Ở backend, phòng được giữ đến{" "}
             <span className="font-semibold text-foreground">
-              {new Date(booking.holdExpiresAt).toLocaleString("vi-VN")}
+              {booking.holdExpiresAt
+                ? new Date(booking.holdExpiresAt).toLocaleString("vi-VN")
+                : "thời điểm được hệ thống xác nhận"}
             </span>.
           </p>
           <div className="flex flex-wrap justify-center gap-3">

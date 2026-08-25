@@ -1,12 +1,14 @@
 package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.booking.BookingCreateRequest;
+import com.example.hotelmanagement.dto.booking.BookingDetailResponse;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationRequest;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationResponse;
 import com.example.hotelmanagement.dto.booking.BookingResponse;
 import com.example.hotelmanagement.dto.booking.BookingRoomCreateItem;
 import com.example.hotelmanagement.dto.booking.BookingRoomNightResponse;
 import com.example.hotelmanagement.dto.booking.BookingRoomResponse;
+import com.example.hotelmanagement.dto.booking.BookingStatusHistoryResponse;
 import com.example.hotelmanagement.dto.pricing.DailyRateResponse;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.BookingGuest;
@@ -52,6 +54,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -321,6 +324,16 @@ public class BookingService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
+    public BookingDetailResponse getMyBookingDetail(String bookingPublicId, Long userId) {
+        Booking booking = bookingRepository
+                .findOneByPublicIdAndCustomerProfile_User_Id(bookingPublicId, userId)
+                .filter(customerBooking -> !isCustomerRemovedPendingBooking(customerBooking))
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", bookingPublicId));
+        return mapDetailResponse(booking);
+    }
+
     @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
     public BookingResponse removePendingBookingRoom(
             String bookingPublicId,
@@ -528,6 +541,38 @@ public class BookingService {
                 booking.getHoldExpiresAt(),
                 booking.getBookingRooms().stream().map(this::mapRoomResponse).toList(),
                 booking.getCreatedAt()
+        );
+    }
+
+    private BookingDetailResponse mapDetailResponse(Booking booking) {
+        List<BookingStatusHistoryResponse> statusHistory = booking.getStatusHistory().stream()
+                .sorted(Comparator.comparing(
+                        BookingStatusHistory::getCreatedAt,
+                        Comparator.nullsFirst(Comparator.naturalOrder())
+                ))
+                .map(history -> new BookingStatusHistoryResponse(
+                        history.getFromStatus(),
+                        history.getToStatus(),
+                        history.getActorType(),
+                        history.getSource(),
+                        history.getReason(),
+                        history.getCreatedAt()
+                ))
+                .toList();
+
+        return new BookingDetailResponse(
+                mapResponse(booking),
+                booking.getServicesTotal(),
+                booking.getDiscountTotal(),
+                booking.getPaidAmount(),
+                booking.getRefundedAmount(),
+                booking.getSpecialRequests(),
+                booking.getConfirmedAt(),
+                booking.getCheckedInAt(),
+                booking.getCheckedOutAt(),
+                booking.getCancelledAt(),
+                booking.getCancellationReason(),
+                statusHistory
         );
     }
 

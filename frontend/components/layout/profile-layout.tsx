@@ -101,6 +101,7 @@ export function ProfileLayout({ children }: ProfileLayoutProps) {
             <nav className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-2">
               {profileNav.map((item) => {
                 const isActive = pathname === item.href
+                  || (item.href !== "/profile" && pathname.startsWith(`${item.href}/`))
                 return (
                   <Link
                     key={item.href}

@@ -2,6 +2,7 @@ import { apiClient } from "@/lib/api/client";
 import type {
   Booking,
   BookingCreateRequest,
+  BookingDetail,
   PriceCalculation,
 } from "@/types/booking";
 import type { Room } from "@/types/room";
@@ -11,6 +12,8 @@ export const getBookingRoomTypes = () =>
   apiClient.get<RoomType[]>("/api/room-types");
 export const getBookingRooms = () => apiClient.get<Room[]>("/api/rooms");
 export const getMyBookings = () => apiClient.get<Booking[]>("/api/bookings/me");
+export const getMyBookingDetail = (bookingPublicId: string) =>
+  apiClient.get<BookingDetail>(`/api/bookings/${encodeURIComponent(bookingPublicId)}`);
 export const deletePendingBooking = (bookingPublicId: string) =>
   apiClient.delete<void>(`/api/bookings/${bookingPublicId}`);
 export const deletePendingBookingRoom = (
