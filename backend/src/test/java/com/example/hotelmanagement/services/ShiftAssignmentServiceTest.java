@@ -26,6 +26,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -199,6 +200,59 @@ class ShiftAssignmentServiceTest {
         assertEquals(AssignmentStatus.CANCELLED, assignment.getStatus());
         verify(shiftAssignmentRepository).saveAndFlush(assignment);
         verify(shiftAssignmentRepository, never()).delete(any(ShiftAssignment.class));
+    }
+
+    @Test
+    void getShiftAssignmentsByDateRangeReturnsAssignmentsSortedByRepository() {
+        ShiftAssignment assignment = createAssignment(UUID.randomUUID());
+        when(shiftAssignmentRepository.findByWorkDateBetweenOrderByWorkDateAscShiftStartAtAsc(
+                WORK_DATE, WORK_DATE.plusDays(6)
+        )).thenReturn(List.of(assignment));
+
+        List<ShiftAssignmentResponse> responses = shiftAssignmentService.getShiftAssignmentsByDateRange(
+                WORK_DATE, WORK_DATE.plusDays(6)
+        );
+
+        assertEquals(1, responses.size());
+        assertEquals(assignment.getPublicId(), responses.get(0).publicId().toString());
+    }
+
+    @Test
+    void getShiftAssignmentsByDateRangeRejectsMissingOrInvalidRange() {
+        assertThrows(
+                BusinessValidationException.class,
+                () -> shiftAssignmentService.getShiftAssignmentsByDateRange(null, WORK_DATE)
+        );
+        assertThrows(
+                BusinessValidationException.class,
+                () -> shiftAssignmentService.getShiftAssignmentsByDateRange(WORK_DATE, WORK_DATE.minusDays(1))
+        );
+        verify(shiftAssignmentRepository, never())
+                .findByWorkDateBetweenOrderByWorkDateAscShiftStartAtAsc(any(), any());
+    }
+
+    @Test
+    void getShiftAssignmentsByStaffNormalizesEmployeeCodeBeforeQuerying() {
+        ShiftAssignment assignment = createAssignment(UUID.randomUUID());
+        when(shiftAssignmentRepository.findByStaffProfile_EmployeeCodeIgnoreCaseOrderByWorkDateAscShiftStartAtAsc(
+                "NV001"
+        )).thenReturn(List.of(assignment));
+
+        List<ShiftAssignmentResponse> responses = shiftAssignmentService.getShiftAssignmentsByStaff(" nv001 ");
+
+        assertEquals(1, responses.size());
+        verify(shiftAssignmentRepository)
+                .findByStaffProfile_EmployeeCodeIgnoreCaseOrderByWorkDateAscShiftStartAtAsc("NV001");
+    }
+
+    @Test
+    void getShiftAssignmentsByStaffRejectsBlankEmployeeCode() {
+        assertThrows(
+                BusinessValidationException.class,
+                () -> shiftAssignmentService.getShiftAssignmentsByStaff("   ")
+        );
+        verify(shiftAssignmentRepository, never())
+                .findByStaffProfile_EmployeeCodeIgnoreCaseOrderByWorkDateAscShiftStartAtAsc(any());
     }
 
     private void stubAssignmentCreation(Shift shift) {
