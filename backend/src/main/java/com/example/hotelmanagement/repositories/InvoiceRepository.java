@@ -31,4 +31,8 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT invoice FROM Invoice invoice WHERE invoice.publicId = :publicId")
     Optional<Invoice> findForUpdateByPublicId(@Param("publicId") String publicId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT invoice FROM Invoice invoice WHERE invoice.id = :invoiceId")
+    Optional<Invoice> findForUpdateById(@Param("invoiceId") Long invoiceId);
 }

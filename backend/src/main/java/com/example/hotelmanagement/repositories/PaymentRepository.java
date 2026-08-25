@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 
 import jakarta.persistence.LockModeType;
 
+import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.Optional;
 
@@ -29,5 +30,27 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     Optional<Payment> findFirstByBooking_IdAndStatusInOrderByCreatedAtDesc(
             Long bookingId,
             Collection<PaymentStatus> statuses
+    );
+
+    @Query("""
+            SELECT COALESCE(SUM(payment.amount), 0)
+            FROM Payment payment
+            WHERE payment.booking.id = :bookingId
+              AND payment.status IN :statuses
+            """)
+    BigDecimal sumAmountsByBookingIdAndStatuses(
+            @Param("bookingId") Long bookingId,
+            @Param("statuses") Collection<PaymentStatus> statuses
+    );
+
+    @Query("""
+            SELECT COALESCE(SUM(payment.amount), 0)
+            FROM Payment payment
+            WHERE payment.invoice.id = :invoiceId
+              AND payment.status IN :statuses
+            """)
+    BigDecimal sumAmountsByInvoiceIdAndStatuses(
+            @Param("invoiceId") Long invoiceId,
+            @Param("statuses") Collection<PaymentStatus> statuses
     );
 }

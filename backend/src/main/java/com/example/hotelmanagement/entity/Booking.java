@@ -88,6 +88,14 @@ public class Booking extends BaseEntity {
     @Builder.Default
     private BigDecimal totalAmount = BigDecimal.ZERO;
 
+    @Column(name = "deposit_percent_snapshot", nullable = false, precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal depositPercentSnapshot = BigDecimal.ZERO;
+
+    @Column(name = "required_deposit_amount", nullable = false, precision = 14, scale = 2)
+    @Builder.Default
+    private BigDecimal requiredDepositAmount = BigDecimal.ZERO;
+
     @Column(name = "paid_amount", nullable = false, precision = 14, scale = 2)
     @Builder.Default
     private BigDecimal paidAmount = BigDecimal.ZERO;

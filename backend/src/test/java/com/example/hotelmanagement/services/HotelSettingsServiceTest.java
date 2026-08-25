@@ -48,6 +48,7 @@ class HotelSettingsServiceTest {
         assertThat(response.hotelTimezone()).isEqualTo("Asia/Ho_Chi_Minh");
         assertThat(response.defaultCurrency()).isEqualTo("VND");
         assertThat(response.defaultRoomTaxPercent()).isEqualByComparingTo("0.00");
+        assertThat(response.defaultDepositPercent()).isEqualByComparingTo("30.00");
         assertThat(response.defaultNoShowChargePercent()).isEqualByComparingTo("100.00");
     }
 
@@ -71,7 +72,7 @@ class HotelSettingsServiceTest {
                 .thenReturn(new BigDecimal("8.00"));
 
         HotelSettingsUpdateRequest request = new HotelSettingsUpdateRequest(
-                null, null, null, null, new BigDecimal("8.00"), null
+                null, null, null, null, new BigDecimal("8.00"), null, null
         );
         HotelSettingsResponse response = hotelSettingsService.updateSettings(request);
 
@@ -92,7 +93,7 @@ class HotelSettingsServiceTest {
         when(hotelSettingsRepository.getStringValue(HotelSettingsService.CURRENCY_KEY)).thenReturn("USD");
 
         hotelSettingsService.updateSettings(
-                new HotelSettingsUpdateRequest(null, null, null, "usd", null, null)
+                new HotelSettingsUpdateRequest(null, null, null, "usd", null, null, null)
         );
 
         ArgumentCaptor<HotelSettings> captor = ArgumentCaptor.forClass(HotelSettings.class);
@@ -103,7 +104,7 @@ class HotelSettingsServiceTest {
     @Test
     void updateSettingsRejectsInvalidTimezone() {
         assertThatThrownBy(() -> hotelSettingsService.updateSettings(
-                new HotelSettingsUpdateRequest(null, null, "Not/AZone", null, null, null)
+                new HotelSettingsUpdateRequest(null, null, "Not/AZone", null, null, null, null)
         )).isInstanceOf(BusinessValidationException.class);
         verify(hotelSettingsRepository, never()).save(any());
     }
@@ -111,7 +112,7 @@ class HotelSettingsServiceTest {
     @Test
     void updateSettingsRejectsPercentOutOfRange() {
         assertThatThrownBy(() -> hotelSettingsService.updateSettings(
-                new HotelSettingsUpdateRequest(null, null, null, null, new BigDecimal("150.00"), null)
+                new HotelSettingsUpdateRequest(null, null, null, null, new BigDecimal("150.00"), null, null)
         )).isInstanceOf(BusinessValidationException.class);
         verify(hotelSettingsRepository, never()).save(any());
     }
@@ -126,7 +127,7 @@ class HotelSettingsServiceTest {
         when(hotelSettingsRepository.getStringValue(HotelSettingsService.TIMEZONE_KEY)).thenReturn("UTC");
 
         hotelSettingsService.updateSettings(
-                new HotelSettingsUpdateRequest(null, null, "UTC", null, null, null)
+                new HotelSettingsUpdateRequest(null, null, "UTC", null, null, null, null)
         );
 
         ArgumentCaptor<HotelSettings> captor = ArgumentCaptor.forClass(HotelSettings.class);
@@ -142,6 +143,8 @@ class HotelSettingsServiceTest {
         when(hotelSettingsRepository.getStringValue(HotelSettingsService.CURRENCY_KEY)).thenReturn("VND");
         when(hotelSettingsRepository.getDecimalValue(HotelSettingsService.ROOM_TAX_PERCENT_KEY))
                 .thenReturn(new BigDecimal("0.00"));
+        when(hotelSettingsRepository.getDecimalValue(HotelSettingsService.DEPOSIT_PERCENT_KEY))
+                .thenReturn(new BigDecimal("30.00"));
         when(hotelSettingsRepository.getDecimalValue(HotelSettingsService.NO_SHOW_CHARGE_PERCENT_KEY))
                 .thenReturn(new BigDecimal("100.00"));
     }

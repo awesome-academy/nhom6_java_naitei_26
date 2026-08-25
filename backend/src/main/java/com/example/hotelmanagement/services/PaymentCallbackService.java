@@ -32,6 +32,8 @@ public class PaymentCallbackService {
     private final PaymentGatewayRegistry gatewayRegistry;
     private final PaymentRepository paymentRepository;
     private final PaymentEventRepository paymentEventRepository;
+    private final PaymentLedgerService paymentLedgerService;
+    private final BookingStateMachineService bookingStateMachineService;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
@@ -39,12 +41,16 @@ public class PaymentCallbackService {
             PaymentGatewayRegistry gatewayRegistry,
             PaymentRepository paymentRepository,
             PaymentEventRepository paymentEventRepository,
+            PaymentLedgerService paymentLedgerService,
+            BookingStateMachineService bookingStateMachineService,
             ObjectMapper objectMapper,
             Clock clock
     ) {
         this.gatewayRegistry = gatewayRegistry;
         this.paymentRepository = paymentRepository;
         this.paymentEventRepository = paymentEventRepository;
+        this.paymentLedgerService = paymentLedgerService;
+        this.bookingStateMachineService = bookingStateMachineService;
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
@@ -91,6 +97,7 @@ public class PaymentCallbackService {
                 : paymentRepository.findForUpdateByPaymentCode(callback.paymentCode());
         Payment payment = paymentOptional.orElse(null);
         PaymentEvent event = buildEvent(callback, payment, rawPayload, receivedIp);
+        boolean hasNewVerifiedSuccess = false;
 
         if (!callback.signatureValid()) {
             log.warn(
@@ -111,13 +118,19 @@ public class PaymentCallbackService {
                     sanitizeForLog(callback.paymentCode())
             );
         } else {
-            applyVerifiedResult(payment, callback);
+            hasNewVerifiedSuccess = applyVerifiedResult(payment, callback);
         }
 
         paymentEventRepository.save(event);
+        if (hasNewVerifiedSuccess) {
+            PaymentLedgerResult ledgerResult = paymentLedgerService.synchronizeSuccessfulPayment(payment);
+            if (ledgerResult.shouldConfirmBooking()) {
+                bookingStateMachineService.confirm(ledgerResult.bookingPublicId());
+            }
+        }
     }
 
-    private void applyVerifiedResult(Payment payment, PaymentGatewayCallback callback) {
+    private boolean applyVerifiedResult(Payment payment, PaymentGatewayCallback callback) {
         if (callback.isSuccessful()) {
             if (!isProviderTransactionAvailable(payment, callback.providerTransactionId())) {
                 log.warn(
@@ -125,7 +138,7 @@ public class PaymentCallbackService {
                         callback.provider(),
                         sanitizeForLog(callback.paymentCode())
                 );
-                return;
+                return false;
             }
             if (payment.getStatus() == PaymentStatus.PENDING
                     || payment.getStatus() == PaymentStatus.PROCESSING) {
@@ -136,15 +149,16 @@ public class PaymentCallbackService {
                 payment.setVerifiedAt(verifiedAt);
                 payment.setFailureCode(null);
                 payment.setFailureMessage(null);
+                return true;
             }
-            return;
+            return false;
         }
 
         if (callback.isAuthorized()) {
             if (payment.getStatus() == PaymentStatus.PENDING) {
                 payment.setStatus(PaymentStatus.PROCESSING);
             }
-            return;
+            return false;
         }
 
         if (payment.getStatus() == PaymentStatus.PENDING
@@ -153,6 +167,7 @@ public class PaymentCallbackService {
             payment.setFailureCode(String.valueOf(callback.resultCode()));
             payment.setFailureMessage(truncate(callback.message(), MAX_FAILURE_MESSAGE_LENGTH));
         }
+        return false;
     }
 
     private boolean matchesPayment(Payment payment, PaymentGatewayCallback callback) {

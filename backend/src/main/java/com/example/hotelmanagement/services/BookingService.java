@@ -32,6 +32,7 @@ import com.example.hotelmanagement.repositories.BookingRepository;
 import com.example.hotelmanagement.repositories.BookingRoomRepository;
 import com.example.hotelmanagement.repositories.BookingSourceRepository;
 import com.example.hotelmanagement.repositories.CustomerProfileRepository;
+import com.example.hotelmanagement.repositories.HotelSettingsRepository;
 import com.example.hotelmanagement.repositories.RoomRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import jakarta.validation.Valid;
@@ -70,16 +71,17 @@ public class BookingService {
     private static final String CUSTOMER_REMOVED_PENDING_BOOKING_REASON =
             "Customer removed pending booking before payment";
     private static final Duration HOLD_DURATION = Duration.ofMinutes(15);
-    private static final BigDecimal ONE_HUNDRED = new BigDecimal("100.00");
     private static final Set<BookingRoomStatus> ACTIVE_BOOKING_STATUSES =
             Set.of(BookingRoomStatus.RESERVED, BookingRoomStatus.OCCUPIED);
     private static final int BOOKING_CODE_MAX_ATTEMPTS = 5;
+    private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
 
     private final BookingRepository bookingRepository;
     private final BookingGuestRepository bookingGuestRepository;
     private final BookingRoomRepository bookingRoomRepository;
     private final BookingSourceRepository bookingSourceRepository;
     private final CustomerProfileRepository customerProfileRepository;
+    private final HotelSettingsRepository hotelSettingsRepository;
     private final RoomRepository roomRepository;
     private final BookingCalculatorService bookingCalculatorService;
     private final CancellationPolicyService cancellationPolicyService;
@@ -94,6 +96,7 @@ public class BookingService {
             BookingRoomRepository bookingRoomRepository,
             BookingSourceRepository bookingSourceRepository,
             CustomerProfileRepository customerProfileRepository,
+            HotelSettingsRepository hotelSettingsRepository,
             RoomRepository roomRepository,
             BookingCalculatorService bookingCalculatorService,
             CancellationPolicyService cancellationPolicyService,
@@ -105,6 +108,7 @@ public class BookingService {
         this.bookingRoomRepository = bookingRoomRepository;
         this.bookingSourceRepository = bookingSourceRepository;
         this.customerProfileRepository = customerProfileRepository;
+        this.hotelSettingsRepository = hotelSettingsRepository;
         this.roomRepository = roomRepository;
         this.bookingCalculatorService = bookingCalculatorService;
         this.cancellationPolicyService = cancellationPolicyService;
@@ -118,6 +122,7 @@ public class BookingService {
             BookingGuestRepository bookingGuestRepository,
             BookingSourceRepository bookingSourceRepository,
             CustomerProfileRepository customerProfileRepository,
+            HotelSettingsRepository hotelSettingsRepository,
             RoomRepository roomRepository,
             BookingCalculatorService bookingCalculatorService,
             CancellationPolicyService cancellationPolicyService,
@@ -128,6 +133,7 @@ public class BookingService {
         this.bookingRoomRepository = bookingRoomRepository;
         this.bookingSourceRepository = bookingSourceRepository;
         this.customerProfileRepository = customerProfileRepository;
+        this.hotelSettingsRepository = hotelSettingsRepository;
         this.roomRepository = roomRepository;
         this.bookingCalculatorService = bookingCalculatorService;
         this.cancellationPolicyService = cancellationPolicyService;
@@ -140,6 +146,7 @@ public class BookingService {
             BookingRoomRepository bookingRoomRepository,
             BookingSourceRepository bookingSourceRepository,
             CustomerProfileRepository customerProfileRepository,
+            HotelSettingsRepository hotelSettingsRepository,
             RoomRepository roomRepository,
             BookingCalculatorService bookingCalculatorService,
             CancellationPolicyService cancellationPolicyService,
@@ -151,6 +158,7 @@ public class BookingService {
                 null,
                 bookingSourceRepository,
                 customerProfileRepository,
+                hotelSettingsRepository,
                 roomRepository,
                 bookingCalculatorService,
                 cancellationPolicyService,
@@ -267,6 +275,12 @@ public class BookingService {
         booking.setTaxTotal(taxTotal.setScale(2, RoundingMode.HALF_UP));
         booking.setRoomTaxPercentSnapshot(roomTaxPercentSnapshot);
         booking.setTotalAmount(roomsTotal.add(taxTotal).setScale(2, RoundingMode.HALF_UP));
+        BigDecimal depositPercentSnapshot = getDefaultDepositPercent();
+        booking.setDepositPercentSnapshot(depositPercentSnapshot);
+        booking.setRequiredDepositAmount(calculateRequiredDepositAmount(
+                booking.getTotalAmount(),
+                depositPercentSnapshot
+        ));
         if (currency != null) {
             booking.setCurrency(currency);
         }
@@ -467,6 +481,22 @@ public class BookingService {
         return value.strip();
     }
 
+    private BigDecimal getDefaultDepositPercent() {
+        BigDecimal depositPercent = hotelSettingsRepository
+                .getDecimalValue(HotelSettingsService.DEPOSIT_PERCENT_KEY);
+        if (depositPercent == null
+                || depositPercent.signum() <= 0
+                || depositPercent.compareTo(ONE_HUNDRED) > 0) {
+            throw new BusinessValidationException("Default deposit percentage must be greater than 0 and at most 100");
+        }
+        return depositPercent.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal calculateRequiredDepositAmount(BigDecimal totalAmount, BigDecimal depositPercent) {
+        return totalAmount.multiply(depositPercent)
+                .divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+    }
+
     private String normalizeOptionalText(String value) {
         if (value == null) {
             return null;
@@ -492,6 +522,8 @@ public class BookingService {
                 booking.getTaxTotal(),
                 booking.getRoomTaxPercentSnapshot(),
                 booking.getTotalAmount(),
+                booking.getDepositPercentSnapshot(),
+                booking.getRequiredDepositAmount(),
                 booking.getCurrency(),
                 booking.getHoldExpiresAt(),
                 booking.getBookingRooms().stream().map(this::mapRoomResponse).toList(),

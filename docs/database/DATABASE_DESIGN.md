@@ -660,6 +660,8 @@ Giữ thông tin **đơn đặt** và **người liên hệ**. Không giữ kho�
 | `discount_total`                     | NUMERIC(14,2)          | NOT NULL default 0, CHECK`>= 0`              | Giảm giá mức booking                                                                                                                                                                                                                             |
 | `tax_total`                          | NUMERIC(14,2)          | NOT NULL default 0, CHECK`>= 0`              | VAT + phí dịch vụ                                                                                                                                                                                                                                |
 | `total_amount`                       | NUMERIC(14,2)          | NOT NULL, CHECK`>= 0`                        | Số phải trả cuối cùng                                                                                                                                                                                                                          |
+| `deposit_percent_snapshot`            | NUMERIC(5,2)           | NOT NULL, CHECK`> 0 AND <= 100`              | Tỷ lệ đặt cọc áp dụng khi tạo booking. Lấy từ cấu hình khách sạn và không thay đổi khi cấu hình về sau được sửa.                                                                                                                               |
+| `required_deposit_amount`             | NUMERIC(14,2)          | NOT NULL, CHECK`>= 0 AND <= total_amount`    | Số tiền đặt cọc phải thu, tính và snapshot cùng booking. Phát sinh dịch vụ sau đó không được làm tăng khoản cọc này.                                                                                                                            |
 | `paid_amount`                        | NUMERIC(14,2)          | NOT NULL default 0, CHECK`>= 0`              | **Tổng payment SUCCEEDED đã nhận. Không bị giảm khi refund** — xem 7.6                                                                                                                                                                |
 | `refunded_amount`                    | NUMERIC(14,2)          | NOT NULL default 0, CHECK`>= 0`              | Tổng refund COMPLETED.`net_received = paid_amount - refunded_amount`                                                                                                                                                                             |
 | `room_tax_percent_snapshot`          | NUMERIC(5,2)           | NOT NULL default 0, CHECK`BETWEEN 0 AND 100` | Thuế suất áp cho tiền phòng, chốt lúc tạo booking. Cần để`tax_total` và dòng ROOM trên hóa đơn tính lại được từ snapshot mà không đọc config hiện tại. **Cần business xác nhận thuế suất** — xem mục 14 |
@@ -691,6 +693,8 @@ Ràng buộc mức bảng:
 
 ```sql
 CHECK (total_amount = rooms_total + services_total + tax_total - discount_total)
+CHECK (deposit_percent_snapshot > 0 AND deposit_percent_snapshot <= 100)
+CHECK (required_deposit_amount >= 0 AND required_deposit_amount <= total_amount)
 CHECK (paid_amount     <= total_amount + 0.01)   -- chặn thu quá
 CHECK (refunded_amount <= paid_amount)           -- không hoàn quá số đã thu
 CHECK (status <> 'CHECKED_IN'  OR checked_in_at  IS NOT NULL)   -- BR-010

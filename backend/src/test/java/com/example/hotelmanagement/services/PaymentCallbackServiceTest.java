@@ -2,6 +2,7 @@ package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.payment.PaymentGatewayCallback;
 import com.example.hotelmanagement.dto.payment.PaymentGatewayCallbackRequest;
+import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.Payment;
 import com.example.hotelmanagement.entity.PaymentEvent;
 import com.example.hotelmanagement.entity.enums.PaymentStatus;
@@ -45,6 +46,10 @@ class PaymentCallbackServiceTest {
     private PaymentRepository paymentRepository;
     @Mock
     private PaymentEventRepository paymentEventRepository;
+    @Mock
+    private PaymentLedgerService paymentLedgerService;
+    @Mock
+    private BookingStateMachineService bookingStateMachineService;
 
     private PaymentCallbackService callbackService;
 
@@ -54,10 +59,14 @@ class PaymentCallbackServiceTest {
                 gatewayRegistry,
                 paymentRepository,
                 paymentEventRepository,
+                paymentLedgerService,
+                bookingStateMachineService,
                 new ObjectMapper(),
                 FIXED_CLOCK
         );
         when(gatewayRegistry.getGateway("sepay")).thenReturn(gatewayService);
+        org.mockito.Mockito.lenient().when(paymentLedgerService.synchronizeSuccessfulPayment(any(Payment.class)))
+                .thenReturn(new PaymentLedgerResult("booking-public-id", false));
     }
 
     @Test
@@ -70,6 +79,8 @@ class PaymentCallbackServiceTest {
         when(paymentRepository.findForUpdateByPaymentCode("PAY-2026-001"))
                 .thenReturn(Optional.of(payment));
         when(paymentRepository.findByProviderTxnId("4088878653")).thenReturn(Optional.empty());
+        when(paymentLedgerService.synchronizeSuccessfulPayment(payment))
+                .thenReturn(new PaymentLedgerResult("booking-public-id", true));
 
         callbackService.handleCallback("sepay", callbackRequest(), "127.0.0.1");
 
@@ -77,6 +88,8 @@ class PaymentCallbackServiceTest {
         assertThat(payment.getProviderTxnId()).isEqualTo("4088878653");
         assertThat(payment.getPaidAt()).isNotNull();
         assertThat(payment.getVerifiedAt()).isNotNull();
+        verify(paymentLedgerService).synchronizeSuccessfulPayment(payment);
+        verify(bookingStateMachineService).confirm("booking-public-id");
 
         ArgumentCaptor<PaymentEvent> eventCaptor = ArgumentCaptor.forClass(PaymentEvent.class);
         verify(paymentEventRepository).save(eventCaptor.capture());
@@ -143,6 +156,7 @@ class PaymentCallbackServiceTest {
     private Payment payment() {
         Payment payment = Payment.builder()
                 .paymentCode("PAY-2026-001")
+                .booking(booking())
                 .provider("SEPAY")
                 .amount(new BigDecimal("1250000.00"))
                 .currency("VND")
@@ -150,6 +164,15 @@ class PaymentCallbackServiceTest {
                 .build();
         payment.setId(10L);
         return payment;
+    }
+
+    private Booking booking() {
+        Booking booking = Booking.builder()
+                .publicId("booking-public-id")
+                .bookingCode("BK-2026-000001")
+                .build();
+        booking.setId(1L);
+        return booking;
     }
 
     private PaymentGatewayCallback successfulCallback(boolean signatureValid) {

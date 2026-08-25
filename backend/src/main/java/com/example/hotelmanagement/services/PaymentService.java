@@ -100,7 +100,7 @@ public class PaymentService {
                 .paymentCode(generatePaymentCode())
                 .booking(booking)
                 .method(request.method())
-                .amount(calculateOutstandingAmount(booking))
+                .amount(calculateOutstandingDepositAmount(booking))
                 .currency(booking.getCurrency())
                 .status(PaymentStatus.PENDING)
                 .provider(resolveProvider(request.method()))
@@ -157,14 +157,17 @@ public class PaymentService {
         if (booking.getHoldExpiresAt() == null || !booking.getHoldExpiresAt().isAfter(now)) {
             throw new BusinessValidationException("The booking payment hold has expired");
         }
-        if (calculateOutstandingAmount(booking).signum() <= 0) {
-            throw new BusinessValidationException("This booking has no outstanding balance");
+        if (calculateOutstandingDepositAmount(booking).signum() <= 0) {
+            throw new BusinessValidationException("This booking has no outstanding deposit balance");
         }
     }
 
-    private BigDecimal calculateOutstandingAmount(Booking booking) {
+    private BigDecimal calculateOutstandingDepositAmount(Booking booking) {
+        if (booking.getRequiredDepositAmount() == null) {
+            throw new BusinessValidationException("Booking deposit requirement is not available");
+        }
         BigDecimal paidAmount = booking.getPaidAmount() == null ? BigDecimal.ZERO : booking.getPaidAmount();
-        return booking.getTotalAmount().subtract(paidAmount);
+        return booking.getRequiredDepositAmount().subtract(paidAmount);
     }
 
     private String normalizeIdempotencyKey(String idempotencyKey) {
