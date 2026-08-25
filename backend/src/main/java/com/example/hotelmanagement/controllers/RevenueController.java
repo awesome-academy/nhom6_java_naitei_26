@@ -3,6 +3,7 @@ package com.example.hotelmanagement.controllers;
 import com.example.hotelmanagement.dto.revenue.DailyRevenuePoint;
 import com.example.hotelmanagement.dto.revenue.MonthlyRevenuePoint;
 import com.example.hotelmanagement.dto.revenue.OccupancyMetrics;
+import com.example.hotelmanagement.dto.revenue.RoomTypeRevenueBreakdown;
 import com.example.hotelmanagement.dto.revenue.SourceRevenueBreakdown;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import com.example.hotelmanagement.services.RevenueService;
@@ -68,5 +69,14 @@ public class RevenueController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
     ) {
         return ResponseEntity.ok(revenueService.getOtaCommissionTotal(from, to));
+    }
+
+    @GetMapping("/by-room-type")
+    public ResponseEntity<List<RoomTypeRevenueBreakdown>> getRevenueByRoomType(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "10") int limit
+    ) {
+        return ResponseEntity.ok(revenueService.getRevenueByRoomType(from, to, limit));
     }
 }

@@ -3,6 +3,7 @@ package com.example.hotelmanagement.services;
 import com.example.hotelmanagement.dto.revenue.DailyRevenuePoint;
 import com.example.hotelmanagement.dto.revenue.MonthlyRevenuePoint;
 import com.example.hotelmanagement.dto.revenue.OccupancyMetrics;
+import com.example.hotelmanagement.dto.revenue.RoomTypeRevenueBreakdown;
 import com.example.hotelmanagement.dto.revenue.SourceRevenueBreakdown;
 import com.example.hotelmanagement.entity.enums.BookingRoomStatus;
 import com.example.hotelmanagement.entity.enums.BookingStatus;
@@ -13,6 +14,7 @@ import com.example.hotelmanagement.repositories.BookingRoomNightRepository;
 import com.example.hotelmanagement.repositories.HotelSettingsRepository;
 import com.example.hotelmanagement.repositories.NightRevenueProjection;
 import com.example.hotelmanagement.repositories.RoomRepository;
+import com.example.hotelmanagement.repositories.RoomTypeRevenueProjection;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -67,6 +69,7 @@ public class RevenueService {
     private static final BigDecimal HUNDRED = new BigDecimal("100");
     private static final int MONEY_SCALE = 2;
     private static final int RATE_INTERMEDIATE_SCALE = 6;
+    private static final int MAX_ROOM_TYPE_LIMIT = 100;
     private static final ZoneId FALLBACK_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     private final BookingRoomNightRepository bookingRoomNightRepository;
@@ -180,6 +183,20 @@ public class RevenueService {
         return sumCommission(fetchRealizedBookings(from, to));
     }
 
+    /** Room-night revenue grouped by the immutable room-type snapshots stored on the booking. */
+    @PreAuthorize(PermissionExpressions.REVENUE_READ)
+    public List<RoomTypeRevenueBreakdown> getRevenueByRoomType(LocalDate from, LocalDate to, int limit) {
+        validateRange(from, to);
+        validateRoomTypeLimit(limit);
+
+        return bookingRoomNightRepository.findRevenueByRoomType(
+                        from, to, SOLD_ROOM_STATUSES, REALIZED_BOOKING_STATUSES
+                ).stream()
+                .limit(limit)
+                .map(this::toRoomTypeRevenueBreakdown)
+                .toList();
+    }
+
     private List<BookingRevenueProjection> fetchRealizedBookings(LocalDate from, LocalDate to) {
         ZoneId hotelZone = resolveHotelZone();
         OffsetDateTime fromInclusive = from.atStartOfDay(hotelZone).toOffsetDateTime();
@@ -212,6 +229,27 @@ public class RevenueService {
                 ? BigDecimal.ZERO
                 : booking.getSourceCommissionPercentSnapshot();
         return roomsTotal.multiply(commissionPercent).divide(HUNDRED, MONEY_SCALE, RoundingMode.HALF_UP);
+    }
+
+    private RoomTypeRevenueBreakdown toRoomTypeRevenueBreakdown(RoomTypeRevenueProjection projection) {
+        BigDecimal revenue = projection.getRevenue() == null ? BigDecimal.ZERO : projection.getRevenue();
+        long roomNights = projection.getRoomNights() == null ? 0L : projection.getRoomNights();
+        BigDecimal adr = roomNights == 0
+                ? BigDecimal.ZERO
+                : revenue.divide(BigDecimal.valueOf(roomNights), MONEY_SCALE, RoundingMode.HALF_UP);
+        return new RoomTypeRevenueBreakdown(
+                projection.getRoomTypeCode(),
+                projection.getRoomTypeName(),
+                revenue.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+                roomNights,
+                adr.setScale(MONEY_SCALE, RoundingMode.HALF_UP)
+        );
+    }
+
+    private void validateRoomTypeLimit(int limit) {
+        if (limit < 1 || limit > MAX_ROOM_TYPE_LIMIT) {
+            throw new BusinessValidationException("'limit' must be between 1 and " + MAX_ROOM_TYPE_LIMIT);
+        }
     }
 
     private void validateRange(LocalDate from, LocalDate to) {

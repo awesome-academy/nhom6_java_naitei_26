@@ -3,6 +3,7 @@ package com.example.hotelmanagement.services;
 import com.example.hotelmanagement.dto.revenue.DailyRevenuePoint;
 import com.example.hotelmanagement.dto.revenue.MonthlyRevenuePoint;
 import com.example.hotelmanagement.dto.revenue.OccupancyMetrics;
+import com.example.hotelmanagement.dto.revenue.RoomTypeRevenueBreakdown;
 import com.example.hotelmanagement.dto.revenue.SourceRevenueBreakdown;
 import com.example.hotelmanagement.entity.enums.BookingStatus;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
@@ -12,6 +13,7 @@ import com.example.hotelmanagement.repositories.BookingRoomNightRepository;
 import com.example.hotelmanagement.repositories.HotelSettingsRepository;
 import com.example.hotelmanagement.repositories.NightRevenueProjection;
 import com.example.hotelmanagement.repositories.RoomRepository;
+import com.example.hotelmanagement.repositories.RoomTypeRevenueProjection;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -182,6 +184,34 @@ class RevenueServiceTest {
                 .isInstanceOf(BusinessValidationException.class);
     }
 
+    @Test
+    void getRevenueByRoomTypeReturnsSnapshotRevenueAndAdrWithinLimit() {
+        when(bookingRoomNightRepository.findRevenueByRoomType(eq(FROM), eq(TO), any(), any()))
+                .thenReturn(List.of(
+                        roomTypeRevenue("DELUXE", "Deluxe", new BigDecimal("3600000.00"), 3L),
+                        roomTypeRevenue("STANDARD", "Standard", new BigDecimal("1600000.00"), 2L)
+                ));
+
+        List<RoomTypeRevenueBreakdown> result = revenueService.getRevenueByRoomType(FROM, TO, 1);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).roomTypeCode()).isEqualTo("DELUXE");
+        assertThat(result.get(0).roomTypeName()).isEqualTo("Deluxe");
+        assertThat(result.get(0).revenue()).isEqualByComparingTo("3600000.00");
+        assertThat(result.get(0).roomNights()).isEqualTo(3L);
+        assertThat(result.get(0).adr()).isEqualByComparingTo("1200000.00");
+    }
+
+    @Test
+    void getRevenueByRoomTypeRejectsLimitOutsideAllowedRange() {
+        assertThatThrownBy(() -> revenueService.getRevenueByRoomType(FROM, TO, 0))
+                .isInstanceOf(BusinessValidationException.class)
+                .hasMessageContaining("limit");
+        assertThatThrownBy(() -> revenueService.getRevenueByRoomType(FROM, TO, 101))
+                .isInstanceOf(BusinessValidationException.class)
+                .hasMessageContaining("limit");
+    }
+
     private void stubHotelZone() {
         when(hotelSettingsRepository.getStringValue(HotelSettingsService.TIMEZONE_KEY))
                 .thenReturn("Asia/Ho_Chi_Minh");
@@ -228,6 +258,35 @@ class RevenueServiceTest {
             @Override
             public Long getNightsCount() {
                 return nightsCount;
+            }
+        };
+    }
+
+    private RoomTypeRevenueProjection roomTypeRevenue(
+            String code,
+            String name,
+            BigDecimal revenue,
+            Long roomNights
+    ) {
+        return new RoomTypeRevenueProjection() {
+            @Override
+            public String getRoomTypeCode() {
+                return code;
+            }
+
+            @Override
+            public String getRoomTypeName() {
+                return name;
+            }
+
+            @Override
+            public BigDecimal getRevenue() {
+                return revenue;
+            }
+
+            @Override
+            public Long getRoomNights() {
+                return roomNights;
             }
         };
     }
