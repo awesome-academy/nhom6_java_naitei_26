@@ -235,7 +235,7 @@ export function MockWalletCheckout({
               <CardDescription>{checkout.bookingCode}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <SummaryRow label="Số tiền cọc" value={formatMoney(checkout.amount, checkout.currency)} emphasized />
+              <SummaryRow label="Số tiền thanh toán" value={formatMoney(checkout.amount, checkout.currency)} emphasized />
               <SummaryRow label="Nhà cung cấp" value={checkout.provider} />
               <Separator />
               <div className="flex flex-col gap-2">

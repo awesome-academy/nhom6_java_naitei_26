@@ -35,8 +35,6 @@ public record BookingStaffDetailResponse(
         BigDecimal taxTotal,
         BigDecimal totalAmount,
         String currency,
-        BigDecimal depositPercentSnapshot,
-        BigDecimal requiredDepositAmount,
         BigDecimal paidAmount,
         BigDecimal refundedAmount,
         String specialRequests,

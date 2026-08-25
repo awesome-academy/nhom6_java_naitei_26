@@ -242,8 +242,6 @@ export interface BookingStaffDetail {
   taxTotal: number;
   totalAmount: number;
   currency: string;
-  depositPercentSnapshot: number;
-  requiredDepositAmount: number;
   paidAmount: number;
   refundedAmount: number;
   specialRequests: string | null;

@@ -69,7 +69,7 @@ Mỗi thực thể dưới đây tồn tại vì một câu trong tài liệu y�
 **Pricing & Policy**
 
 - **RateOverride** — giá thực bán khác giá niêm yết theo mùa/cuối tuần/dịp lễ. **Master/config data**: dùng để *tính* giá lúc đặt, không dùng để *tính lại* booking cũ.
-- **CancellationPolicy + CancellationPolicyRule** — dòng 97 và BR-005: "hệ thống tính số tiền hoàn dựa trên **thời điểm hủy**". Một mốc thời gian duy nhất không diễn đạt được chính sách thực tế nhiều bậc (72h → 100%, 30h → 50%, 0h → 0%), nên Policy tách thành nhiều Rule. Policy còn giữ `% tăng giá` cho option thanh toán online. Admin chọn nhiều policy online cho từng RoomType qua bảng nối; option "thanh toán tại khách sạn" là cờ riêng trên RoomType và luôn dùng `NON_REFUND`. Toàn bộ policy + rules + phụ thu được snapshot vào từng `booking_rooms` để đổi chính sách không hồi tố khách cũ.
+- **CancellationPolicy + CancellationPolicyRule** — dòng 97 và BR-005: "hệ thống tính số tiền hoàn dựa trên **thời điểm hủy**". Một mốc thời gian duy nhất không diễn đạt được chính sách thực tế nhiều bậc (72h → 100%, 30h → 50%, 0h → 0%), nên Policy tách thành nhiều Rule. Policy còn giữ `% tăng giá` cho option thanh toán online. Admin chọn nhiều policy online cho từng RoomType qua bảng nối; website và admin không còn option thanh toán tại khách sạn. Toàn bộ policy + rules + phụ thu được snapshot vào từng `booking_rooms` để đổi chính sách không hồi tố khách cũ.
 
 **Booking & Availability**
 
@@ -88,7 +88,7 @@ Mỗi thực thể dưới đây tồn tại vì một câu trong tài liệu y�
 
 **Payment**
 
-- **Payment** — dòng 79-83: mỗi lần giao dịch với gateway. Booking 1–N Payment vì có đặt cọc rồi trả phần còn lại khi check-out (dòng 134), và vì lần trả thất bại rồi trả lại là hai giao dịch. **Payment/Refund là ledger — source of truth của dòng tiền.**
+- **Payment** — dòng 79-83: mỗi lần giao dịch với gateway. Booking 1–N Payment vì lần trả thất bại rồi trả lại là hai giao dịch, và booking có thể phát sinh thêm khoản phải thu trong quá trình lưu trú. **Payment/Refund là ledger — source of truth của dòng tiền.**
 - **PaymentEvent** — BR-012 và dòng 83: "kết quả thanh toán phải được xác minh từ phía gateway". Lưu nguyên payload callback để đối soát, chống replay (gateway gửi lại IPN nhiều lần là chuyện thường), và làm chứng cứ khi tranh chấp.
 - **Refund** — dòng 81 có trạng thái `Refunded` và dòng 97 tính tiền hoàn. Tách khỏi Payment vì một lần thu có thể hoàn nhiều lần/hoàn một phần.
 
@@ -142,7 +142,7 @@ Tài liệu nói thẳng ở dòng 119 và BR-003. Một phòng khả dụng cho
 Dòng 74 yêu cầu "kiểm tra lại availability trước khi tạo booking". Nhưng kiểm tra ở application rồi mới insert vẫn để lọt double-booking: hai request đồng thời đều đọc thấy trống rồi đều ghi thành công. Giải pháp là trigger BEFORE INSERT/UPDATE trên `booking_rooms` — request thứ hai bị DB từ chối ngay tại trigger, không phụ thuộc timing. Kết hợp `SELECT ... FOR UPDATE` trên `rooms` trong transaction tạo booking để giảm contention ở tầng trigger.
 
 **QĐ-3. Booking PENDING phải có thời điểm hết hạn.**
-Dòng 76-78: booking tạo ở trạng thái PENDING rồi mới thanh toán. Nếu khách bỏ giữa đường, phòng bị giữ vô thời hạn và không bán được. Cần `hold_expires_at` + job giải phóng. Thiếu cột này là lỗi thất thoát doanh thu.
+Các bước chọn phòng và xem giá chỉ là draft; sau khi customer chọn payment method, backend mới kiểm tra availability lần cuối, tạo PENDING và giữ phòng. Nếu khách bỏ giữa đường, cần `hold_expires_at` + job chuyển sang EXPIRED và giải phóng phòng; booking EXPIRED vẫn được giữ để tra cứu.
 
 **QĐ-4. Snapshot mọi thứ ảnh hưởng tới tiền, đúng một lần, tại đúng thời điểm.**
 Giá đêm (`booking_room_nights.price`), chính sách hủy (`booking_rooms.cancellation_policy_snapshot`), hoa hồng OTA (`bookings.source_commission_percent_snapshot`), giá dịch vụ (`folio_charges.unit_price`), thông tin người mua trên hóa đơn (`invoices.buyer_*`) đều được copy tại thời điểm giao dịch. Nếu join sang bảng gốc để hiển thị, việc Staff sửa giá hôm nay sẽ làm đổi hóa đơn đã in tháng trước.
@@ -392,8 +392,8 @@ Nếu bỏ shift management, hai bảng này có thể để trống mà không 
 | `size_sqm`                                     | NUMERIC(6,2)  | NULL                                         |                                                                                                                                 |
 | `is_active`                                    | BOOLEAN       | NOT NULL default true                        | Ngừng bán loại phòng mà không xóa                                                                                        |
 | `sort_order`                                   | SMALLINT      | NOT NULL default 0                           | Dòng 199 phòng nổi bật                                                                                                      |
-| `pay_at_hotel_enabled`                         | BOOLEAN       | NOT NULL default true                         | Admin bật/tắt option "Thanh toán tại khách sạn" cho RoomType. Option này luôn dùng policy `NON_REFUND` khi tạo booking. |
-| `pay_at_hotel_price_adjustment_percent`        | NUMERIC(5,2)  | NOT NULL default 10, CHECK`BETWEEN 0 AND 100` | Phụ thu cho option thanh toán tại khách sạn. Tách khỏi `NON_REFUND` để online non-refundable vẫn có thể giữ giá gốc. |
+| `pay_at_hotel_enabled`                         | BOOLEAN       | NOT NULL default false                        | Cột legacy giữ tương thích schema; option thanh toán tại khách sạn đã bị vô hiệu hóa và không còn editable trong admin. |
+| `pay_at_hotel_price_adjustment_percent`        | NUMERIC(5,2)  | NOT NULL default 0, CHECK`BETWEEN 0 AND 100`  | Cột legacy; luôn giữ 0 vì option thanh toán tại khách sạn không còn được bán. |
 | `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ   |                                              |                                                                                                                                 |
 
 ### 4.2. `room_type_cancellation_policies`
@@ -408,7 +408,7 @@ Bảng nối cấu hình **các policy hủy bán theo kênh thanh toán online*
 | `is_active`              | BOOLEAN      | NOT NULL default true                          | Tắt một option mà không xóa cấu hình |
 | `sort_order`             | INT          | NOT NULL default 0                             | Thứ tự hiển thị option trên trang booking |
 
-UNIQUE(`room_type_id`, `cancellation_policy_id`) — một RoomType không có hai option online trùng policy. RoomType active phải có ít nhất một option bán: hoặc `pay_at_hotel_enabled=true`, hoặc có ít nhất một dòng active trong bảng này.
+UNIQUE(`room_type_id`, `cancellation_policy_id`) — một RoomType không có hai option online trùng policy. RoomType active phải có ít nhất một dòng policy online active trong bảng này.
 
 ### 4.3. `room_type_beds`
 
@@ -660,8 +660,6 @@ Giữ thông tin **đơn đặt** và **người liên hệ**. Không giữ kho�
 | `discount_total`                     | NUMERIC(14,2)          | NOT NULL default 0, CHECK`>= 0`              | Giảm giá mức booking                                                                                                                                                                                                                             |
 | `tax_total`                          | NUMERIC(14,2)          | NOT NULL default 0, CHECK`>= 0`              | VAT + phí dịch vụ                                                                                                                                                                                                                                |
 | `total_amount`                       | NUMERIC(14,2)          | NOT NULL, CHECK`>= 0`                        | Số phải trả cuối cùng                                                                                                                                                                                                                          |
-| `deposit_percent_snapshot`            | NUMERIC(5,2)           | NOT NULL, CHECK`> 0 AND <= 100`              | Tỷ lệ đặt cọc áp dụng khi tạo booking. Lấy từ cấu hình khách sạn và không thay đổi khi cấu hình về sau được sửa.                                                                                                                               |
-| `required_deposit_amount`             | NUMERIC(14,2)          | NOT NULL, CHECK`>= 0 AND <= total_amount`    | Số tiền đặt cọc phải thu, tính và snapshot cùng booking. Phát sinh dịch vụ sau đó không được làm tăng khoản cọc này.                                                                                                                            |
 | `paid_amount`                        | NUMERIC(14,2)          | NOT NULL default 0, CHECK`>= 0`              | **Tổng payment SUCCEEDED đã nhận. Không bị giảm khi refund** — xem 7.6                                                                                                                                                                |
 | `refunded_amount`                    | NUMERIC(14,2)          | NOT NULL default 0, CHECK`>= 0`              | Tổng refund COMPLETED.`net_received = paid_amount - refunded_amount`                                                                                                                                                                             |
 | `room_tax_percent_snapshot`          | NUMERIC(5,2)           | NOT NULL default 0, CHECK`BETWEEN 0 AND 100` | Thuế suất áp cho tiền phòng, chốt lúc tạo booking. Cần để`tax_total` và dòng ROOM trên hóa đơn tính lại được từ snapshot mà không đọc config hiện tại. **Cần business xác nhận thuế suất** — xem mục 14 |
@@ -693,8 +691,6 @@ Ràng buộc mức bảng:
 
 ```sql
 CHECK (total_amount = rooms_total + services_total + tax_total - discount_total)
-CHECK (deposit_percent_snapshot > 0 AND deposit_percent_snapshot <= 100)
-CHECK (required_deposit_amount >= 0 AND required_deposit_amount <= total_amount)
 CHECK (paid_amount     <= total_amount + 0.01)   -- chặn thu quá
 CHECK (refunded_amount <= paid_amount)           -- không hoàn quá số đã thu
 CHECK (status <> 'CHECKED_IN'  OR checked_in_at  IS NOT NULL)   -- BR-010
@@ -926,7 +922,9 @@ CHECK ((actor_type = 'USER'   AND changed_by IS NOT NULL)
     OR (actor_type = 'SYSTEM' AND changed_by IS NULL))
 ```
 
-**Append-only.** Chặn bằng trigger, không chỉ bằng quy ước:
+**Append-only.** Chặn bằng trigger, không chỉ bằng quy ước. Ngoại lệ duy nhất là service hard-delete
+toàn bộ aggregate chưa thanh toán của một booking `PENDING`; trigger cho phép xóa timeline trong
+trường hợp này sau khi đã chứng minh booking chưa có payment thành công.
 
 ```sql
 DELIMITER $$
@@ -950,11 +948,19 @@ Index: `(booking_id, created_at)`.
 
 ### 6.7. Không hard delete booking đã phát sinh nghiệp vụ
 
-Booking ở trạng thái `CONFIRMED / CHECKED_IN / CHECKED_OUT / CANCELLED / NO_SHOW` **không được hard delete**, và các dữ liệu con phải được giữ: `booking_rooms`, `booking_room_nights`, `booking_guests`, `booking_status_history`, `invoices`, `payments`.
+Booking ở trạng thái `CONFIRMED / CHECKED_IN / CHECKED_OUT / CANCELLED / NO_SHOW / EXPIRED` **không được hard delete**, và các dữ liệu con phải được giữ: `booking_rooms`, `booking_room_nights`, `booking_guests`, `booking_status_history`, `invoices`, `payments`.
 
 Vì vậy **mọi FK từ bảng con của booking dùng `ON DELETE RESTRICT`, không dùng CASCADE.** Bản trước dùng CASCADE cho `booking_rooms`/`booking_guests`/`booking_status_history` — một lệnh `DELETE FROM bookings WHERE id = ...` chạy tay sẽ xóa sạch cả timeline và lịch sử giá, vi phạm BR-008/BR-013. RESTRICT làm lệnh đó thất bại, đúng như mong muốn.
 
-Trường hợp duy nhất được xóa vật lý: booking **chưa từng chốt** (`PENDING` hoặc `EXPIRED`, chưa có payment thành công, chưa có invoice) — ví dụ dọn rác các hold bị bỏ sau nhiều tháng. Việc này làm qua một stored procedure ghi rõ giới hạn, xóa con trước cha trong một transaction:
+Booking `PENDING` chưa có payment thành công là ngoại lệ cho phép customer bấm **Xóa booking**.
+Service phải khóa booking, kiểm tra `paid_amount = 0`, không có payment `SUCCEEDED`/refund và không
+có invoice, sau đó xóa rooms, nights, guests, payment attempts/events chưa thành công, status history
+và booking trong cùng transaction. Không gửi email cancelled cho thao tác này. Booking hết hạn vẫn
+được giữ ở trạng thái `EXPIRED`; việc dọn dữ liệu kỹ thuật (nếu có) là quy trình riêng, không phải
+thao tác customer.
+
+Trường hợp purge kỹ thuật được xóa vật lý chỉ áp dụng cho booking **chưa từng chốt** và phải dùng
+procedure ghi rõ giới hạn, xóa con trước cha trong một transaction:
 
 ```sql
 CREATE PROCEDURE purge_abandoned_booking(IN p_booking_id BIGINT)
@@ -968,7 +974,7 @@ BEGIN
   IF v_status IS NULL THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Booking not found';
   END IF;
-  IF v_status NOT IN ('PENDING','EXPIRED') THEN
+  IF v_status <> 'PENDING' THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Booking has business activity, cannot delete';
   END IF;
 
@@ -989,7 +995,19 @@ BEGIN
 END;
 ```
 
-Lưu ý `booking_status_history` có trigger chặn DELETE, nên procedure này cần chạy với quyền cho phép tạm vô hiệu trigger (`session_replication_role` hoặc một cờ trong trigger function). Nếu team muốn tuyệt đối không xóa gì, bỏ hai dòng cuối và chỉ giữ booking ở `EXPIRED` — tốn dung lượng nhưng đơn giản hơn.
+Trigger append-only có nhánh ngoại lệ kiểm tra booking `PENDING` chưa từng thanh toán thành công;
+không vô hiệu hóa trigger trên session ứng dụng.
+
+### 6.8. Quy tắc tạo booking website
+
+- Các bước chọn phòng, nhập liên hệ và xem giá chỉ là draft ở frontend; không ghi `bookings`.
+- Chỉ khi customer chọn phương thức thanh toán trực tuyến và bấm tiếp tục, backend mới khóa các phòng
+  khả dụng, kiểm tra overlap lần cuối, tính lại giá và tạo `PENDING` cùng `booking_rooms = RESERVED`
+  với `hold_expires_at` 15 phút. Nếu conflict thì không tạo payment.
+- Nguồn `WEBSITE` không được dùng `PAY_AT_HOTEL`; staff/admin xác nhận thủ công là ngoại lệ thu tiền
+  mặt ngoài payment ledger, ghi `booking_status_history.source = MANUAL` và không tự tạo payment.
+- `PENDING → CONFIRMED` tự động chỉ xảy ra khi payment có `SUCCEEDED`, `verified_at` hợp lệ và tổng
+  tiền đã nhận đạt `total_amount`.
 
 ---
 
@@ -2002,7 +2020,7 @@ Thay đổi schema so với bản đầu, theo nhóm.
 | Thêm P7–P10 vào nguyên tắc                | Ba tầng dữ liệu; không dùng SCD Type 2; một source of truth; enum vs bảng lookup               |
 | Thêm QĐ-5, QĐ-6                             | Sơ đồ ba mốc snapshot; khoảng ngày chỉ ở`booking_rooms`                                     |
 | Thêm view`v_booking_stay_range`             | Thay cho cột ngày đã bỏ ở`bookings`                                                           |
-| Thêm mục 6.7                                 | Chính sách không hard delete + procedure`purge_abandoned_booking` giới hạn cho PENDING/EXPIRED |
+| Thêm mục 6.7                                 | Chính sách không hard delete + procedure`purge_abandoned_booking` giới hạn cho PENDING chưa thanh toán |
 | Thêm mục 8.2, 8.4                            | Đồng bộ`booking_room_status`; danh sách 13 trigger cần viết                                   |
 | Thêm mục 11.1                                | Bảng source of truth cho mọi giá trị tiền                                                        |
 | Thêm query 9.5, 9.6, 9.7                      | Arrivals/departures theo`booking_rooms`; tính refund từ snapshot; view khoảng lưu trú          |

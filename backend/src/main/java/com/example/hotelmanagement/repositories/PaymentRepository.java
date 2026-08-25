@@ -17,6 +17,12 @@ import java.util.Optional;
 @Repository
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
+    boolean existsByBooking_IdAndStatusIn(Long bookingId, Collection<PaymentStatus> statuses);
+
+    @org.springframework.data.jpa.repository.Modifying(flushAutomatically = true)
+    @Query("DELETE FROM Payment payment WHERE payment.booking.id = :bookingId")
+    int deleteAllByBookingId(@Param("bookingId") Long bookingId);
+
     boolean existsByPaymentCode(String paymentCode);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -39,6 +45,20 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
               AND payment.status IN :statuses
             """)
     BigDecimal sumAmountsByBookingIdAndStatuses(
+            @Param("bookingId") Long bookingId,
+            @Param("statuses") Collection<PaymentStatus> statuses
+    );
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("""
+            UPDATE Payment payment
+            SET payment.status = com.example.hotelmanagement.entity.enums.PaymentStatus.EXPIRED,
+                payment.failureCode = 'BOOKING_HOLD_EXPIRED',
+                payment.failureMessage = 'Booking hold expired before payment'
+            WHERE payment.booking.id = :bookingId
+              AND payment.status IN :statuses
+            """)
+    int expireActivePaymentsByBookingId(
             @Param("bookingId") Long bookingId,
             @Param("statuses") Collection<PaymentStatus> statuses
     );

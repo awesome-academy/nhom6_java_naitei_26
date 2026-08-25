@@ -29,7 +29,6 @@ import com.example.hotelmanagement.repositories.BookingRepository;
 import com.example.hotelmanagement.repositories.BookingRoomRepository;
 import com.example.hotelmanagement.repositories.BookingSourceRepository;
 import com.example.hotelmanagement.repositories.CustomerProfileRepository;
-import com.example.hotelmanagement.repositories.HotelSettingsRepository;
 import com.example.hotelmanagement.repositories.RoomRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -79,8 +78,6 @@ class BookingServiceTest {
     @Mock
     private CustomerProfileRepository customerProfileRepository;
     @Mock
-    private HotelSettingsRepository hotelSettingsRepository;
-    @Mock
     private RoomRepository roomRepository;
     @Mock
     private BookingCalculatorService bookingCalculatorService;
@@ -99,7 +96,6 @@ class BookingServiceTest {
                 bookingGuestRepository,
                 bookingSourceRepository,
                 customerProfileRepository,
-                hotelSettingsRepository,
                 roomRepository,
                 bookingCalculatorService,
                 cancellationPolicyService,
@@ -113,8 +109,6 @@ class BookingServiceTest {
             bookingRoom.setCancellationPolicySnapshot("{\"code\":\"" + policy.getCode() + "\"}");
             return null;
         }).when(cancellationPolicyService).applyPolicySnapshot(any(BookingRoom.class), any(CancellationPolicy.class));
-        lenient().when(hotelSettingsRepository.getDecimalValue(HotelSettingsService.DEPOSIT_PERCENT_KEY))
-                .thenReturn(money("30.00"));
     }
 
     @Test
@@ -158,18 +152,16 @@ class BookingServiceTest {
         assertThat(response.contactName()).isEqualTo("Nguyen Van A");
         assertThat(response.contactEmail()).isEqualTo("guest@example.com");
         assertThat(response.contactPhone()).isEqualTo("0900000000");
-        assertThat(response.adults()).isEqualTo(2);
+        assertThat(response.adults()).isEqualTo(1);
         assertThat(response.children()).isEqualTo(0);
         assertThat(response.roomsTotal()).isEqualByComparingTo("2000000.00");
         assertThat(response.taxTotal()).isEqualByComparingTo("200000.00");
         assertThat(response.roomTaxPercentSnapshot()).isEqualByComparingTo("10.00");
         assertThat(response.totalAmount()).isEqualByComparingTo("2200000.00");
-        assertThat(response.depositPercentSnapshot()).isEqualByComparingTo("30.00");
-        assertThat(response.requiredDepositAmount()).isEqualByComparingTo("660000.00");
         assertThat(response.currency()).isEqualTo("VND");
         assertThat(response.holdExpiresAt()).isEqualTo(OffsetDateTime.now(FIXED_CLOCK).plusMinutes(15));
         assertThat(response.rooms()).hasSize(1);
-        assertThat(response.rooms().getFirst().roomNumber()).isNull();
+        assertThat(response.rooms().getFirst().roomNumber()).isEqualTo("A101");
         assertThat(response.rooms().getFirst().nights()).hasSize(2);
         assertThat(response.rooms().getFirst().nights().getFirst().price()).isEqualByComparingTo("1000000.00");
 
@@ -233,8 +225,8 @@ class BookingServiceTest {
 
         BookingResponse response = bookingService.createBooking(request, USER_ID);
 
-        assertThat(response.adults()).isEqualTo(3);
-        assertThat(response.children()).isEqualTo(1);
+        assertThat(response.adults()).isEqualTo(2);
+        assertThat(response.children()).isEqualTo(0);
         assertThat(response.roomsTotal()).isEqualByComparingTo("1500000.00");
         assertThat(response.taxTotal()).isEqualByComparingTo("150000.00");
         assertThat(response.totalAmount()).isEqualByComparingTo("1650000.00");
@@ -415,25 +407,19 @@ class BookingServiceTest {
     }
 
     @Test
-    void deletePendingBookingCancelsAndHidesPendingBookingForCurrentCustomer() {
+    void deletePendingBookingHardDeletesUnpaidPendingBooking() {
         Booking booking = createPendingBookingWithRooms();
         when(bookingRepository.findByPublicIdAndCustomerProfile_User_Id("booking-public-id", USER_ID))
                 .thenReturn(Optional.of(booking));
-        when(bookingRepository.saveAndFlush(booking)).thenReturn(booking);
-
         bookingService.deletePendingBooking("booking-public-id", USER_ID);
 
-        assertThat(booking.getStatus()).isEqualTo(BookingStatus.CANCELLED);
-        assertThat(booking.getCancelledBy()).isEqualTo(USER_ID);
-        assertThat(booking.getCancellationReason()).isEqualTo("Customer removed pending booking before payment");
-        assertThat(booking.getStatusHistory()).isEmpty();
-        verify(bookingRepository).saveAndFlush(booking);
-        verify(emailService).sendBookingCancelledEmail(booking);
-        verify(bookingRepository, never()).delete(any());
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.PENDING);
+        verify(bookingRepository).delete(booking);
+        verify(emailService, never()).sendBookingCancelledEmail(any());
     }
 
     @Test
-    void getMyBookingsHidesCustomerRemovedPendingBookings() {
+    void getMyBookingsKeepsHistoricalCancelledBookingsVisible() {
         Booking visibleBooking = createPendingBookingWithRooms();
         Booking removedBooking = createPendingBookingWithRooms();
         removedBooking.setPublicId("removed-booking-public-id");
@@ -444,8 +430,9 @@ class BookingServiceTest {
 
         List<BookingResponse> responses = bookingService.getMyBookings(USER_ID);
 
-        assertThat(responses).hasSize(1);
-        assertThat(responses.getFirst().publicId()).isEqualTo("booking-public-id");
+        assertThat(responses).hasSize(2);
+        assertThat(responses).extracting(BookingResponse::publicId)
+                .containsExactly("removed-booking-public-id", "booking-public-id");
     }
 
     @Test
@@ -493,15 +480,16 @@ class BookingServiceTest {
     }
 
     @Test
-    void getMyBookingDetailHidesCustomerRemovedPendingBooking() {
+    void getMyBookingDetailReturnsHistoricalCancelledBooking() {
         Booking removedBooking = createPendingBookingWithRooms();
         removedBooking.setStatus(BookingStatus.CANCELLED);
         removedBooking.setCancellationReason("Customer removed pending booking before payment");
         when(bookingRepository.findOneByPublicIdAndCustomerProfile_User_Id("booking-public-id", USER_ID))
                 .thenReturn(Optional.of(removedBooking));
 
-        assertThatThrownBy(() -> bookingService.getMyBookingDetail("booking-public-id", USER_ID))
-                .isInstanceOf(ResourceNotFoundException.class);
+        BookingDetailResponse response = bookingService.getMyBookingDetail("booking-public-id", USER_ID);
+
+        assertThat(response.booking().status()).isEqualTo(BookingStatus.CANCELLED);
     }
 
     private CustomerProfile createCustomerProfile() {

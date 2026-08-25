@@ -203,7 +203,10 @@ export function StaffBookingsPage() {
   }, [pagination.page, pagination.size, appliedFilters, isAuthenticated]);
 
   useEffect(() => {
-    loadBookings();
+    const timer = window.setTimeout(() => {
+      void loadBookings();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadBookings]);
 
   // Load booking detail
@@ -709,12 +712,12 @@ export function StaffBookingsPage() {
                           <CardContent className="pt-4">
                             <div className="flex items-center justify-between">
                               <div>
-                                <p className="font-medium">
+                                <div className="font-medium">
                                   {charge.description}
                                   {charge.isVoided && (
                                     <Badge variant="destructive" className="ml-2">Đã hủy</Badge>
                                   )}
-                                </p>
+                                </div>
                                 <p className="text-sm text-muted-foreground">
                                   {formatDateTime(charge.chargedAt)} | x{charge.quantity} | {formatCurrency(charge.unitPrice)}
                                 </p>
@@ -741,7 +744,7 @@ export function StaffBookingsPage() {
                           <CardContent className="pt-4">
                             <div className="flex items-center justify-between">
                               <div>
-                                <p className="font-medium">
+                                <div className="font-medium">
                                   {payment.paymentCode}
                                   <Badge
                                     variant={payment.status === "COMPLETED" ? "success" : "pending"}
@@ -749,7 +752,7 @@ export function StaffBookingsPage() {
                                   >
                                     {payment.status === "COMPLETED" ? "Hoàn thành" : payment.status}
                                   </Badge>
-                                </p>
+                                </div>
                                 <p className="text-sm text-muted-foreground">
                                   {payment.method} | {formatDateTime(payment.createdAt)}
                                 </p>

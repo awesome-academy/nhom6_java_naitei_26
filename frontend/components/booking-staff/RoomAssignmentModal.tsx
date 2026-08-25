@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -96,30 +96,16 @@ export function RoomAssignmentModal({
   const [selectedHKStatus, setSelectedHKStatus] = useState<string>("all");
   const [selectedView, setSelectedView] = useState<string>("all");
 
-  // Load available floors on mount
-  useEffect(() => {
-    if (isOpen) {
-      loadFloors();
-    }
-  }, [isOpen]);
-
-  // Load rooms when filters change
-  useEffect(() => {
-    if (isOpen) {
-      loadRooms();
-    }
-  }, [isOpen, selectedFloor, selectedHKStatus, selectedView]);
-
-  const loadFloors = async () => {
+  const loadFloors = useCallback(async () => {
     try {
       const data = await getAvailableFloors(bookingPublicId, bookingRoomId);
       setFloors(data);
     } catch (error) {
       console.error("Failed to load floors:", error);
     }
-  };
+  }, [bookingPublicId, bookingRoomId]);
 
-  const loadRooms = async () => {
+  const loadRooms = useCallback(async () => {
     setIsLoading(true);
     try {
       const filters: {
@@ -149,7 +135,27 @@ export function RoomAssignmentModal({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [bookingPublicId, bookingRoomId, selectedFloor, selectedHKStatus, selectedView]);
+
+  // Load available floors on mount
+  useEffect(() => {
+    if (isOpen) {
+      const timer = window.setTimeout(() => {
+        void loadFloors();
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [isOpen, loadFloors]);
+
+  // Load rooms when filters change
+  useEffect(() => {
+    if (isOpen) {
+      const timer = window.setTimeout(() => {
+        void loadRooms();
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [isOpen, loadRooms]);
 
   const handleAssign = async () => {
     if (!selectedRoom) return;

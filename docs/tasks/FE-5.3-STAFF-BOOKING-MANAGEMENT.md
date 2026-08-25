@@ -70,6 +70,9 @@ Hiển thị đầy đủ thông tin trong các tabs:
 - Endpoint: `POST /api/bookings/{publicId}/confirm`
 - Điều kiện: booking PENDING
 - Hành động: Chuyển PENDING → CONFIRMED
+- Đây là luồng xác nhận thủ công cho thu tiền mặt ngoài hệ thống; không tự tạo payment record.
+- Ghi `booking_status_history.source = MANUAL`. Thanh toán online chỉ tự xác nhận khi payment
+  `SUCCEEDED`, có `verified_at` hợp lệ và tổng tiền đã nhận đủ `total_amount`.
 
 #### 3.2. Gán phòng (Assign Room)
 - Modal chọn phòng kiểu "chọn ghế rạp chiếu phim"

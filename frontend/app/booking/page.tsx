@@ -76,14 +76,13 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import {
   calculateBookingPrice,
-  createBooking,
   getAvailability,
   getBookingRoomTypes,
 } from "@/lib/api/booking"
 import { useAuth } from "@/lib/auth-context"
 import { cn } from "@/lib/utils"
 import type {
-  Booking,
+  BookingCreateRequest,
   BookingRoomItem,
   PriceCalculation,
 } from "@/types/booking"
@@ -113,13 +112,8 @@ type SelectedBookingOption = {
   selectionId: string
   roomTypeCode: string
   optionKey: string
-  paymentOption: "ONLINE" | "PAY_AT_HOTEL"
+  paymentOption: "ONLINE"
   cancellationPolicyCode: string
-}
-
-type RoomCheckoutDetail = {
-  selectionId: string
-  guestFullName: string
 }
 
 type Quote = {
@@ -264,7 +258,7 @@ function getBookingOptionUnitPrice(roomType: RoomType, option: RoomTypeBookingOp
 }
 
 function sortBookingOptionsByPrice(roomType: RoomType) {
-  return [...roomType.bookingOptions].sort((left, right) => {
+  return roomType.bookingOptions.filter((option) => option.paymentOption === "ONLINE").sort((left, right) => {
     const priceDiff = getBookingOptionUnitPrice(roomType, left) - getBookingOptionUnitPrice(roomType, right)
     if (priceDiff !== 0) return priceDiff
     return left.optionKey.localeCompare(right.optionKey)
@@ -291,20 +285,6 @@ function roomTypeMatchesGuestSearch(roomType: RoomType, search: SearchState) {
   )
 }
 
-function createDefaultRoomDetail(selectionId: string): RoomCheckoutDetail {
-  return {
-    selectionId,
-    guestFullName: "",
-  }
-}
-
-function getRoomDetail(
-  details: Record<string, RoomCheckoutDetail>,
-  selectionId: string
-) {
-  return details[selectionId] ?? createDefaultRoomDetail(selectionId)
-}
-
 function getSelectedEstimateTotal(
   selections: SelectedBookingOption[],
   roomTypeByCode: Map<string, RoomType>,
@@ -316,62 +296,6 @@ function getSelectedEstimateTotal(
     if (!roomType || !option) return sum
     return sum + getBookingOptionUnitPrice(roomType, option) * Math.max(1, nights)
   }, 0)
-}
-
-function getSelectedMaxAdults(
-  selections: SelectedBookingOption[],
-  roomTypeByCode: Map<string, RoomType>
-) {
-  return selections.reduce((sum, selection) => {
-    const roomType = roomTypeByCode.get(selection.roomTypeCode)
-    return sum + (roomType ? Math.min(roomType.maxAdults, roomType.maxOccupancy) : 0)
-  }, 0)
-}
-
-function distributeExpectedAdults(
-  selections: SelectedBookingOption[],
-  guestCount: number,
-  roomTypeByCode: Map<string, RoomType>
-) {
-  if (selections.length === 0) {
-    return { allocations: [] as number[], error: "" }
-  }
-
-  const roomCapacities = selections.map((selection) => {
-    const roomType = roomTypeByCode.get(selection.roomTypeCode)
-    return {
-      roomName: roomType?.name ?? selection.roomTypeCode,
-      capacity: roomType ? Math.min(roomType.maxAdults, roomType.maxOccupancy) : 0,
-    }
-  })
-
-  const invalidRoom = roomCapacities.find((room) => room.capacity < 1)
-  if (invalidRoom) {
-    return {
-      allocations: [] as number[],
-      error: `Không thể xếp khách cho ${invalidRoom.roomName}.`,
-    }
-  }
-
-  const allocations = Array.from({ length: selections.length }, () => 1)
-  let remainingGuests = Math.max(guestCount, selections.length) - selections.length
-
-  for (let index = 0; index < allocations.length && remainingGuests > 0; index += 1) {
-    const availableSlots = roomCapacities[index].capacity - allocations[index]
-    const addedGuests = Math.min(availableSlots, remainingGuests)
-    allocations[index] += addedGuests
-    remainingGuests -= addedGuests
-  }
-
-  if (remainingGuests > 0) {
-    const totalCapacity = roomCapacities.reduce((sum, room) => sum + room.capacity, 0)
-    return {
-      allocations: [] as number[],
-      error: `Số khách dự kiến vượt sức chứa người lớn tối đa của các phòng đã chọn (${totalCapacity} người lớn).`,
-    }
-  }
-
-  return { allocations, error: "" }
 }
 
 function buildCheckoutSummaryLines(
@@ -389,9 +313,7 @@ function buildCheckoutSummaryLines(
       calculation.cancellationPolicyCode,
     ].join("::")
     const existing = lines.get(key)
-    const paymentLabel = calculation.paymentOption === "PAY_AT_HOTEL"
-      ? "Thanh toán tại khách sạn"
-      : "Thanh toán trực tuyến"
+    const paymentLabel = "Thanh toán trực tuyến"
 
     if (existing) {
       existing.roomCount += 1
@@ -436,15 +358,13 @@ export default function BookingPage() {
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([])
   const [availableRoomsByType, setAvailableRoomsByType] = useState<Record<string, number>>({})
   const [selectedOptions, setSelectedOptions] = useState<SelectedBookingOption[]>([])
-  const [roomDetails, setRoomDetails] = useState<Record<string, RoomCheckoutDetail>>({})
-  const [expectedGuestCount, setExpectedGuestCount] = useState(1)
   const [quote, setQuote] = useState<Quote | null>(null)
   const [checkoutOpen, setCheckoutOpen] = useState(false)
-  const [booking, setBooking] = useState<Booking | null>(null)
+  const [paymentDraft, setPaymentDraft] = useState<BookingCreateRequest | null>(null)
+  const [paymentSummary, setPaymentSummary] = useState<Quote | null>(null)
   const [loadingCatalog, setLoadingCatalog] = useState(false)
   const [searching, setSearching] = useState(false)
   const [calculating, setCalculating] = useState(false)
-  const [creatingBooking, setCreatingBooking] = useState(false)
   const [error, setError] = useState("")
 
   const permissions = user?.permissions ?? []
@@ -491,23 +411,18 @@ export default function BookingPage() {
     return selectedOptions.map((selection) => {
       const roomType = roomTypeByCode.get(selection.roomTypeCode)
       const option = roomType?.bookingOptions.find((candidate) => candidate.optionKey === selection.optionKey)
-      const paymentLabel = selection.paymentOption === "PAY_AT_HOTEL" ? "Thanh toán tại khách sạn" : "Thanh toán trực tuyến"
-      return `${roomType?.name ?? selection.roomTypeCode}: ${option?.cancellationPolicy.name ?? selection.cancellationPolicyCode} · ${paymentLabel}`
+      return `${roomType?.name ?? selection.roomTypeCode}: ${option?.cancellationPolicy.name ?? selection.cancellationPolicyCode} · Thanh toán trực tuyến`
     })
   }, [roomTypeByCode, selectedOptions])
   const checkoutSummaryLines = useMemo(
     () => buildCheckoutSummaryLines(quote, roomTypeByCode),
     [quote, roomTypeByCode]
   )
-  const selectedMaxAdults = useMemo(
-    () => getSelectedMaxAdults(selectedOptions, roomTypeByCode),
-    [roomTypeByCode, selectedOptions]
-  )
   const cheapestBookingOffer = useMemo<CheapestBookingOffer | null>(() => {
     const offers = roomTypeOptions
       .filter((option) => option.availableCount > 0)
       .flatMap(({ roomType }) =>
-        roomType.bookingOptions.map((bookingOption) => ({
+        roomType.bookingOptions.filter((bookingOption) => bookingOption.paymentOption === "ONLINE").map((bookingOption) => ({
           roomType,
           option: bookingOption,
           unitPrice: getBookingOptionUnitPrice(roomType, bookingOption),
@@ -572,8 +487,6 @@ export default function BookingPage() {
   function resetSelection(nextSearch: SearchState) {
     setSearch(nextSearch)
     setSelectedOptions([])
-    setRoomDetails({})
-    setExpectedGuestCount(1)
     setQuote(null)
     setCheckoutOpen(false)
   }
@@ -588,8 +501,6 @@ export default function BookingPage() {
 
     setSearching(true)
     setSelectedOptions([])
-    setRoomDetails({})
-    setExpectedGuestCount(1)
     setQuote(null)
     setCheckoutOpen(false)
 
@@ -620,16 +531,11 @@ export default function BookingPage() {
           selectionId,
           roomTypeCode: roomType.code,
           optionKey: option.optionKey,
-          paymentOption: option.paymentOption,
+          paymentOption: "ONLINE",
           cancellationPolicyCode: option.cancellationPolicy.code,
         },
       ]
     })
-    setExpectedGuestCount((current) => Math.max(current, selectedCount + 1))
-    setRoomDetails((current) => ({
-      ...current,
-      [selectionId]: createDefaultRoomDetail(selectionId),
-    }))
   }
 
   function removeSelectedOption(roomType: RoomType, option: RoomTypeBookingOption) {
@@ -642,38 +548,8 @@ export default function BookingPage() {
           selection.optionKey === option.optionKey
       )
       if (removeIndex < 0) return current
-      const removedSelection = current[removeIndex]
-      setRoomDetails((details) => {
-        const nextDetails = { ...details }
-        delete nextDetails[removedSelection.selectionId]
-        return nextDetails
-      })
-      return current.filter((_, index) => index !== removeIndex)
+      return current.filter((_, currentIndex) => currentIndex !== removeIndex)
     })
-  }
-
-  function updateRoomDetail(
-    selectionId: string,
-    patch: Partial<Omit<RoomCheckoutDetail, "selectionId">>,
-    shouldResetQuote = false
-  ) {
-    if (shouldResetQuote) {
-      setQuote(null)
-    }
-    setRoomDetails((current) => {
-      const existing = getRoomDetail(current, selectionId)
-      return {
-        ...current,
-        [selectionId]: {
-          ...existing,
-          ...patch,
-        },
-      }
-    })
-  }
-
-  function updateExpectedGuestCount(value: number) {
-    setExpectedGuestCount(Math.max(1, value))
   }
 
   async function calculateSelectedRooms() {
@@ -681,41 +557,22 @@ export default function BookingPage() {
     setCalculating(true)
 
     const plannedOptions = selectedOptions
-    const normalizedGuestCount = Math.max(expectedGuestCount, plannedOptions.length)
-
     if (plannedOptions.length === 0) {
       notifyError("Vui lòng thêm ít nhất một phòng.")
       setCalculating(false)
       return
     }
 
-    if (normalizedGuestCount !== expectedGuestCount) {
-      setExpectedGuestCount(normalizedGuestCount)
-    }
-
-    const guestDistribution = distributeExpectedAdults(
-      plannedOptions,
-      normalizedGuestCount,
-      roomTypeByCode
-    )
-
-    if (guestDistribution.error) {
-      notifyError(guestDistribution.error)
-      setCalculating(false)
-      setCheckoutOpen(true)
-      return
-    }
-
     try {
       const calculations = await Promise.all(
-        plannedOptions.map((selection, index) =>
+        plannedOptions.map((selection) =>
           calculateBookingPrice({
             roomTypeCode: selection.roomTypeCode,
             paymentOption: selection.paymentOption,
             cancellationPolicyCode: selection.cancellationPolicyCode,
             checkInDate: search.checkInDate,
             checkOutDate: search.checkOutDate,
-            adults: guestDistribution.allocations[index],
+            adults: 1,
             children: 0,
           })
         )
@@ -738,7 +595,7 @@ export default function BookingPage() {
     }
   }
 
-  async function submitBooking() {
+  function continueToPayment() {
     if (selectedOptions.length === 0 || !quote) {
       notifyError("Vui lòng bấm tiếp tục thanh toán để tính giá trước.")
       return
@@ -749,62 +606,24 @@ export default function BookingPage() {
       return
     }
 
-    const missingGuestName = selectedOptions.find((selection) => {
-      const detail = getRoomDetail(roomDetails, selection.selectionId)
-      return !detail.guestFullName.trim()
-    })
-
-    if (missingGuestName) {
-      notifyError("Vui lòng nhập họ tên người đại diện cho từng phòng.")
-      return
-    }
-
-    const normalizedGuestCount = Math.max(expectedGuestCount, selectedOptions.length)
-    const guestDistribution = distributeExpectedAdults(
-      selectedOptions,
-      normalizedGuestCount,
-      roomTypeByCode
-    )
-
-    if (guestDistribution.error) {
-      notifyError(guestDistribution.error)
-      return
-    }
-
-    if (normalizedGuestCount !== expectedGuestCount) {
-      setExpectedGuestCount(normalizedGuestCount)
-    }
-
-    const bookingRooms: BookingRoomItem[] = selectedOptions.map((selection, index) => ({
+    const bookingRooms: BookingRoomItem[] = selectedOptions.map((selection) => ({
       roomTypeCode: selection.roomTypeCode,
       paymentOption: selection.paymentOption,
       cancellationPolicyCode: selection.cancellationPolicyCode,
       checkInDate: search.checkInDate,
       checkOutDate: search.checkOutDate,
-      adults: guestDistribution.allocations[index],
+      adults: 1,
       children: 0,
-      guestFullName: getRoomDetail(roomDetails, selection.selectionId).guestFullName.trim(),
     }))
-
-    setCreatingBooking(true)
-    setError("")
-
-    try {
-      const created = await createBooking({
-        contactName: contact.contactName.trim(),
-        contactEmail: contact.contactEmail.trim(),
-        contactPhone: contact.contactPhone.trim() || undefined,
-        specialRequests: contact.specialRequests.trim() || undefined,
-        rooms: bookingRooms,
-      })
-      setBooking(created)
-      setCheckoutOpen(false)
-      toast.success("Đã lưu booking thành công")
-    } catch (bookingError) {
-      notifyError(getApiErrorMessage(bookingError, "Không thể tạo booking"))
-    } finally {
-      setCreatingBooking(false)
-    }
+    setPaymentDraft({
+      contactName: contact.contactName.trim(),
+      contactEmail: contact.contactEmail.trim(),
+      contactPhone: contact.contactPhone.trim() || undefined,
+      specialRequests: contact.specialRequests.trim() || undefined,
+      rooms: bookingRooms,
+    })
+    setPaymentSummary(quote)
+    setCheckoutOpen(false)
   }
 
   if (authLoading) {
@@ -856,11 +675,14 @@ export default function BookingPage() {
     )
   }
 
-  if (booking) {
+  if (paymentDraft) {
     return (
       <div className="min-h-screen bg-background">
         <SiteHeader />
-        <BookingPaymentStep booking={booking} />
+        <BookingPaymentStep
+          draft={paymentDraft}
+          summary={paymentSummary ? { totalAmount: paymentSummary.totalAmount, currency: paymentSummary.currency } : undefined}
+        />
       </div>
     )
   }
@@ -893,7 +715,7 @@ export default function BookingPage() {
             onSearch={runSearch}
           />
           <p className="mb-4 text-muted-foreground">
-            Bộ lọc khách dùng để tìm room type có sức chứa tối thiểu phù hợp. Số khách dự kiến cho toàn đơn sẽ nhập ở bước thanh toán.
+            Bộ lọc khách giúp tìm room type có sức chứa tối thiểu phù hợp. Thông tin booking sẽ được xác nhận sau khi bạn chọn phương thức thanh toán.
           </p>
 
           <RoomTypeList
@@ -929,17 +751,9 @@ export default function BookingPage() {
         quote={quote}
         policyLines={selectedPolicyLines}
         summaryLines={checkoutSummaryLines}
-        selectedOptions={selectedOptions}
-        roomDetails={roomDetails}
-        expectedGuestCount={expectedGuestCount}
-        selectedMaxAdults={selectedMaxAdults}
-        roomTypeByCode={roomTypeByCode}
-        creating={creatingBooking}
         onContactChange={setContact}
-        onRoomDetailChange={updateRoomDetail}
-        onExpectedGuestCountChange={updateExpectedGuestCount}
         onRefreshQuote={calculateSelectedRooms}
-        onSubmit={submitBooking}
+        onSubmit={continueToPayment}
       />
     </div>
   )
@@ -1529,9 +1343,7 @@ function RoomChoiceCard({
   const priceDifference = unitPrice - basePrice
   const displayRoomCount = Math.max(1, selectedCount)
   const totalPrice = unitPrice * displayRoomCount * Math.max(1, nights)
-  const paymentLabel = option.paymentOption === "PAY_AT_HOTEL"
-    ? "Thanh toán tại khách sạn"
-    : "Thanh toán trước trực tuyến"
+  const paymentLabel = "Thanh toán trước trực tuyến"
 
   return (
     <div className={cn(
@@ -1693,15 +1505,7 @@ function CheckoutDialog({
   quote,
   policyLines,
   summaryLines,
-  selectedOptions,
-  roomDetails,
-  expectedGuestCount,
-  selectedMaxAdults,
-  roomTypeByCode,
-  creating,
   onContactChange,
-  onRoomDetailChange,
-  onExpectedGuestCountChange,
   onRefreshQuote,
   onSubmit,
 }: {
@@ -1712,31 +1516,17 @@ function CheckoutDialog({
   quote: Quote | null
   policyLines: string[]
   summaryLines: CheckoutSummaryLine[]
-  selectedOptions: SelectedBookingOption[]
-  roomDetails: Record<string, RoomCheckoutDetail>
-  expectedGuestCount: number
-  selectedMaxAdults: number
-  roomTypeByCode: Map<string, RoomType>
-  creating: boolean
   onContactChange: (contact: ContactState) => void
-  onRoomDetailChange: (
-    selectionId: string,
-    patch: Partial<Omit<RoomCheckoutDetail, "selectionId">>,
-    shouldResetQuote?: boolean
-  ) => void
-  onExpectedGuestCountChange: (guestCount: number) => void
   onRefreshQuote: () => void
   onSubmit: () => void
 }) {
-  const minimumExpectedGuests = Math.max(1, selectedOptions.length)
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] max-w-7xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Xác nhận thông tin và thanh toán</DialogTitle>
           <DialogDescription>
-            Người liên hệ có thể khác người lưu trú. Mỗi phòng chỉ cần họ tên đại diện; giấy tờ tùy thân sẽ bổ sung khi check-in.
+            Thông tin dưới đây chỉ là bản nháp trên trình duyệt. Booking chỉ được tạo sau khi bạn chọn phương thức thanh toán.
           </DialogDescription>
         </DialogHeader>
 
@@ -1757,59 +1547,11 @@ function CheckoutDialog({
 
             <section className="flex flex-col gap-4 rounded-lg border bg-card p-5">
               <div className="flex items-center gap-3">
-                <Users className="text-muted-foreground" />
-                <div>
-                  <h3 className="text-lg font-semibold">Khách dự kiến</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Áp dụng cho toàn bộ đơn. Bộ lọc ở trang chọn phòng chỉ dùng để tìm room type phù hợp.
-                  </p>
-                </div>
-              </div>
-              <CounterRow
-                label="Khách dự kiến"
-                description={`Tối đa ${selectedMaxAdults || "-"} người lớn theo các phòng đã chọn`}
-                value={Math.max(expectedGuestCount, minimumExpectedGuests)}
-                min={minimumExpectedGuests}
-                max={selectedMaxAdults || undefined}
-                onChange={onExpectedGuestCountChange}
-              />
-            </section>
-
-            <section className="flex flex-col gap-4 rounded-lg border bg-card p-5">
-              <div className="flex items-center gap-3">
-                <BedDouble className="text-muted-foreground" />
-                <div>
-                  <h3 className="text-lg font-semibold">Thông tin từng phòng</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Nhập họ tên đại diện cho từng phòng. Đây chưa phải bước khai báo căn cước.
-                  </p>
-                </div>
-              </div>
-              <div className="grid gap-3 lg:grid-cols-2">
-                {selectedOptions.map((selection, index) => {
-                  const roomType = roomTypeByCode.get(selection.roomTypeCode)
-                  const detail = getRoomDetail(roomDetails, selection.selectionId)
-                  return (
-                    <RoomCheckoutDetailCard
-                      key={selection.selectionId}
-                      index={index}
-                      selection={selection}
-                      roomType={roomType}
-                      detail={detail}
-                      onChange={onRoomDetailChange}
-                    />
-                  )
-                })}
-              </div>
-            </section>
-
-            <section className="flex flex-col gap-4 rounded-lg border bg-card p-5">
-              <div className="flex items-center gap-3">
                 <ReceiptText className="text-muted-foreground" />
                 <div>
                   <h3 className="text-lg font-semibold">Chi tiết đặt phòng</h3>
                   <p className="text-sm text-muted-foreground">
-                    Mỗi dòng tương ứng một loại phòng, chính sách hủy và hình thức thanh toán đã chọn.
+                    Mỗi dòng tương ứng một loại phòng và chính sách hủy đã chọn.
                   </p>
                 </div>
               </div>
@@ -1830,8 +1572,6 @@ function CheckoutDialog({
           <div className="flex h-fit flex-col gap-4 rounded-lg border bg-card p-5 xl:sticky xl:top-4">
             <h3 className="text-lg font-semibold">Tổng thanh toán</h3>
             <InfoLine icon={CalendarDays} label="Ngày" value={`${displayDate(search.checkInDate)} - ${displayDate(search.checkOutDate)} (${getNights(search)} đêm)`} />
-            <InfoLine icon={Users} label="Bộ lọc sức chứa" value={`Từ ${search.adults + search.children} khách/phòng`} />
-            <InfoLine icon={UserRound} label="Khách dự kiến" value={`${Math.max(expectedGuestCount, minimumExpectedGuests)} khách toàn đơn`} />
             {policyLines.length > 0 && (
               <InfoLine icon={ShieldCheck} label="Điều kiện đã chọn" value={`${policyLines.length} lựa chọn phòng/chính sách`} />
             )}
@@ -1843,9 +1583,6 @@ function CheckoutDialog({
                 <div className="flex justify-between gap-3 text-lg font-semibold">
                   <span>Tổng cộng</span>
                   <span className="text-[var(--accent)]">{money(quote.totalAmount, quote.currency)}</span>
-                </div>
-                <div className="rounded-md bg-green-50 p-3 text-sm text-green-800">
-                  Tạm thời chưa có màn thanh toán SePay ở frontend. Khi bấm thanh toán, hệ thống tạo booking và coi giao dịch là thành công ở bước giao diện.
                 </div>
               </>
             )}
@@ -1860,9 +1597,8 @@ function CheckoutDialog({
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Quay lại chọn phòng</Button>
           {quote ? (
-            <Button variant="success" onClick={onSubmit} disabled={creating}>
-              {creating && <Loader2 data-icon="inline-start" className="animate-spin" />}
-              Thanh toán và xác nhận
+            <Button variant="success" onClick={onSubmit}>
+              Chọn phương thức thanh toán
             </Button>
           ) : (
             <Button onClick={onRefreshQuote}>
@@ -1872,57 +1608,6 @@ function CheckoutDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-function RoomCheckoutDetailCard({
-  index,
-  selection,
-  roomType,
-  detail,
-  onChange,
-}: {
-  index: number
-  selection: SelectedBookingOption
-  roomType?: RoomType
-  detail: RoomCheckoutDetail
-  onChange: (
-    selectionId: string,
-    patch: Partial<Omit<RoomCheckoutDetail, "selectionId">>,
-    shouldResetQuote?: boolean
-  ) => void
-}) {
-  const bedLabels = roomType ? getBedLabels(roomType) : ["Đang cập nhật"]
-
-  return (
-    <div className="flex flex-col gap-4 rounded-lg border bg-background p-4">
-      <div className="flex flex-col gap-1">
-        <div className="font-semibold">Phòng {index + 1}: {roomType?.name ?? selection.roomTypeCode}</div>
-      </div>
-
-      <LabeledInput label="Họ tên người đại diện phòng">
-        <Input
-          value={detail.guestFullName}
-          placeholder="Nguyễn Văn A"
-          onChange={(event) => onChange(selection.selectionId, { guestFullName: event.target.value })}
-        />
-      </LabeledInput>
-
-      <div className="grid gap-3 rounded-md bg-muted p-3 text-sm md:grid-cols-2">
-        <div className="flex items-start gap-2">
-          <BedDouble className="text-muted-foreground" />
-          <div className="flex flex-col gap-1">
-            {bedLabels.map((label) => (
-              <span key={label}>{label}</span>
-            ))}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Users className="text-muted-foreground" />
-          <span>Tối đa {roomType?.maxAdults ?? "-"} người lớn</span>
-        </div>
-      </div>
-    </div>
   )
 }
 

@@ -412,8 +412,6 @@ public class BookingStaffService {
                 booking.getTaxTotal(),
                 booking.getTotalAmount(),
                 booking.getCurrency(),
-                booking.getDepositPercentSnapshot(),
-                booking.getRequiredDepositAmount(),
                 booking.getPaidAmount(),
                 booking.getRefundedAmount(),
                 booking.getSpecialRequests(),

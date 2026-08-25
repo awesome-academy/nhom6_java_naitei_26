@@ -64,11 +64,11 @@ public class PaymentLedgerService {
             synchronizeInvoiceAmounts(invoice);
         }
 
-        boolean isDepositSatisfied = booking.getPaidAmount()
-                .compareTo(booking.getRequiredDepositAmount()) >= 0;
+        boolean isPaymentSatisfied = booking.getPaidAmount()
+                .compareTo(booking.getTotalAmount()) >= 0;
         return new PaymentLedgerResult(
                 booking.getPublicId(),
-                booking.getStatus() == BookingStatus.PENDING && isDepositSatisfied
+                booking.getStatus() == BookingStatus.PENDING && isPaymentSatisfied
         );
     }
 
