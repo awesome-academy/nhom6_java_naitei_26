@@ -5,6 +5,8 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+
 @Component
 @ConfigurationProperties(prefix = "app.payment")
 @Getter
@@ -12,4 +14,7 @@ import org.springframework.stereotype.Component;
 public class PaymentProperties {
 
     private String defaultProvider = "SEPAY";
+    private String eWalletProvider = "MOCK_WALLET";
+
+    private Duration checkoutTtl = Duration.ofMinutes(10);
 }

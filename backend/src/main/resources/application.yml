@@ -117,6 +117,11 @@ app:
       frontend-callback-url: ${GOOGLE_FRONTEND_CALLBACK_URL:http://localhost:3000/auth/google/callback}
   payment:
     default-provider: ${PAYMENT_DEFAULT_PROVIDER:SEPAY}
+    e-wallet-provider: ${PAYMENT_E_WALLET_PROVIDER:MOCK_WALLET}
+    checkout-ttl: ${PAYMENT_CHECKOUT_TTL:10m}
+    mock-wallet:
+      enabled: ${PAYMENT_MOCK_WALLET_ENABLED:false}
+      checkout-base-url: ${PAYMENT_MOCK_WALLET_CHECKOUT_URL:http://localhost:3000/payment/mock-wallet}
     sepay:
       checkout-endpoint: ${SEPAY_CHECKOUT_ENDPOINT:https://pay-sandbox.sepay.vn/v1/checkout/init}
       merchant-id: ${SEPAY_MERCHANT_ID:}

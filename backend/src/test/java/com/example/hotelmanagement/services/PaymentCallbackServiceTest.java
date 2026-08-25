@@ -64,7 +64,7 @@ class PaymentCallbackServiceTest {
                 new ObjectMapper(),
                 FIXED_CLOCK
         );
-        when(gatewayRegistry.getGateway("sepay")).thenReturn(gatewayService);
+        org.mockito.Mockito.lenient().when(gatewayRegistry.getGateway("sepay")).thenReturn(gatewayService);
         org.mockito.Mockito.lenient().when(paymentLedgerService.synchronizeSuccessfulPayment(any(Payment.class)))
                 .thenReturn(new PaymentLedgerResult("booking-public-id", false));
     }
@@ -151,6 +151,89 @@ class PaymentCallbackServiceTest {
 
         verify(paymentRepository, never()).findForUpdateByPaymentCode(any());
         verify(paymentEventRepository, never()).save(any());
+    }
+
+    @Test
+    void handleCallbackMarksVerifiedFailureAsFailed() {
+        Payment payment = payment();
+        PaymentGatewayCallback callback = new PaymentGatewayCallback(
+                "SEPAY",
+                "event-failed",
+                "PAY-2026-001",
+                null,
+                new BigDecimal("1250000"),
+                1001,
+                "Payment was declined",
+                "CARD",
+                true
+        );
+        when(gatewayService.verifyCallback(callbackRequest())).thenReturn(callback);
+        when(paymentEventRepository.existsByProviderAndProviderEventId("SEPAY", "event-failed"))
+                .thenReturn(false);
+        when(paymentRepository.findForUpdateByPaymentCode("PAY-2026-001"))
+                .thenReturn(Optional.of(payment));
+
+        callbackService.handleCallback("sepay", callbackRequest(), "127.0.0.1");
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+        assertThat(payment.getFailureCode()).isEqualTo("1001");
+        assertThat(payment.getFailureMessage()).isEqualTo("Payment was declined");
+        verify(paymentLedgerService, never()).synchronizeSuccessfulPayment(any());
+    }
+
+    @Test
+    void verifiedSuccessStillSettlesCustomerCancelledAttempt() {
+        Payment payment = payment();
+        payment.setStatus(PaymentStatus.CANCELLED);
+        payment.setFailureCode("CUSTOMER_CANCELLED");
+        when(gatewayService.verifyCallback(callbackRequest())).thenReturn(successfulCallback(true));
+        when(paymentEventRepository.existsByProviderAndProviderEventId("SEPAY", "event-1"))
+                .thenReturn(false);
+        when(paymentRepository.findForUpdateByPaymentCode("PAY-2026-001"))
+                .thenReturn(Optional.of(payment));
+        when(paymentRepository.findByProviderTxnId("4088878653")).thenReturn(Optional.empty());
+
+        callbackService.handleCallback("sepay", callbackRequest(), "127.0.0.1");
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(payment.getFailureCode()).isNull();
+        assertThat(payment.getVerifiedAt()).isNotNull();
+        verify(paymentLedgerService).synchronizeSuccessfulPayment(payment);
+    }
+
+    @Test
+    void handleTrustedCallbackUsesSameVerifiedLedgerPipeline() {
+        Payment payment = payment();
+        payment.setProvider("MOCK_WALLET");
+        PaymentGatewayCallback callback = mockWalletSuccessfulCallback();
+        when(paymentEventRepository.existsByProviderAndProviderEventId("MOCK_WALLET", "mock-event-1"))
+                .thenReturn(false);
+        when(paymentRepository.findForUpdateByPaymentCode("PAY-2026-001"))
+                .thenReturn(Optional.of(payment));
+        when(paymentRepository.findByProviderTxnId("MOCK-TXN-001")).thenReturn(Optional.empty());
+
+        callbackService.handleTrustedCallback(callback, RAW_PAYLOAD, "mock-wallet-simulator");
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(payment.getVerifiedAt()).isNotNull();
+        ArgumentCaptor<PaymentEvent> eventCaptor = ArgumentCaptor.forClass(PaymentEvent.class);
+        verify(paymentEventRepository).save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getEventType()).isEqualTo("SIMULATOR_RESULT");
+        verify(paymentLedgerService).synchronizeSuccessfulPayment(payment);
+    }
+
+    private PaymentGatewayCallback mockWalletSuccessfulCallback() {
+        return new PaymentGatewayCallback(
+                "MOCK_WALLET",
+                "mock-event-1",
+                "PAY-2026-001",
+                "MOCK-TXN-001",
+                new BigDecimal("1250000"),
+                0,
+                "Mock payment succeeded",
+                "E_WALLET",
+                true
+        );
     }
 
     private Payment payment() {

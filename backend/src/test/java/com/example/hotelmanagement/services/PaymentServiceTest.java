@@ -1,9 +1,9 @@
 package com.example.hotelmanagement.services;
 
+import com.example.hotelmanagement.config.PaymentProperties;
 import com.example.hotelmanagement.dto.payment.PaymentCreateRequest;
 import com.example.hotelmanagement.dto.payment.PaymentGatewayCheckout;
 import com.example.hotelmanagement.dto.payment.PaymentResponse;
-import com.example.hotelmanagement.config.PaymentProperties;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.CustomerProfile;
 import com.example.hotelmanagement.entity.Payment;
@@ -21,14 +21,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.Optional;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -116,7 +117,7 @@ class PaymentServiceTest {
         assertThat(response.provider()).isEqualTo("SEPAY");
         assertThat(response.paymentUrl()).isEqualTo("https://pay-sandbox.sepay.vn/v1/checkout/init");
         assertThat(response.checkoutFields()).hasSize(1);
-        assertThat(response.expiresAt()).isEqualTo(booking.getHoldExpiresAt());
+        assertThat(response.expiresAt()).isEqualTo(OffsetDateTime.now(FIXED_CLOCK).plusMinutes(10));
 
         ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
         verify(paymentRepository).saveAndFlush(paymentCaptor.capture());
@@ -168,8 +169,8 @@ class PaymentServiceTest {
                 new PaymentCreateRequest(PaymentMethod.E_WALLET),
                 IDEMPOTENCY_KEY,
                 USER_ID
-        )).isInstanceOf(BusinessValidationException.class)
-                .hasMessageContaining("cannot create a payment");
+        )).isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("cannot access payments");
 
         verify(paymentRepository, never()).saveAndFlush(any());
     }
@@ -218,6 +219,123 @@ class PaymentServiceTest {
         verify(paymentRepository, never()).saveAndFlush(any());
     }
 
+    @Test
+    void createPaymentSupportsMockElectronicWalletCheckout() {
+        Booking booking = createPayableBooking();
+        when(bookingRepository.findForUpdateByPublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(booking));
+        when(paymentRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+        when(paymentRepository.findFirstByBooking_IdAndStatusInOrderByCreatedAtDesc(eq(10L), any()))
+                .thenReturn(Optional.empty());
+        when(paymentRepository.existsByPaymentCode(anyString())).thenReturn(false);
+        when(paymentRepository.saveAndFlush(any(Payment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(paymentGatewayRegistry.getGateway("MOCK_WALLET", PaymentMethod.E_WALLET))
+                .thenReturn(paymentGatewayService);
+        when(paymentGatewayService.getProviderCode()).thenReturn("MOCK_WALLET");
+        when(paymentGatewayService.createCheckout(any(Payment.class)))
+                .thenReturn(new PaymentGatewayCheckout(
+                        "MOCK_WALLET",
+                        "http://localhost:3000/payment/mock-wallet/PAY-2026-001",
+                        null,
+                        "MOCK_WALLET|PAY-2026-001|375000.00|VND",
+                        List.of()
+                ));
+
+        PaymentResponse response = paymentService.createPayment(
+                BOOKING_PUBLIC_ID,
+                new PaymentCreateRequest(PaymentMethod.E_WALLET),
+                IDEMPOTENCY_KEY,
+                USER_ID
+        );
+
+        assertThat(response.provider()).isEqualTo("MOCK_WALLET");
+        assertThat(response.paymentUrl()).contains("/payment/mock-wallet/");
+        assertThat(response.qrCodeValue()).startsWith("MOCK_WALLET|");
+    }
+
+    @Test
+    void createPaymentExpiresOldAttemptAndAllowsRetryWithinBookingHold() {
+        Booking booking = createPayableBooking();
+        Payment expiredAttempt = paymentForBooking(booking, PaymentStatus.PENDING);
+        expiredAttempt.setExpiresAt(OffsetDateTime.now(FIXED_CLOCK).minusSeconds(1));
+        when(bookingRepository.findForUpdateByPublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(booking));
+        when(paymentRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+        when(paymentRepository.findFirstByBooking_IdAndStatusInOrderByCreatedAtDesc(eq(10L), any()))
+                .thenReturn(Optional.of(expiredAttempt));
+        when(paymentRepository.existsByPaymentCode(anyString())).thenReturn(false);
+        when(paymentRepository.saveAndFlush(any(Payment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        PaymentResponse response = paymentService.createPayment(
+                BOOKING_PUBLIC_ID,
+                new PaymentCreateRequest(PaymentMethod.INTERNET_BANKING),
+                IDEMPOTENCY_KEY,
+                USER_ID
+        );
+
+        assertThat(expiredAttempt.getStatus()).isEqualTo(PaymentStatus.EXPIRED);
+        assertThat(expiredAttempt.getFailureCode()).isEqualTo("PAYMENT_LINK_EXPIRED");
+        assertThat(response.status()).isEqualTo(PaymentStatus.PENDING);
+    }
+
+    @Test
+    void getPaymentLazilyExpiresLinkAndMarksItRetryable() {
+        Booking booking = createPayableBooking();
+        Payment payment = paymentForBooking(booking, PaymentStatus.PENDING);
+        payment.setExpiresAt(OffsetDateTime.now(FIXED_CLOCK).minusSeconds(1));
+        when(paymentRepository.findForUpdateByPaymentCode(payment.getPaymentCode()))
+                .thenReturn(Optional.of(payment));
+        when(paymentRepository.saveAndFlush(payment)).thenReturn(payment);
+
+        var response = paymentService.getPayment(
+                BOOKING_PUBLIC_ID,
+                payment.getPaymentCode(),
+                USER_ID
+        );
+
+        assertThat(response.status()).isEqualTo(PaymentStatus.EXPIRED);
+        assertThat(response.failureCode()).isEqualTo("PAYMENT_LINK_EXPIRED");
+        assertThat(response.retryable()).isTrue();
+    }
+
+    @Test
+    void cancelPaymentMarksActivePaymentCancelledAndRetryable() {
+        Booking booking = createPayableBooking();
+        Payment payment = paymentForBooking(booking, PaymentStatus.PROCESSING);
+        when(paymentRepository.findForUpdateByPaymentCode(payment.getPaymentCode()))
+                .thenReturn(Optional.of(payment));
+        when(paymentRepository.saveAndFlush(payment)).thenReturn(payment);
+
+        var response = paymentService.cancelPayment(
+                BOOKING_PUBLIC_ID,
+                payment.getPaymentCode(),
+                USER_ID
+        );
+
+        assertThat(response.status()).isEqualTo(PaymentStatus.CANCELLED);
+        assertThat(response.failureCode()).isEqualTo("CUSTOMER_CANCELLED");
+        assertThat(response.retryable()).isTrue();
+    }
+
+    @Test
+    void getFailedPaymentMarksItRetryableWithinBookingHold() {
+        Booking booking = createPayableBooking();
+        Payment payment = paymentForBooking(booking, PaymentStatus.FAILED);
+        payment.setFailureCode("DECLINED");
+        payment.setFailureMessage("Payment was declined");
+        when(paymentRepository.findForUpdateByPaymentCode(payment.getPaymentCode()))
+                .thenReturn(Optional.of(payment));
+
+        var response = paymentService.getPayment(
+                BOOKING_PUBLIC_ID,
+                payment.getPaymentCode(),
+                USER_ID
+        );
+
+        assertThat(response.status()).isEqualTo(PaymentStatus.FAILED);
+        assertThat(response.retryable()).isTrue();
+    }
+
     private Booking createPayableBooking() {
         Booking booking = Booking.builder()
                 .publicId(BOOKING_PUBLIC_ID)
@@ -245,6 +363,23 @@ class PaymentServiceTest {
                 .build();
         user.setId(USER_ID);
         return CustomerProfile.builder().user(user).build();
+    }
+
+    private Payment paymentForBooking(Booking booking, PaymentStatus status) {
+        Payment payment = Payment.builder()
+                .paymentCode("PAY-2026-0123456789ABCDEF0123")
+                .booking(booking)
+                .method(PaymentMethod.INTERNET_BANKING)
+                .provider("SEPAY")
+                .amount(money("375000.00"))
+                .currency("VND")
+                .status(status)
+                .expiresAt(OffsetDateTime.now(FIXED_CLOCK).plusMinutes(10))
+                .build();
+        payment.setId(20L);
+        payment.setCreatedAt(OffsetDateTime.now(FIXED_CLOCK));
+        payment.setUpdatedAt(OffsetDateTime.now(FIXED_CLOCK));
+        return payment;
     }
 
     private static BigDecimal money(String value) {
