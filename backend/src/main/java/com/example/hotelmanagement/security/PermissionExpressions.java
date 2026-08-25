@@ -28,6 +28,10 @@ public final class PermissionExpressions {
     public static final String BOOKING_GUEST_MANAGE = "hasAuthority('booking:assign_room')";
     public static final String GUEST_READ_ID = "hasAuthority('guest:read_id')";
     public static final String SETTINGS_MANAGE = "hasAuthority('settings:manage')";
+    public static final String REFUND_APPROVE = "hasAuthority('refund:approve')";
+    public static final String REFUND_REQUEST =
+            "hasAnyAuthority('booking:cancel_own', 'refund:approve')";
+    public static final String REVENUE_READ = "hasAuthority('revenue:read')";
 
     private PermissionExpressions() {
     }
