@@ -31,6 +31,7 @@ public final class PermissionExpressions {
     public static final String REFUND_APPROVE = "hasAuthority('refund:approve')";
     public static final String REFUND_REQUEST =
             "hasAnyAuthority('booking:cancel_own', 'refund:approve')";
+    public static final String REVENUE_READ = "hasAuthority('revenue:read')";
 
     private PermissionExpressions() {
     }

@@ -47,6 +47,8 @@ public interface RoomRepository extends JpaRepository<Room, Long>, JpaSpecificat
 
     boolean existsByRoomNumberIgnoreCaseAndDeletedAtIsNull(String roomNumber);
 
+    long countByDeletedAtIsNullAndIsActiveTrue();
+
     @Query("""
             SELECT room.roomType.id AS roomTypeId, room.id AS roomId
             FROM Room room
