@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.booking.BookingCancelRequest;
 import com.example.hotelmanagement.dto.booking.BookingCreateRequest;
+import com.example.hotelmanagement.dto.booking.BookingDetailResponse;
 import com.example.hotelmanagement.dto.booking.BookingResponse;
 import com.example.hotelmanagement.dto.booking.BookingRoomAssignmentResponse;
 import com.example.hotelmanagement.dto.booking.BookingRoomChangeRequest;
@@ -74,6 +75,16 @@ public class BookingController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ResponseEntity.ok(bookingService.getMyBookings(principal.getId()));
+    }
+
+    @Operation(summary = "Get My Booking Detail")
+    @GetMapping("/{publicId}")
+    @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
+    public ResponseEntity<BookingDetailResponse> getMyBookingDetail(
+            @PathVariable String publicId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(bookingService.getMyBookingDetail(publicId, principal.getId()));
     }
 
     @Operation(summary = "Delete Pending Booking")

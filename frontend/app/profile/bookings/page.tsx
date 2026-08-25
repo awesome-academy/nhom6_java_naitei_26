@@ -5,6 +5,7 @@ import Link from "next/link"
 import {
   CalendarDays,
   Clock,
+  Eye,
   Hotel,
   Loader2,
   ReceiptText,
@@ -534,8 +535,14 @@ function BookingCard({
           </div>
         )}
 
-        {booking.status === "PENDING" && (
-          <div className="flex justify-end border-t pt-4">
+        <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
+          <Button asChild type="button" variant="outline" size="sm">
+            <Link href={`/profile/bookings/${booking.publicId}`}>
+              <Eye data-icon="inline-start" />
+              Xem chi tiết
+            </Link>
+          </Button>
+          {booking.status === "PENDING" && (
             <Button
               type="button"
               variant="outline"
@@ -546,8 +553,8 @@ function BookingCard({
               <Trash2 />
               Xóa booking
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </CardContent>
     </Card>
   )

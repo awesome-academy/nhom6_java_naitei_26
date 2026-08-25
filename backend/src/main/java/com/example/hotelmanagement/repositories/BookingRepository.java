@@ -27,6 +27,15 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     @EntityGraph(attributePaths = {"bookingRooms", "bookingRooms.bookingRoomNights", "bookingRooms.room", "source"})
     List<Booking> findAllByCustomerProfile_User_IdOrderByCreatedAtDesc(Long userId);
 
+    @EntityGraph(attributePaths = {
+            "source",
+            "bookingRooms",
+            "bookingRooms.bookingRoomNights",
+            "bookingRooms.cancellationPolicy",
+            "statusHistory"
+    })
+    Optional<Booking> findOneByPublicIdAndCustomerProfile_User_Id(String publicId, Long userId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @EntityGraph(attributePaths = {
             "source",

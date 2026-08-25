@@ -76,16 +76,45 @@ export interface Booking {
   bookingCode: string;
   status: BookingStatus;
   paymentStatus: string;
+  sourceCode: string;
+  sourceCommissionPercentSnapshot: number | null;
   contactName: string;
-  contactEmail: string;
+  contactEmail: string | null;
   contactPhone: string | null;
   adults: number;
   children: number;
   roomsTotal: number;
   taxTotal: number;
+  roomTaxPercentSnapshot: number;
   totalAmount: number;
+  depositPercentSnapshot: number;
+  requiredDepositAmount: number;
   currency: string;
-  holdExpiresAt: string;
+  holdExpiresAt: string | null;
   rooms: BookingRoom[];
   createdAt: string;
+}
+
+export interface BookingStatusHistory {
+  fromStatus: BookingStatus | null;
+  toStatus: BookingStatus;
+  actorType: "USER" | "SYSTEM";
+  source: string;
+  reason: string | null;
+  createdAt: string | null;
+}
+
+export interface BookingDetail {
+  booking: Booking;
+  servicesTotal: number;
+  discountTotal: number;
+  paidAmount: number;
+  refundedAmount: number;
+  specialRequests: string | null;
+  confirmedAt: string | null;
+  checkedInAt: string | null;
+  checkedOutAt: string | null;
+  cancelledAt: string | null;
+  cancellationReason: string | null;
+  statusHistory: BookingStatusHistory[];
 }

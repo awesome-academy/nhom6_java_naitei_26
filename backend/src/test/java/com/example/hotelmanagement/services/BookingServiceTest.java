@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.booking.BookingCreateRequest;
+import com.example.hotelmanagement.dto.booking.BookingDetailResponse;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationRequest;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationResponse;
 import com.example.hotelmanagement.dto.booking.BookingResponse;
@@ -10,6 +11,7 @@ import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.BookingGuest;
 import com.example.hotelmanagement.entity.BookingRoom;
 import com.example.hotelmanagement.entity.BookingSource;
+import com.example.hotelmanagement.entity.BookingStatusHistory;
 import com.example.hotelmanagement.entity.CancellationPolicy;
 import com.example.hotelmanagement.entity.CustomerProfile;
 import com.example.hotelmanagement.entity.Room;
@@ -21,6 +23,7 @@ import com.example.hotelmanagement.entity.enums.StatusChangeSource;
 import com.example.hotelmanagement.entity.enums.UserStatus;
 import com.example.hotelmanagement.exceptions.BookingRoomConflictException;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
+import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.BookingGuestRepository;
 import com.example.hotelmanagement.repositories.BookingRepository;
 import com.example.hotelmanagement.repositories.BookingRoomRepository;
@@ -439,6 +442,62 @@ class BookingServiceTest {
 
         assertThat(responses).hasSize(1);
         assertThat(responses.getFirst().publicId()).isEqualTo("booking-public-id");
+    }
+
+    @Test
+    void getMyBookingDetailReturnsOwnedBookingWithOrderedTimeline() {
+        Booking booking = createPendingBookingWithRooms();
+        BookingStatusHistory createdHistory = BookingStatusHistory.builder()
+                .booking(booking)
+                .fromStatus(null)
+                .toStatus(BookingStatus.PENDING)
+                .actorType(ActorType.USER)
+                .changedBy(USER_ID)
+                .source(StatusChangeSource.MANUAL)
+                .build();
+        createdHistory.setCreatedAt(OffsetDateTime.parse("2026-08-20T08:00:00Z"));
+        BookingStatusHistory confirmedHistory = BookingStatusHistory.builder()
+                .booking(booking)
+                .fromStatus(BookingStatus.PENDING)
+                .toStatus(BookingStatus.CONFIRMED)
+                .actorType(ActorType.SYSTEM)
+                .source(StatusChangeSource.PAYMENT_CALLBACK)
+                .build();
+        confirmedHistory.setCreatedAt(OffsetDateTime.parse("2026-08-20T08:05:00Z"));
+        booking.getStatusHistory().add(confirmedHistory);
+        booking.getStatusHistory().add(createdHistory);
+
+        when(bookingRepository.findOneByPublicIdAndCustomerProfile_User_Id("booking-public-id", USER_ID))
+                .thenReturn(Optional.of(booking));
+
+        BookingDetailResponse response = bookingService.getMyBookingDetail("booking-public-id", USER_ID);
+
+        assertThat(response.booking().publicId()).isEqualTo("booking-public-id");
+        assertThat(response.booking().rooms()).hasSize(2);
+        assertThat(response.statusHistory())
+                .extracting(history -> history.toStatus())
+                .containsExactly(BookingStatus.PENDING, BookingStatus.CONFIRMED);
+    }
+
+    @Test
+    void getMyBookingDetailHidesBookingsNotOwnedByCurrentCustomer() {
+        when(bookingRepository.findOneByPublicIdAndCustomerProfile_User_Id("other-booking", USER_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> bookingService.getMyBookingDetail("other-booking", USER_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void getMyBookingDetailHidesCustomerRemovedPendingBooking() {
+        Booking removedBooking = createPendingBookingWithRooms();
+        removedBooking.setStatus(BookingStatus.CANCELLED);
+        removedBooking.setCancellationReason("Customer removed pending booking before payment");
+        when(bookingRepository.findOneByPublicIdAndCustomerProfile_User_Id("booking-public-id", USER_ID))
+                .thenReturn(Optional.of(removedBooking));
+
+        assertThatThrownBy(() -> bookingService.getMyBookingDetail("booking-public-id", USER_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     private CustomerProfile createCustomerProfile() {
