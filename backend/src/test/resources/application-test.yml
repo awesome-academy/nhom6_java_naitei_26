@@ -25,6 +25,8 @@ spring:
     port: 1025
 
 app:
+  email:
+    worker-enabled: false
   minio:
     endpoint: http://localhost:9000
     access-key: test-minio-access-key

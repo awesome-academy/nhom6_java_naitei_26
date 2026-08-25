@@ -2,11 +2,13 @@ package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.auth.AuthMessageResponse;
 import com.example.hotelmanagement.dto.auth.AuthResponse;
+import com.example.hotelmanagement.dto.auth.EmailVerificationRequest;
 import com.example.hotelmanagement.dto.auth.LoginRequest;
 import com.example.hotelmanagement.dto.auth.OAuthGoogleRequest;
 import com.example.hotelmanagement.dto.auth.RegisterRequest;
 import com.example.hotelmanagement.exceptions.AuthException;
 import com.example.hotelmanagement.config.AuthProperties;
+import com.example.hotelmanagement.entity.AuthToken;
 import com.example.hotelmanagement.entity.Role;
 import com.example.hotelmanagement.entity.User;
 import com.example.hotelmanagement.entity.enums.UserStatus;
@@ -130,6 +132,30 @@ class AuthServiceTest {
         assertThat(response.message()).isNotBlank();
         verify(authTokenService).createToken(savedUser, EMAIL_VERIFICATION, null);
         verify(emailService).sendVerificationEmail("guest@example.com", "Nguyen Van A", "verification-token");
+    }
+
+    @Test
+    void verifyEmailQueuesAccountActivatedMessageOnlyOnFirstVerification() {
+        User user = User.builder()
+                .publicId("public-id")
+                .email("guest@example.com")
+                .fullName("Guest")
+                .status(UserStatus.PENDING_VERIFICATION)
+                .build();
+        AuthToken token = AuthToken.builder()
+                .user(user)
+                .build();
+        when(authTokenService.findTokenForVerification("verification-token"))
+                .thenReturn(Optional.of(token));
+
+        AuthMessageResponse response = authService.verifyEmail(
+                new EmailVerificationRequest("verification-token")
+        );
+
+        assertThat(response.message()).isEqualTo("Xác thực email thành công");
+        assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(user.getEmailVerifiedAt()).isEqualTo(OffsetDateTime.now(FIXED_CLOCK));
+        verify(emailService).sendAccountActivatedEmail(user);
     }
 
     @Test

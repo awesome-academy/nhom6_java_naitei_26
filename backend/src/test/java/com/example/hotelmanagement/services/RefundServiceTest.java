@@ -80,6 +80,8 @@ class RefundServiceTest {
     private PaymentLedgerService paymentLedgerService;
     @Mock
     private HotelSettingsRepository hotelSettingsRepository;
+    @Mock
+    private EmailService emailService;
 
     private RefundService refundService;
 
@@ -91,6 +93,7 @@ class RefundServiceTest {
                 paymentRepository,
                 paymentLedgerService,
                 hotelSettingsRepository,
+                emailService,
                 new ObjectMapper(),
                 FIXED_CLOCK
         );
@@ -312,6 +315,7 @@ class RefundServiceTest {
         ArgumentCaptor<Refund> captor = ArgumentCaptor.forClass(Refund.class);
         verify(paymentLedgerService).synchronizeCompletedRefund(captor.capture());
         assertThat(captor.getValue()).isSameAs(refund);
+        verify(emailService).sendPaymentRefundEmail(refund);
     }
 
     @Test

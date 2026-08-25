@@ -1284,14 +1284,31 @@ Dòng 98-101, BR-006, BR-007.
 
 Trigger cưỡng chế **BR-006**: chỉ cho INSERT khi booking tương ứng có `status='CHECKED_OUT'` và `customer_id` khớp chủ booking. Không thể diễn đạt bằng CHECK vì phải đọc bảng khác.
 
-### 7.10. `email_messages`
+### 7.10. `email_templates`
+
+Danh mục nội dung email có version hiện tại để hệ thống render rồi snapshot sang `email_messages` trước khi worker gửi. Thay đổi template không được làm đổi nội dung của message đã xếp hàng hoặc đã gửi.
+
+| Cột                           | Kiểu         | Ràng buộc                | Giải thích                                                                                                                                    |
+| ------------------------------ | ------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                         | BIGINT        | PK                         |                                                                                                                                                 |
+| `code`                       | VARCHAR(60)   | NOT NULL, UNIQUE           | `EMAIL_VERIFICATION / PASSWORD_RESET / BOOKING_CONFIRMED / PAYMENT_SUCCESS / BOOKING_CANCELLED / PAYMENT_REFUND / ACCOUNT_ACTIVATED` |
+| `name`                       | VARCHAR(120)  | NOT NULL                   | Tên quản trị                                                                                                                              |
+| `description`                | TEXT          | NULL                       |                                                                                                                                                 |
+| `subject`                    | VARCHAR(300)  | NOT NULL                   | Có thể chứa placeholder `{{variable_name}}`                                                                                             |
+| `body_html` / `body_text`  | TEXT          | HTML NOT NULL, text NULL   | Giá trị biến phải được encode theo output context trước khi snapshot                                                                   |
+| `from_name` / `from_email` | VARCHAR       | NULL                       | Metadata sender mặc định của template; transport production vẫn lấy credentials từ secrets/config                                           |
+| `reply_to`                   | VARCHAR(255)  | NULL                       |                                                                                                                                                 |
+| `is_active`                  | BOOLEAN       | NOT NULL default true      | Template inactive không được tạo message mới                                                                                              |
+| `created_at` / `updated_at` | TIMESTAMPTZ | NOT NULL default now()     |                                                                                                                                                 |
+
+### 7.11. `email_messages`
 
 Dòng 174-177 (Admin soạn), 178-193 (System gửi).
 
 | Cột                           | Kiểu        | Ràng buộc                 | Giải thích                                                                                             |
 | ------------------------------ | ------------ | --------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `id`                         | BIGINT       | PK                          |                                                                                                          |
-| `template_code`              | VARCHAR(60)  | NULL                        | `ACTIVATION / PASSWORD_RESET / BOOKING_CONFIRMED / BOOKING_CANCELLED / PAYMENT_SUCCESS / ADMIN_CUSTOM` |
+| `template_code`              | VARCHAR(60)  | NULL                        | Mã template đã dùng để render; nội dung thực gửi nằm ở các cột snapshot bên dưới                                    |
 | `to_email`                   | CITEXT       | NOT NULL                    | Lưu địa chỉ thật, không chỉ`user_id` — user đổi email sau này thì lịch sử vẫn đúng    |
 | `to_user_id`                 | BIGINT       | NULL, FK→users SET NULL    |                                                                                                          |
 | `cc` / `bcc`               | TEXT         | NULL                        |                                                                                                          |
@@ -1309,7 +1326,9 @@ Dòng 174-177 (Admin soạn), 178-193 (System gửi).
 
 Index: `(status, scheduled_at)` cho worker lấy việc; `(to_email)`, `(related_booking_id)`.
 
-### 7.11. `audit_logs`
+Worker claim message trong transaction với pessimistic lock, chuyển `QUEUED → SENDING`, rồi mới gọi transport ngoài transaction. Thành công chuyển `SENT` và ghi `sent_at`; thất bại tăng `attempt_count`, retry tối đa 3 lần rồi chuyển `FAILED`. Message `SENDING` bị bỏ dở do worker chết được đưa lại queue sau timeout cấu hình.
+
+### 7.12. `audit_logs`
 
 | Cột                             | Kiểu       | Ràng buộc              | Giải thích                                                                 |
 | -------------------------------- | ----------- | ------------------------ | ---------------------------------------------------------------------------- |

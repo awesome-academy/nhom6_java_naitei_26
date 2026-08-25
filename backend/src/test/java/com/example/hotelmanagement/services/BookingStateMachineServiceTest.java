@@ -58,6 +58,8 @@ class BookingStateMachineServiceTest {
     private StaffProfileRepository staffProfileRepository;
     @Mock
     private InvoiceService invoiceService;
+    @Mock
+    private EmailService emailService;
 
     private BookingStateMachineService service;
 
@@ -67,6 +69,7 @@ class BookingStateMachineServiceTest {
                 bookingRepository,
                 staffProfileRepository,
                 invoiceService,
+                emailService,
                 FIXED_CLOCK
         );
     }
@@ -172,6 +175,7 @@ class BookingStateMachineServiceTest {
         assertThat(booking.getCancelledBy()).isEqualTo(CUSTOMER_USER_ID);
         assertThat(booking.getCancellationReason()).isEqualTo("Change of plans");
         assertLastHistoryEntry(booking, BookingStatus.PENDING, BookingStatus.CANCELLED, CUSTOMER_USER_ID);
+        verify(emailService).sendBookingCancelledEmail(booking);
     }
 
     @Test
@@ -233,6 +237,7 @@ class BookingStateMachineServiceTest {
         assertThat(history.getActorType()).isEqualTo(ActorType.SYSTEM);
         assertThat(history.getChangedBy()).isNull();
         assertThat(history.getSource()).isEqualTo(StatusChangeSource.PAYMENT_CALLBACK);
+        verify(emailService).sendBookingConfirmedEmail(booking);
     }
 
     @Test

@@ -79,6 +79,7 @@ public class RefundService {
     private final PaymentRepository paymentRepository;
     private final PaymentLedgerService paymentLedgerService;
     private final HotelSettingsRepository hotelSettingsRepository;
+    private final EmailService emailService;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
@@ -88,6 +89,7 @@ public class RefundService {
             PaymentRepository paymentRepository,
             PaymentLedgerService paymentLedgerService,
             HotelSettingsRepository hotelSettingsRepository,
+            EmailService emailService,
             ObjectMapper objectMapper,
             Clock clock
     ) {
@@ -96,6 +98,7 @@ public class RefundService {
         this.paymentRepository = paymentRepository;
         this.paymentLedgerService = paymentLedgerService;
         this.hotelSettingsRepository = hotelSettingsRepository;
+        this.emailService = emailService;
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
@@ -171,6 +174,7 @@ public class RefundService {
 
         Refund saved = refundRepository.saveAndFlush(refund);
         paymentLedgerService.synchronizeCompletedRefund(saved);
+        emailService.sendPaymentRefundEmail(saved);
         return mapResponse(saved);
     }
 

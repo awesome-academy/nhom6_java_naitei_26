@@ -50,6 +50,7 @@ public class PaymentCallbackService {
     private final PaymentEventRepository paymentEventRepository;
     private final PaymentLedgerService paymentLedgerService;
     private final BookingStateMachineService bookingStateMachineService;
+    private final EmailService emailService;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
@@ -59,6 +60,7 @@ public class PaymentCallbackService {
             PaymentEventRepository paymentEventRepository,
             PaymentLedgerService paymentLedgerService,
             BookingStateMachineService bookingStateMachineService,
+            EmailService emailService,
             ObjectMapper objectMapper,
             Clock clock
     ) {
@@ -67,6 +69,7 @@ public class PaymentCallbackService {
         this.paymentEventRepository = paymentEventRepository;
         this.paymentLedgerService = paymentLedgerService;
         this.bookingStateMachineService = bookingStateMachineService;
+        this.emailService = emailService;
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
@@ -161,6 +164,7 @@ public class PaymentCallbackService {
         paymentEventRepository.save(event);
         if (hasNewVerifiedSuccess) {
             PaymentLedgerResult ledgerResult = paymentLedgerService.synchronizeSuccessfulPayment(payment);
+            emailService.sendPaymentSuccessEmail(payment);
             if (ledgerResult.shouldConfirmBooking()) {
                 bookingStateMachineService.confirm(ledgerResult.bookingPublicId());
             }

@@ -2,10 +2,6 @@ package com.example.hotelmanagement.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-
-import java.time.OffsetDateTime;
 
 @Entity
 @Table(name = "email_templates")
@@ -15,10 +11,6 @@ import java.time.OffsetDateTime;
 @AllArgsConstructor
 @Builder
 public class EmailTemplate extends BaseEntity {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
 
     @Column(nullable = false, unique = true, length = 60)
     private String code;
@@ -51,11 +43,4 @@ public class EmailTemplate extends BaseEntity {
     @Builder.Default
     private Boolean isActive = true;
 
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private OffsetDateTime createdAt;
-
-    @UpdateTimestamp
-    @Column(name = "updated_at", nullable = false)
-    private OffsetDateTime updatedAt;
 }

@@ -82,6 +82,17 @@ management:
 app:
   hotel:
     time-zone: ${HOTEL_TIME_ZONE:Asia/Ho_Chi_Minh}
+  email:
+    worker-enabled: ${EMAIL_WORKER_ENABLED:true}
+    poll-interval: ${EMAIL_POLL_INTERVAL:30s}
+    retry-delay: ${EMAIL_RETRY_DELAY:30s}
+    sending-timeout: ${EMAIL_SENDING_TIMEOUT:5m}
+    max-attempts: ${EMAIL_MAX_ATTEMPTS:3}
+    batch-size: ${EMAIL_BATCH_SIZE:20}
+    provider: ${EMAIL_PROVIDER:SMTP}
+    from-address: ${EMAIL_FROM_ADDRESS:noreply@tripstay.vn}
+    from-name: ${EMAIL_FROM_NAME:TripStay}
+    reply-to: ${EMAIL_REPLY_TO:support@tripstay.vn}
   minio:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${MINIO_ACCESS_KEY:${MINIO_ROOT_USER:}}
