@@ -2,6 +2,7 @@ package com.example.hotelmanagement.repositories;
 
 import com.example.hotelmanagement.entity.Room;
 import com.example.hotelmanagement.entity.enums.BookingRoomStatus;
+import com.example.hotelmanagement.entity.enums.BookingStatus;
 import com.example.hotelmanagement.entity.enums.RoomOperationalStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Sort;
@@ -48,6 +49,66 @@ public interface RoomRepository extends JpaRepository<Room, Long>, JpaSpecificat
     boolean existsByRoomNumberIgnoreCaseAndDeletedAtIsNull(String roomNumber);
 
     long countByDeletedAtIsNullAndIsActiveTrue();
+
+    @Query("""
+            SELECT COUNT(room)
+            FROM Room room
+            WHERE room.deletedAt IS NULL
+              AND room.isActive = true
+              AND room.operationalStatus = :operationalStatus
+              AND room.roomType.deletedAt IS NULL
+              AND room.roomType.isActive = true
+            """)
+    long countActiveOperationalRooms(
+            @Param("operationalStatus") RoomOperationalStatus operationalStatus
+    );
+
+    @Query("""
+            SELECT COUNT(room)
+            FROM Room room
+            WHERE room.deletedAt IS NULL
+              AND room.isActive = true
+              AND room.operationalStatus = :operationalStatus
+              AND room.roomType.deletedAt IS NULL
+              AND room.roomType.isActive = true
+              AND NOT EXISTS (
+                    SELECT bookingRoom.id
+                    FROM BookingRoom bookingRoom
+                    WHERE bookingRoom.room.id = room.id
+                      AND bookingRoom.status IN :blockingStatuses
+                      AND bookingRoom.checkInDate < :nextDate
+                      AND bookingRoom.checkOutDate > :date
+                  )
+              AND NOT EXISTS (
+                    SELECT block.id
+                    FROM RoomStatusBlock block
+                    WHERE block.room.id = room.id
+                      AND block.startDate < :nextDate
+                      AND block.endDate > :date
+                  )
+            """)
+    long countAvailableOnDate(
+            @Param("date") LocalDate date,
+            @Param("nextDate") LocalDate nextDate,
+            @Param("operationalStatus") RoomOperationalStatus operationalStatus,
+            @Param("blockingStatuses") Set<BookingRoomStatus> blockingStatuses
+    );
+
+    @Query("""
+            SELECT COUNT(DISTINCT bookingRoom.room.id)
+            FROM BookingRoom bookingRoom
+            JOIN bookingRoom.booking booking
+            WHERE bookingRoom.status IN :blockingStatuses
+              AND bookingRoom.checkInDate < :nextDate
+              AND bookingRoom.checkOutDate > :date
+              AND booking.status IN :bookingStatuses
+            """)
+    long countOccupiedOrReservedOnDate(
+            @Param("date") LocalDate date,
+            @Param("nextDate") LocalDate nextDate,
+            @Param("blockingStatuses") Set<BookingRoomStatus> blockingStatuses,
+            @Param("bookingStatuses") Set<BookingStatus> bookingStatuses
+    );
 
     @Query("""
             SELECT room.roomType.id AS roomTypeId, room.id AS roomId
