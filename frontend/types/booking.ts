@@ -57,7 +57,7 @@ export interface BookingCreateRequest {
 }
 export interface BookingRoom {
   bookingRoomId: number;
-  roomNumber: string;
+  roomNumber: string | null;
   roomTypeCode: string;
   roomTypeName: string;
   checkInDate: string;

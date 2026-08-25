@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
+import java.util.List;
 
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, Long> {
@@ -20,6 +21,22 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     @EntityGraph(attributePaths = {"bookingRooms", "bookingRooms.bookingRoomNights", "bookingRooms.room", "source"})
     Optional<Booking> findByPublicId(String publicId);
+
+    @EntityGraph(attributePaths = {"bookingRooms", "bookingRooms.bookingRoomNights", "bookingRooms.room", "source"})
+    List<Booking> findAllByCustomerProfile_User_IdOrderByCreatedAtDesc(Long userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = {
+            "source",
+            "customerProfile",
+            "customerProfile.user",
+            "bookingRooms",
+            "bookingRooms.bookingRoomNights",
+            "bookingRooms.room",
+            "bookingRooms.cancellationPolicy",
+            "bookingGuests"
+    })
+    Optional<Booking> findByPublicIdAndCustomerProfile_User_Id(String publicId, Long userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT booking FROM Booking booking WHERE booking.publicId = :publicId")

@@ -1,352 +1,582 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
+import {
+  CalendarDays,
+  Clock,
+  Hotel,
+  Loader2,
+  ReceiptText,
+  Search,
+  Trash2,
+  Users,
+} from "lucide-react"
+import { toast } from "sonner"
+
 import { Badge, getBookingStatusVariant, getPaymentStatusVariant } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Search,
-  Calendar,
-  MapPin,
-  Clock,
-  Star,
-  Eye,
-  XCircle,
-  MessageSquare,
-} from "lucide-react"
+import { Separator } from "@/components/ui/separator"
+import { Skeleton } from "@/components/ui/skeleton"
+import { deletePendingBooking, deletePendingBookingRoom, getMyBookings } from "@/lib/api/booking"
+import type { Booking, BookingRoom, BookingStatus } from "@/types/booking"
 
-// Mock bookings data
-const bookings = [
-  {
-    id: "BK-2026-0001",
-    hotel: "TripStay Grand Hotel",
-    roomType: "Deluxe Ocean View",
-    room: "301",
-    address: "123 Đường Biển, Vũng Tàu",
-    checkIn: "2026-08-20",
-    checkOut: "2026-08-23",
-    nights: 3,
-    guests: 2,
-    status: "COMPLETED",
-    paymentStatus: "PAID",
-    total: "₫4,500,000",
-    paid: "₫4,500,000",
-    hasReview: true,
-  },
-  {
-    id: "BK-2026-0002",
-    hotel: "TripStay City Center",
-    roomType: "Standard Room",
-    room: "205",
-    address: "456 Đường Trung Tâm, TP.HCM",
-    checkIn: "2026-09-10",
-    checkOut: "2026-09-12",
-    nights: 2,
-    guests: 1,
-    status: "CONFIRMED",
-    paymentStatus: "PAID",
-    total: "₫2,200,000",
-    paid: "₫2,200,000",
-    hasReview: false,
-  },
-  {
-    id: "BK-2026-0003",
-    hotel: "TripStay Mountain Resort",
-    roomType: "VIP Suite",
-    room: "401",
-    address: "789 Đường Núi, Đà Lạt",
-    checkIn: "2026-08-25",
-    checkOut: "2026-08-28",
-    nights: 3,
-    guests: 2,
-    status: "UPCOMING",
-    paymentStatus: "PARTIALLY_PAID",
-    total: "₫7,500,000",
-    paid: "₫2,500,000",
-    hasReview: false,
-  },
-  {
-    id: "BK-2026-0004",
-    hotel: "TripStay Beach Resort",
-    roomType: "Beach Bungalow",
-    room: "B12",
-    address: "321 Đường Biển, Phú Quốc",
-    checkIn: "2026-07-15",
-    checkOut: "2026-07-18",
-    nights: 3,
-    guests: 2,
-    status: "COMPLETED",
-    paymentStatus: "PAID",
-    total: "₫5,400,000",
-    paid: "₫5,400,000",
-    hasReview: true,
-  },
-  {
-    id: "BK-2026-0005",
-    hotel: "TripStay Airport Hotel",
-    roomType: "Standard Room",
-    room: "118",
-    address: "Tân Sơn Nhất, TP.HCM",
-    checkIn: "2026-06-01",
-    checkOut: "2026-06-02",
-    nights: 1,
-    guests: 1,
-    status: "CANCELLED",
-    paymentStatus: "REFUNDED",
-    total: "₫800,000",
-    paid: "₫800,000",
-    hasReview: false,
-  },
+type DeleteTarget =
+  | { type: "booking"; booking: Booking }
+  | { type: "room"; booking: Booking; room: BookingRoom }
+
+const bookingStatusLabels: Record<BookingStatus, string> = {
+  PENDING: "Chờ xác nhận",
+  CONFIRMED: "Đã xác nhận",
+  CHECKED_IN: "Đang ở",
+  CHECKED_OUT: "Đã hoàn tất",
+  CANCELLED: "Đã hủy",
+  NO_SHOW: "Không đến",
+  EXPIRED: "Đã hết hạn",
+}
+
+const paymentStatusLabels: Record<string, string> = {
+  UNPAID: "Chưa thanh toán",
+  PARTIALLY_PAID: "Thanh toán một phần",
+  PAID: "Đã thanh toán",
+  PARTIALLY_REFUNDED: "Hoàn một phần",
+  REFUNDED: "Đã hoàn tiền",
+}
+
+const statusFilters = [
+  { value: "all", label: "Tất cả" },
+  { value: "active", label: "Đang giữ / sắp tới" },
+  { value: "staying", label: "Đang ở" },
+  { value: "completed", label: "Đã hoàn tất" },
+  { value: "cancelled", label: "Đã hủy / hết hạn" },
 ]
 
-const statusConfig: Record<string, { label: string; color: string }> = {
-  UPCOMING: { label: "Sắp tới", color: "text-blue-600" },
-  COMPLETED: { label: "Đã hoàn thành", color: "text-green-600" },
-  CANCELLED: { label: "Đã hủy", color: "text-red-600" },
-  ONGOING: { label: "Đang ở", color: "text-purple-600" },
+function money(value: number | string, currency = "VND") {
+  return new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: currency === "VND" ? 0 : 2,
+  }).format(Number(value) || 0)
+}
+
+function displayDate(value: string) {
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(`${value}T00:00:00`))
+}
+
+function displayDateTime(value: string) {
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value))
+}
+
+function getRoomNights(room: BookingRoom) {
+  if (room.nights.length > 0) return room.nights.length
+
+  const checkIn = new Date(`${room.checkInDate}T00:00:00`)
+  const checkOut = new Date(`${room.checkOutDate}T00:00:00`)
+  return Math.max(0, Math.round((checkOut.getTime() - checkIn.getTime()) / 86_400_000))
+}
+
+function getStayRange(booking: Booking) {
+  const checkInDates = booking.rooms.map((room) => room.checkInDate).sort()
+  const checkOutDates = booking.rooms.map((room) => room.checkOutDate).sort()
+  const firstCheckIn = checkInDates[0]
+  const lastCheckOut = checkOutDates[checkOutDates.length - 1]
+
+  if (!firstCheckIn || !lastCheckOut) return "Chưa có ngày lưu trú"
+  return `${displayDate(firstCheckIn)} - ${displayDate(lastCheckOut)}`
+}
+
+function getTotalNights(booking: Booking) {
+  return booking.rooms.reduce((sum, room) => sum + getRoomNights(room), 0)
+}
+
+function getRoomSummary(booking: Booking) {
+  const groupedRooms = new Map<string, number>()
+
+  booking.rooms.forEach((room) => {
+    groupedRooms.set(room.roomTypeName, (groupedRooms.get(room.roomTypeName) ?? 0) + 1)
+  })
+
+  return Array.from(groupedRooms.entries())
+    .map(([roomTypeName, count]) => `${count} ${roomTypeName}`)
+    .join(", ")
+}
+
+function getPaymentLabel(status: string) {
+  return paymentStatusLabels[status] ?? status
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Không thể thực hiện thao tác"
+}
+
+function matchesStatusFilter(booking: Booking, statusFilter: string) {
+  if (statusFilter === "all") return true
+  if (statusFilter === "active") return ["PENDING", "CONFIRMED"].includes(booking.status)
+  if (statusFilter === "staying") return booking.status === "CHECKED_IN"
+  if (statusFilter === "completed") return booking.status === "CHECKED_OUT"
+  if (statusFilter === "cancelled") {
+    return ["CANCELLED", "NO_SHOW", "EXPIRED"].includes(booking.status)
+  }
+  return true
 }
 
 export default function ProfileBookingsPage() {
+  const [bookings, setBookings] = useState<Booking[]>([])
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [isLoading, setIsLoading] = useState(true)
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
-  const filteredBookings = bookings.filter((booking) => {
-    const matchesSearch =
-      booking.id.toLowerCase().includes(search.toLowerCase()) ||
-      booking.hotel.toLowerCase().includes(search.toLowerCase())
-    const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "upcoming" && booking.status === "UPCOMING") ||
-      (statusFilter === "completed" && booking.status === "COMPLETED") ||
-      (statusFilter === "cancelled" && booking.status === "CANCELLED")
-    return matchesSearch && matchesStatus
-  })
+  useEffect(() => {
+    let ignore = false
 
-  const stats = {
+    async function loadBookings() {
+      setIsLoading(true)
+      try {
+        const data = await getMyBookings()
+        if (!ignore) setBookings(data)
+      } catch {
+        if (!ignore) {
+          toast.error("Không thể tải danh sách đặt phòng")
+        }
+      } finally {
+        if (!ignore) setIsLoading(false)
+      }
+    }
+
+    loadBookings()
+
+    return () => {
+      ignore = true
+    }
+  }, [])
+
+  const filteredBookings = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase()
+
+    return bookings.filter((booking) => {
+      const searchText = [
+        booking.bookingCode,
+        booking.contactName,
+        booking.contactEmail,
+        getRoomSummary(booking),
+        ...booking.rooms.flatMap((room) => [
+          room.roomNumber ?? "",
+          room.roomTypeCode,
+          room.roomTypeName,
+          room.cancellationPolicyName ?? "",
+        ]),
+      ].join(" ").toLowerCase()
+
+      const matchesSearch = normalizedSearch.length === 0 || searchText.includes(normalizedSearch)
+      return matchesSearch && matchesStatusFilter(booking, statusFilter)
+    })
+  }, [bookings, search, statusFilter])
+
+  const stats = useMemo(() => ({
     total: bookings.length,
-    upcoming: bookings.filter((b) => b.status === "UPCOMING").length,
-    completed: bookings.filter((b) => b.status === "COMPLETED").length,
-    cancelled: bookings.filter((b) => b.status === "CANCELLED").length,
+    active: bookings.filter((booking) => ["PENDING", "CONFIRMED"].includes(booking.status)).length,
+    staying: bookings.filter((booking) => booking.status === "CHECKED_IN").length,
+    completed: bookings.filter((booking) => booking.status === "CHECKED_OUT").length,
+  }), [bookings])
+
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return
+
+    setIsDeleting(true)
+    try {
+      if (deleteTarget.type === "booking") {
+        await deletePendingBooking(deleteTarget.booking.publicId)
+        setBookings((current) => current.filter((booking) => (
+          booking.publicId !== deleteTarget.booking.publicId
+        )))
+        toast.success("Đã xóa booking chờ thanh toán")
+      } else {
+        const updatedBooking = await deletePendingBookingRoom(
+          deleteTarget.booking.publicId,
+          deleteTarget.room.bookingRoomId,
+        )
+        setBookings((current) => {
+          if (!updatedBooking) {
+            return current.filter((booking) => booking.publicId !== deleteTarget.booking.publicId)
+          }
+          return current.map((booking) => (
+            booking.publicId === updatedBooking.publicId ? updatedBooking : booking
+          ))
+        })
+        toast.success("Đã xóa phòng khỏi booking")
+      }
+      setDeleteTarget(null)
+    } catch (error) {
+      toast.error(getErrorMessage(error))
+    } finally {
+      setIsDeleting(false)
+    }
   }
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-[var(--foreground)]">Đơn đặt phòng</h1>
-        <p className="text-sm text-[var(--muted-foreground)]">
-          Theo dõi lịch sử và trạng thái đơn đặt của bạn
-        </p>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">Đơn đặt phòng</h1>
+          <p className="text-sm text-muted-foreground">
+            Theo dõi các booking đã lưu từ hệ thống.
+          </p>
+        </div>
+        <Button asChild>
+          <Link href="/booking">
+            <Hotel data-icon="inline-start" />
+            Đặt phòng mới
+          </Link>
+        </Button>
       </div>
 
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--accent)]/10">
-                <Calendar className="h-5 w-5 text-[var(--accent)]" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats.total}</p>
-                <p className="text-sm text-[var(--muted-foreground)]">Tổng đơn</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
-                <Clock className="h-5 w-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats.upcoming}</p>
-                <p className="text-sm text-[var(--muted-foreground)]">Sắp tới</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
-                <Calendar className="h-5 w-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats.completed}</p>
-                <p className="text-sm text-[var(--muted-foreground)]">Đã hoàn thành</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-100">
-                <XCircle className="h-5 w-5 text-red-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{stats.cancelled}</p>
-                <p className="text-sm text-[var(--muted-foreground)]">Đã hủy</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid gap-3 md:grid-cols-4">
+        <StatCard icon={ReceiptText} label="Tổng đơn" value={stats.total} />
+        <StatCard icon={Clock} label="Đang giữ / sắp tới" value={stats.active} />
+        <StatCard icon={Hotel} label="Đang ở" value={stats.staying} />
+        <StatCard icon={CalendarDays} label="Đã hoàn tất" value={stats.completed} />
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Tìm theo mã đặt phòng, khách sạn..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Tìm theo mã booking, loại phòng, số phòng..."
+            className="pl-10"
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-full md:w-[220px]">
             <SelectValue placeholder="Trạng thái" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tất cả</SelectItem>
-            <SelectItem value="upcoming">Sắp tới</SelectItem>
-            <SelectItem value="completed">Đã hoàn thành</SelectItem>
-            <SelectItem value="cancelled">Đã hủy</SelectItem>
+            <SelectGroup>
+              {statusFilters.map((filter) => (
+                <SelectItem key={filter.value} value={filter.value}>
+                  {filter.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           </SelectContent>
         </Select>
       </div>
 
-      {/* Bookings List */}
-      <div className="space-y-4">
-        {filteredBookings.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Calendar className="h-12 w-12 text-[var(--muted-foreground)]" />
-              <p className="mt-4 text-lg font-medium text-[var(--foreground)]">
-                Không tìm thấy đơn đặt phòng
-              </p>
-              <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-                Hãy thử thay đổi bộ lọc hoặc tìm kiếm
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          filteredBookings.map((booking) => (
-            <Card
-              key={booking.id}
-              className="hover:border-[var(--accent)]/50 transition-colors"
+      {isLoading ? (
+        <div className="flex flex-col gap-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} className="h-44 w-full" />
+          ))}
+        </div>
+      ) : bookings.length === 0 ? (
+        <EmptyBookings />
+      ) : filteredBookings.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+            <p className="text-lg font-semibold">Không có</p>
+            <p className="max-w-md text-sm text-muted-foreground">
+              Không có booking nào khớp với bộ lọc hiện tại.
+            </p>
+            <Button variant="outline" onClick={() => {
+              setSearch("")
+              setStatusFilter("all")
+            }}>
+              Xóa bộ lọc
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {filteredBookings.map((booking) => (
+            <BookingCard
+              key={booking.publicId}
+              booking={booking}
+              onRequestDeleteBooking={(targetBooking) => {
+                setDeleteTarget({ type: "booking", booking: targetBooking })
+              }}
+              onRequestDeleteRoom={(targetBooking, room) => {
+                setDeleteTarget({ type: "room", booking: targetBooking, room })
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) setDeleteTarget(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {deleteTarget?.type === "booking" ? "Xóa booking chờ thanh toán?" : "Xóa phòng khỏi booking?"}
+            </DialogTitle>
+            <DialogDescription>
+              {deleteTarget?.type === "booking"
+                ? `Booking ${deleteTarget.booking.bookingCode} sẽ bị xóa khỏi danh sách và giải phóng các phòng đang giữ.`
+                : `${deleteTarget?.room.roomTypeName} sẽ được xóa khỏi booking ${deleteTarget?.booking.bookingCode}; tổng tiền sẽ được tính lại.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isDeleting}
+              onClick={() => setDeleteTarget(null)}
             >
-              <CardContent className="p-6">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  {/* Booking Info */}
-                  <div className="flex-1 space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm text-[var(--muted-foreground)]">
-                            {booking.id}
-                          </span>
-                          <Badge
-                            variant={
-                              booking.status === "COMPLETED"
-                                ? "success"
-                                : booking.status === "CANCELLED"
-                                ? "destructive"
-                                : "default"
-                            }
-                          >
-                            {statusConfig[booking.status]?.label || booking.status}
-                          </Badge>
-                        </div>
-                        <h3 className="mt-1 text-lg font-semibold text-[var(--foreground)]">
-                          {booking.hotel}
-                        </h3>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-lg font-bold text-[var(--foreground)]">
-                          {booking.total}
-                        </p>
-                        <p className="text-sm text-[var(--muted-foreground)]">
-                          {booking.paymentStatus === "PAID"
-                            ? "Đã thanh toán"
-                            : booking.paymentStatus === "PARTIALLY_PAID"
-                            ? `Đã trả ${booking.paid}`
-                            : booking.paymentStatus === "REFUNDED"
-                            ? "Đã hoàn tiền"
-                            : "Chưa thanh toán"}
-                        </p>
-                      </div>
-                    </div>
+              Giữ lại
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={isDeleting}
+              onClick={handleConfirmDelete}
+            >
+              {isDeleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
+              Xóa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
 
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      <div className="flex items-center gap-2 text-sm">
-                        <MapPin className="h-4 w-4 text-[var(--muted-foreground)]" />
-                        <span className="text-[var(--muted-foreground)]">{booking.address}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <Calendar className="h-4 w-4 text-[var(--muted-foreground)]" />
-                        <span>
-                          {booking.checkIn} → {booking.checkOut}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <Clock className="h-4 w-4 text-[var(--muted-foreground)]" />
-                        <span>{booking.nights} đêm · {booking.guests} khách</span>
-                      </div>
-                    </div>
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof ReceiptText
+  label: string
+  value: number
+}) {
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-3 p-4">
+        <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+          <Icon />
+        </div>
+        <div>
+          <p className="text-2xl font-semibold leading-none">{value}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{label}</p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-[var(--muted)] px-3 py-1 text-sm">
-                        {booking.roomType}
-                      </span>
-                      <span className="rounded-full bg-[var(--muted)] px-3 py-1 text-sm">
-                        Phòng {booking.room}
-                      </span>
-                    </div>
-                  </div>
+function EmptyBookings() {
+  return (
+    <Card>
+      <CardContent className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <div className="flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <CalendarDays />
+        </div>
+        <div className="flex flex-col gap-1">
+          <p className="text-lg font-semibold">Không có</p>
+          <p className="max-w-md text-sm text-muted-foreground">
+            Bạn chưa có đơn đặt phòng nào. Chọn phòng để tạo booking đầu tiên.
+          </p>
+        </div>
+        <Button asChild>
+          <Link href="/booking">
+            <Hotel data-icon="inline-start" />
+            Chuyển đến trang booking
+          </Link>
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
 
-                  {/* Actions */}
-                  <div className="flex flex-col gap-2 lg:min-w-[140px]">
-                    <Button variant="outline" size="sm" className="w-full">
-                      <Eye className="mr-2 h-4 w-4" />
-                      Chi tiết
-                    </Button>
-                    {booking.status === "COMPLETED" && !booking.hasReview && (
-                      <Button variant="outline" size="sm" className="w-full">
-                        <Star className="mr-2 h-4 w-4" />
-                        Viết đánh giá
-                      </Button>
-                    )}
-                    {booking.status === "UPCOMING" && (
-                      <Button variant="destructive" size="sm" className="w-full">
-                        <XCircle className="mr-2 h-4 w-4" />
-                        Hủy đặt phòng
-                      </Button>
-                    )}
-                    {booking.hasReview && (
-                      <Button variant="ghost" size="sm" className="w-full">
-                        <MessageSquare className="mr-2 h-4 w-4" />
-                        Xem đánh giá
-                      </Button>
-                    )}
-                  </div>
+function BookingCard({
+  booking,
+  onRequestDeleteBooking,
+  onRequestDeleteRoom,
+}: {
+  booking: Booking
+  onRequestDeleteBooking: (booking: Booking) => void
+  onRequestDeleteRoom: (booking: Booking, room: BookingRoom) => void
+}) {
+  const firstRoom = booking.rooms[0]
+  const roomCount = booking.rooms.length
+  const nightCount = getTotalNights(booking)
+  const guestCount = booking.adults + booking.children
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="gap-3 border-b pb-4">
+        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-sm text-muted-foreground">{booking.bookingCode}</span>
+              <Badge variant={getBookingStatusVariant(booking.status)}>
+                {bookingStatusLabels[booking.status] ?? booking.status}
+              </Badge>
+              <Badge variant={getPaymentStatusVariant(booking.paymentStatus)}>
+                {getPaymentLabel(booking.paymentStatus)}
+              </Badge>
+            </div>
+            <CardTitle className="text-xl">
+              {getRoomSummary(booking) || "TripStay Hotel"}
+            </CardTitle>
+          </div>
+          <div className="flex flex-col gap-1 md:text-right">
+            <span className="text-xl font-semibold">
+              {money(booking.totalAmount, booking.currency)}
+            </span>
+            <span className="text-sm text-muted-foreground">
+              VAT & phí: {money(booking.taxTotal, booking.currency)}
+            </span>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="flex flex-col gap-4 p-5">
+        <div className="grid gap-4 md:grid-cols-4">
+          <InfoBlock icon={CalendarDays} label="Ngày lưu trú" value={getStayRange(booking)} />
+          <InfoBlock icon={Clock} label="Số đêm" value={`${nightCount} đêm`} />
+          <InfoBlock icon={Hotel} label="Số phòng" value={`${roomCount} phòng`} />
+          <InfoBlock icon={Users} label="Khách dự kiến" value={`${guestCount} khách`} />
+        </div>
+
+        <Separator />
+
+        <div className="flex flex-col gap-3">
+          {booking.rooms.map((room) => (
+            <div key={room.bookingRoomId} className="overflow-hidden rounded-lg border bg-background">
+              <div className="flex items-start justify-between gap-3 border-b bg-muted/30 px-4 py-3">
+                <div className="flex flex-col gap-1">
+                  <span className="font-semibold">{room.roomTypeName}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {displayDate(room.checkInDate)} - {displayDate(room.checkOutDate)} · {getRoomNights(room)} đêm
+                  </span>
                 </div>
-              </CardContent>
-            </Card>
-          ))
+                <div className="flex shrink-0 items-start gap-2">
+                  <div className="text-right">
+                    <p className="font-semibold">{money(room.roomSubtotal, booking.currency)}</p>
+                    <p className="text-xs text-muted-foreground">Tiền phòng</p>
+                  </div>
+                  {booking.status === "PENDING" && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 text-destructive hover:bg-destructive/10"
+                      aria-label={`Xóa ${room.roomTypeName}`}
+                      onClick={() => onRequestDeleteRoom(booking, room)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="grid gap-3 px-4 py-3 text-sm sm:grid-cols-3">
+                <RoomMeta label="Chính sách hủy" value={room.cancellationPolicyName ?? "Chưa có chính sách hủy"} />
+                <RoomMeta
+                  label="Thanh toán"
+                  value={room.paymentOption === "PAY_AT_HOTEL" ? "Thanh toán tại khách sạn" : "Thanh toán trực tuyến"}
+                />
+                <RoomMeta label="Khách dự kiến" value={`${room.guestCount} khách`} />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-col justify-between gap-2 text-sm text-muted-foreground md:flex-row">
+          <span>Người liên hệ: {booking.contactName} · {booking.contactPhone ?? booking.contactEmail}</span>
+          <span>Tạo lúc {displayDateTime(booking.createdAt)}</span>
+        </div>
+
+        {booking.status === "PENDING" && booking.holdExpiresAt && (
+          <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+            Booking đang được giữ đến {displayDateTime(booking.holdExpiresAt)}.
+          </div>
         )}
+
+        {!firstRoom && (
+          <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+            Booking chưa có phòng lưu trú.
+          </div>
+        )}
+
+        {booking.status === "PENDING" && (
+          <div className="flex justify-end border-t pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-destructive/30 text-destructive hover:bg-destructive/10"
+              onClick={() => onRequestDeleteBooking(booking)}
+            >
+              <Trash2 />
+              Xóa booking
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function RoomMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs uppercase text-muted-foreground">{label}</span>
+      <span className="font-medium">{value}</span>
+    </div>
+  )
+}
+
+function InfoBlock({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof CalendarDays
+  label: string
+  value: string
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <Icon className="mt-0.5 text-muted-foreground" />
+      <div className="flex flex-col gap-1">
+        <span className="text-xs uppercase text-muted-foreground">{label}</span>
+        <span className="text-sm font-medium">{value}</span>
       </div>
     </div>
   )

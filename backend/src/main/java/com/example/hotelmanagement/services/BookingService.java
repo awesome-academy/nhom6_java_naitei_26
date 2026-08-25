@@ -19,6 +19,7 @@ import com.example.hotelmanagement.entity.Room;
 import com.example.hotelmanagement.entity.RoomType;
 import com.example.hotelmanagement.entity.User;
 import com.example.hotelmanagement.entity.enums.ActorType;
+import com.example.hotelmanagement.entity.enums.BookingPaymentStatus;
 import com.example.hotelmanagement.entity.enums.BookingRoomStatus;
 import com.example.hotelmanagement.entity.enums.BookingStatus;
 import com.example.hotelmanagement.entity.enums.RoomOperationalStatus;
@@ -26,6 +27,7 @@ import com.example.hotelmanagement.entity.enums.StatusChangeSource;
 import com.example.hotelmanagement.exceptions.BookingRoomConflictException;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
+import com.example.hotelmanagement.repositories.BookingGuestRepository;
 import com.example.hotelmanagement.repositories.BookingRepository;
 import com.example.hotelmanagement.repositories.BookingRoomRepository;
 import com.example.hotelmanagement.repositories.BookingSourceRepository;
@@ -49,6 +51,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -64,12 +67,16 @@ public class BookingService {
      * staff-assisted channels (WALK_IN/PHONE) are out of scope until STAFF is granted booking:create.
      */
     private static final String WEBSITE_SOURCE_CODE = "WEBSITE";
+    private static final String CUSTOMER_REMOVED_PENDING_BOOKING_REASON =
+            "Customer removed pending booking before payment";
     private static final Duration HOLD_DURATION = Duration.ofMinutes(15);
+    private static final BigDecimal ONE_HUNDRED = new BigDecimal("100.00");
     private static final Set<BookingRoomStatus> ACTIVE_BOOKING_STATUSES =
             Set.of(BookingRoomStatus.RESERVED, BookingRoomStatus.OCCUPIED);
     private static final int BOOKING_CODE_MAX_ATTEMPTS = 5;
 
     private final BookingRepository bookingRepository;
+    private final BookingGuestRepository bookingGuestRepository;
     private final BookingRoomRepository bookingRoomRepository;
     private final BookingSourceRepository bookingSourceRepository;
     private final CustomerProfileRepository customerProfileRepository;
@@ -83,6 +90,8 @@ public class BookingService {
     @Autowired
     public BookingService(
             BookingRepository bookingRepository,
+            BookingGuestRepository bookingGuestRepository,
+            BookingRoomRepository bookingRoomRepository,
             BookingSourceRepository bookingSourceRepository,
             CustomerProfileRepository customerProfileRepository,
             RoomRepository roomRepository,
@@ -92,13 +101,37 @@ public class BookingService {
             Clock clock
     ) {
         this.bookingRepository = bookingRepository;
-        this.bookingRoomRepository = null;
+        this.bookingGuestRepository = bookingGuestRepository;
+        this.bookingRoomRepository = bookingRoomRepository;
         this.bookingSourceRepository = bookingSourceRepository;
         this.customerProfileRepository = customerProfileRepository;
         this.roomRepository = roomRepository;
         this.bookingCalculatorService = bookingCalculatorService;
         this.cancellationPolicyService = cancellationPolicyService;
         this.bookingOptionResolverService = bookingOptionResolverService;
+        this.clock = clock;
+    }
+
+    public BookingService(
+            BookingRepository bookingRepository,
+            BookingRoomRepository bookingRoomRepository,
+            BookingGuestRepository bookingGuestRepository,
+            BookingSourceRepository bookingSourceRepository,
+            CustomerProfileRepository customerProfileRepository,
+            RoomRepository roomRepository,
+            BookingCalculatorService bookingCalculatorService,
+            CancellationPolicyService cancellationPolicyService,
+            Clock clock
+    ) {
+        this.bookingRepository = bookingRepository;
+        this.bookingGuestRepository = bookingGuestRepository;
+        this.bookingRoomRepository = bookingRoomRepository;
+        this.bookingSourceRepository = bookingSourceRepository;
+        this.customerProfileRepository = customerProfileRepository;
+        this.roomRepository = roomRepository;
+        this.bookingCalculatorService = bookingCalculatorService;
+        this.cancellationPolicyService = cancellationPolicyService;
+        this.bookingOptionResolverService = null;
         this.clock = clock;
     }
 
@@ -112,15 +145,17 @@ public class BookingService {
             CancellationPolicyService cancellationPolicyService,
             Clock clock
     ) {
-        this.bookingRepository = bookingRepository;
-        this.bookingRoomRepository = bookingRoomRepository;
-        this.bookingSourceRepository = bookingSourceRepository;
-        this.customerProfileRepository = customerProfileRepository;
-        this.roomRepository = roomRepository;
-        this.bookingCalculatorService = bookingCalculatorService;
-        this.cancellationPolicyService = cancellationPolicyService;
-        this.bookingOptionResolverService = null;
-        this.clock = clock;
+        this(
+                bookingRepository,
+                bookingRoomRepository,
+                null,
+                bookingSourceRepository,
+                customerProfileRepository,
+                roomRepository,
+                bookingCalculatorService,
+                cancellationPolicyService,
+                clock
+        );
     }
 
     @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
@@ -262,6 +297,108 @@ public class BookingService {
         }
     }
 
+    @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
+    public List<BookingResponse> getMyBookings(Long userId) {
+        return bookingRepository.findAllByCustomerProfile_User_IdOrderByCreatedAtDesc(userId)
+                .stream()
+                .filter(booking -> !isCustomerRemovedPendingBooking(booking))
+                .map(this::mapResponse)
+                .toList();
+    }
+
+    @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
+    public BookingResponse removePendingBookingRoom(
+            String bookingPublicId,
+            Long bookingRoomId,
+            Long userId
+    ) {
+        Booking booking = getPendingCustomerBookingForUpdate(bookingPublicId, userId);
+        BookingRoom bookingRoom = booking.getBookingRooms().stream()
+                .filter(room -> bookingRoomId.equals(room.getId()))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Booking room",
+                        String.valueOf(bookingRoomId)
+                ));
+
+        if (booking.getBookingRooms().size() == 1) {
+            deletePendingBooking(bookingPublicId, userId);
+            return null;
+        }
+
+        booking.getBookingGuests().removeIf(guest ->
+                guest.getBookingRoom() != null && bookingRoomId.equals(guest.getBookingRoom().getId())
+        );
+        bookingGuestRepository.deleteAllByBookingRoomId(bookingRoomId);
+        booking.getBookingRooms().remove(bookingRoom);
+        bookingRoomRepository.delete(bookingRoom);
+
+        recalculatePendingBookingTotals(booking);
+        return mapResponse(bookingRepository.saveAndFlush(booking));
+    }
+
+    @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
+    public void deletePendingBooking(String bookingPublicId, Long userId) {
+        Booking booking = getPendingCustomerBookingForUpdate(bookingPublicId, userId);
+        booking.setStatus(BookingStatus.CANCELLED);
+        booking.setCancelledAt(OffsetDateTime.now(clock));
+        booking.setCancelledBy(userId);
+        booking.setCancellationReason(CUSTOMER_REMOVED_PENDING_BOOKING_REASON);
+        bookingRepository.saveAndFlush(booking);
+    }
+
+    private boolean isCustomerRemovedPendingBooking(Booking booking) {
+        return booking.getStatus() == BookingStatus.CANCELLED
+                && CUSTOMER_REMOVED_PENDING_BOOKING_REASON.equals(booking.getCancellationReason());
+    }
+
+    private Booking getPendingCustomerBookingForUpdate(String bookingPublicId, Long userId) {
+        Booking booking = bookingRepository
+                .findByPublicIdAndCustomerProfile_User_Id(bookingPublicId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", bookingPublicId));
+        if (booking.getStatus() != BookingStatus.PENDING) {
+            throw new BusinessValidationException("Only pending bookings can be changed before payment");
+        }
+        if (booking.getPaymentStatus() != BookingPaymentStatus.UNPAID
+                || booking.getPaidAmount().compareTo(BigDecimal.ZERO) > 0) {
+            throw new BusinessValidationException("Bookings with received payments cannot be deleted here");
+        }
+        return booking;
+    }
+
+    private void recalculatePendingBookingTotals(Booking booking) {
+        BigDecimal roomsTotal = booking.getBookingRooms().stream()
+                .map(BookingRoom::getRoomSubtotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal taxPercent = booking.getRoomTaxPercentSnapshot() == null
+                ? BigDecimal.ZERO
+                : booking.getRoomTaxPercentSnapshot();
+        BigDecimal taxTotal = roomsTotal.multiply(taxPercent)
+                .divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
+        BigDecimal servicesTotal = booking.getServicesTotal() == null
+                ? BigDecimal.ZERO
+                : booking.getServicesTotal();
+        BigDecimal discountTotal = booking.getDiscountTotal() == null
+                ? BigDecimal.ZERO
+                : booking.getDiscountTotal();
+        BigDecimal totalAmount = roomsTotal.add(servicesTotal)
+                .add(taxTotal)
+                .subtract(discountTotal)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        int adults = Math.max(1, booking.getBookingRooms().stream()
+                .mapToInt(room -> room.getGuestCount() == null ? 0 : room.getGuestCount())
+                .sum());
+
+        booking.setAdults(adults);
+        booking.setChildren(0);
+        booking.setRoomsTotal(roomsTotal);
+        booking.setTaxTotal(taxTotal);
+        booking.setTotalAmount(totalAmount);
+    }
+
     private Room assignAvailableRoom(BookingRoomCreateItem item) {
         if (!item.checkOutDate().isAfter(item.checkInDate())) {
             throw new BusinessValidationException("Check-out date must be after check-in date");
@@ -365,7 +502,7 @@ public class BookingService {
     private BookingRoomResponse mapRoomResponse(BookingRoom bookingRoom) {
         return new BookingRoomResponse(
                 bookingRoom.getId(),
-                bookingRoom.getRoom().getRoomNumber(),
+                null,
                 bookingRoom.getRoomTypeCodeSnapshot(),
                 bookingRoom.getRoomTypeNameSnapshot(),
                 bookingRoom.getCheckInDate(),

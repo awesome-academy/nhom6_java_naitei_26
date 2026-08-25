@@ -24,6 +24,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -64,6 +65,45 @@ public class BookingController {
     ) {
         BookingResponse response = bookingService.createBooking(request, principal.getId());
         return ResponseEntity.created(URI.create("/api/bookings/" + response.publicId())).body(response);
+    }
+
+    @Operation(summary = "Get My Bookings")
+    @GetMapping("/me")
+    @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
+    public ResponseEntity<List<BookingResponse>> getMyBookings(
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(bookingService.getMyBookings(principal.getId()));
+    }
+
+    @Operation(summary = "Delete Pending Booking")
+    @DeleteMapping("/{publicId}")
+    @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
+    public ResponseEntity<Void> deletePendingBooking(
+            @PathVariable String publicId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        bookingService.deletePendingBooking(publicId, principal.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Remove Room From Pending Booking")
+    @DeleteMapping("/{publicId}/rooms/{bookingRoomId}")
+    @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
+    public ResponseEntity<BookingResponse> removePendingBookingRoom(
+            @PathVariable String publicId,
+            @PathVariable Long bookingRoomId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        BookingResponse response = bookingService.removePendingBookingRoom(
+                publicId,
+                bookingRoomId,
+                principal.getId()
+        );
+        if (response == null) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(response);
     }
 
     @Operation(summary = "Check In")
