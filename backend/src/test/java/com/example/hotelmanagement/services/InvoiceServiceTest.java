@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.invoice.InvoiceAdjustmentRequest;
+import com.example.hotelmanagement.dto.invoice.InvoiceBuyerUpdateRequest;
 import com.example.hotelmanagement.dto.invoice.InvoiceResponse;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.BookingRoom;
@@ -192,6 +193,44 @@ class InvoiceServiceTest {
                 .isInstanceOf(BusinessValidationException.class)
                 .hasMessageContaining("without booking room nights");
         verifyNoInteractions(folioChargeRepository);
+        verify(invoiceRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void updateBuyerNormalizesDraftBuyerFields() {
+        Invoice invoice = draftInvoiceWithRoomLine();
+        when(invoiceRepository.findForUpdateByPublicId(INVOICE_PUBLIC_ID))
+                .thenReturn(Optional.of(invoice));
+        when(invoiceRepository.saveAndFlush(invoice)).thenReturn(invoice);
+
+        InvoiceResponse response = invoiceService.updateBuyer(
+                INVOICE_PUBLIC_ID,
+                new InvoiceBuyerUpdateRequest(
+                        "  Nguyen Van B  ",
+                        "  123 Le Loi, Da Nang  ",
+                        "   ",
+                        "  buyer@example.com  "
+                )
+        );
+
+        assertThat(response.buyerName()).isEqualTo("Nguyen Van B");
+        assertThat(response.buyerAddress()).isEqualTo("123 Le Loi, Da Nang");
+        assertThat(response.buyerTaxCode()).isNull();
+        assertThat(response.buyerEmail()).isEqualTo("buyer@example.com");
+        verify(invoiceRepository).saveAndFlush(invoice);
+    }
+
+    @Test
+    void updateBuyerRejectsInvoiceThatIsNotDraft() {
+        Invoice invoice = issuedInvoiceWithRoomLine();
+        when(invoiceRepository.findForUpdateByPublicId(INVOICE_PUBLIC_ID))
+                .thenReturn(Optional.of(invoice));
+
+        assertThatThrownBy(() -> invoiceService.updateBuyer(
+                INVOICE_PUBLIC_ID,
+                new InvoiceBuyerUpdateRequest("Buyer", null, null, null)
+        )).isInstanceOf(BusinessValidationException.class)
+                .hasMessageContaining("DRAFT");
         verify(invoiceRepository, never()).saveAndFlush(any());
     }
 

@@ -20,6 +20,7 @@ import { BookingFilters, BookingFilterValues } from "./BookingFilters";
 import { BookingStatsCards } from "./BookingStatsCards";
 import { RoomAssignmentModal } from "./RoomAssignmentModal";
 import { FolioPanel } from "@/components/admin/bookings/folio-panel";
+import { InvoicePanel } from "@/components/admin/bookings/invoice-panel";
 import {
   getBookings,
   getBookingDetail,
@@ -35,6 +36,7 @@ import {
   BookingListFilterRequest,
   BookingStatus,
   FolioChargeResponse,
+  InvoiceResponse,
 } from "@/types/booking-staff";
 import type { ServiceItemOption } from "@/types/folio";
 import { useAuth } from "@/lib/auth-context";
@@ -118,6 +120,8 @@ export function StaffBookingsPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const canManageFolio = user?.permissions.includes("invoice:issue") ?? false;
+  const canIssueInvoice = user?.permissions.includes("invoice:issue") ?? false;
+  const canVoidInvoice = user?.permissions.includes("invoice:void") ?? false;
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // State
@@ -301,6 +305,47 @@ export function StaffBookingsPage() {
     });
     void refreshFolioAfterMutation(charge.bookingPublicId);
   }, [refreshFolioAfterMutation]);
+
+  const refreshInvoiceAfterMutation = useCallback(async (bookingPublicId: string) => {
+    const [detailResult, listResult] = await Promise.allSettled([
+      getBookingDetail(bookingPublicId),
+      loadBookings(),
+    ]);
+
+    if (detailResult.status === "fulfilled") {
+      setSelectedBooking((current) =>
+        current?.publicId === bookingPublicId ? detailResult.value : current
+      );
+    }
+
+    const listRefreshFailed = listResult.status === "rejected" || !listResult.value;
+    if (detailResult.status === "rejected" || listRefreshFailed) {
+      console.error("Failed to refresh invoice after mutation", {
+        bookingPublicId,
+        detailError: detailResult.status === "rejected" ? detailResult.reason : null,
+        listError: listResult.status === "rejected" ? listResult.reason : null,
+      });
+      toast.warning(
+        "Hóa đơn đã được cập nhật, nhưng dữ liệu booking chưa thể đồng bộ. Vui lòng tải lại."
+      );
+    }
+  }, [loadBookings]);
+
+  const handleInvoiceChanged = useCallback((invoice: InvoiceResponse, refresh = false) => {
+    setSelectedBooking((current) => {
+      if (!current || current.publicId !== invoice.bookingPublicId) return current;
+
+      const exists = current.invoices.some((item) => item.publicId === invoice.publicId);
+      const invoices = exists
+        ? current.invoices.map((item) => item.publicId === invoice.publicId ? invoice : item)
+        : [...current.invoices, invoice];
+      return { ...current, invoices };
+    });
+
+    if (refresh) {
+      void refreshInvoiceAfterMutation(invoice.bookingPublicId);
+    }
+  }, [refreshInvoiceAfterMutation]);
 
   // Confirm booking
   const handleConfirm = async () => {
@@ -615,6 +660,7 @@ export function StaffBookingsPage() {
                   <TabsTrigger value="rooms">Phòng</TabsTrigger>
                   <TabsTrigger value="guests">Khách</TabsTrigger>
                   <TabsTrigger value="folio">Folio</TabsTrigger>
+                  <TabsTrigger value="invoice">Hóa đơn</TabsTrigger>
                   <TabsTrigger value="payments">Thanh toán</TabsTrigger>
                   <TabsTrigger value="history">Lịch sử</TabsTrigger>
                 </TabsList>
@@ -789,6 +835,16 @@ export function StaffBookingsPage() {
                     serviceItemsError={serviceItemsError}
                     onRetryServiceItems={loadServiceItems}
                     onChargeChanged={handleFolioChargeChanged}
+                  />
+                </TabsContent>
+
+                {/* Invoice Tab */}
+                <TabsContent value="invoice" className="mt-5">
+                  <InvoicePanel
+                    booking={selectedBooking}
+                    canIssue={canIssueInvoice}
+                    canVoid={canVoidInvoice}
+                    onChanged={handleInvoiceChanged}
                   />
                 </TabsContent>
 
