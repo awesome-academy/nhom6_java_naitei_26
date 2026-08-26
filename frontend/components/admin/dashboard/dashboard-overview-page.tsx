@@ -62,7 +62,7 @@ function formatChange(value: number | null) {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}% so với tháng trước`
 }
 
-export function DashboardOverviewPage() {
+export function DashboardOverviewPage({ portal = "/manager" }: { portal?: "/manager" }) {
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth()
   const [overview, setOverview] = useState<DashboardOverview | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -125,10 +125,10 @@ export function DashboardOverviewPage() {
         <>
           <SummaryCards overview={overview} />
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(20rem,0.75fr)]">
-            <ArrivalsCard arrivals={overview.arrivals} />
-            <OccupancyCard overview={overview} />
+            <ArrivalsCard arrivals={overview.arrivals} portal={portal} />
+            <OccupancyCard overview={overview} portal={portal} />
           </div>
-          <QuickActions />
+          <QuickActions portal={portal} />
         </>
       ) : null}
     </main>
@@ -195,7 +195,7 @@ function SummaryCards({ overview }: { overview: DashboardOverview }) {
   )
 }
 
-function ArrivalsCard({ arrivals }: { arrivals: DashboardStayItem[] }) {
+function ArrivalsCard({ arrivals, portal }: { arrivals: DashboardStayItem[]; portal: "/manager" }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -241,7 +241,7 @@ function ArrivalsCard({ arrivals }: { arrivals: DashboardStayItem[] }) {
                     </td>
                     <td className="px-3 py-3 text-right">
                       <Button variant="ghost" size="sm" asChild>
-                        <Link href="/admin/bookings">
+                        <Link href={`${portal}/bookings`}>
                           Xem <ChevronRight data-icon="inline-end" />
                         </Link>
                       </Button>
@@ -257,7 +257,7 @@ function ArrivalsCard({ arrivals }: { arrivals: DashboardStayItem[] }) {
   )
 }
 
-function OccupancyCard({ overview }: { overview: DashboardOverview }) {
+function OccupancyCard({ overview, portal }: { overview: DashboardOverview; portal: "/manager" }) {
   const maxOccupancy = Math.max(...overview.occupancyNext7Days.map((day) => day.occupancyPercent), 1)
 
   return (
@@ -287,14 +287,14 @@ function OccupancyCard({ overview }: { overview: DashboardOverview }) {
         </div>
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>Hôm nay còn {overview.roomSummary.availableRooms} phòng trống</span>
-          <Link href="/admin/rooms" className="font-medium text-primary hover:underline">Quản lý phòng</Link>
+          <Link href={`${portal}/rooms`} className="font-medium text-primary hover:underline">Quản lý phòng</Link>
         </div>
       </CardContent>
     </Card>
   )
 }
 
-function QuickActions() {
+function QuickActions({ portal }: { portal: "/manager" }) {
   return (
     <Card>
       <CardHeader>
@@ -303,12 +303,12 @@ function QuickActions() {
       </CardHeader>
       <CardContent className="grid gap-3 sm:grid-cols-3">
         <Button variant="outline" className="justify-start" asChild>
-          <Link href="/admin/bookings">
+          <Link href={`${portal}/bookings`}>
             <ArrowDownToLine data-icon="inline-start" /> Check-in
           </Link>
         </Button>
         <Button variant="outline" className="justify-start" asChild>
-          <Link href="/admin/bookings">
+          <Link href={`${portal}/bookings`}>
             <ArrowUpFromLine data-icon="inline-start" /> Check-out
           </Link>
         </Button>

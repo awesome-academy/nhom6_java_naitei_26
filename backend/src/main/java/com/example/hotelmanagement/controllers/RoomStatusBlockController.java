@@ -52,7 +52,7 @@ public class RoomStatusBlockController {
 
     @Operation(summary = "Create Block")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
+    @PreAuthorize(PermissionExpressions.MAINTENANCE_MANAGE)
     public ResponseEntity<RoomStatusBlockResponse> createBlock(
             @Valid @RequestBody RoomStatusBlockCreateRequest request,
             @AuthenticationPrincipal UserPrincipal principal
@@ -64,7 +64,7 @@ public class RoomStatusBlockController {
 
     @Operation(summary = "Extend Block")
     @PatchMapping(value = "/{publicId}/extend", consumes = MediaType.APPLICATION_JSON_VALUE)
-    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
+    @PreAuthorize(PermissionExpressions.MAINTENANCE_MANAGE)
     public ResponseEntity<RoomStatusBlockResponse> extendBlock(
             @PathVariable UUID publicId,
             @Valid @RequestBody RoomStatusBlockExtendRequest request
@@ -74,7 +74,7 @@ public class RoomStatusBlockController {
 
     @Operation(summary = "Delete Block")
     @DeleteMapping("/{publicId}")
-    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
+    @PreAuthorize(PermissionExpressions.MAINTENANCE_MANAGE)
     public ResponseEntity<Void> deleteBlock(@PathVariable UUID publicId) {
         roomStatusBlockService.deleteBlock(publicId);
         return ResponseEntity.noContent().build();

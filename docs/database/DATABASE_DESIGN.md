@@ -95,7 +95,7 @@ Mỗi thực thể dưới đây tồn tại vì một câu trong tài liệu y�
 **Feedback, Comms, Audit**
 
 - **Review** — dòng 98-101: chỉ khách đã hoàn tất lưu trú mới được đánh giá; đánh giá phòng, chất lượng, nhân viên/dịch vụ; **mỗi booking tối đa một review** (BR-007) → `booking_id UNIQUE`.
-- **EmailMessage** — dòng 174-177 và 185-193: Admin soạn email, System gửi, "lưu trạng thái gửi và lịch sử email". Cần cho retry khi gửi lỗi và cho việc chứng minh đã gửi email xác nhận booking.
+- **EmailMessage** — dòng 174-177 và 185-193: Back-office có quyền `email:send` soạn email theo booking, System gửi, "lưu trạng thái gửi và lịch sử email". Cần cho retry khi gửi lỗi và cho việc chứng minh đã gửi email xác nhận booking.
 - **AuditLog** — BR-008 nhắc "audit", dòng 167 nhắc "audit history". Ghi thao tác đổi giá, hủy booking, void hóa đơn.
 
 ### 2.3. Quan hệ giữa các thực thể
@@ -211,6 +211,8 @@ Tài khoản đăng nhập. Không chứa thuộc tính riêng của khách hay 
 | `user_roles`       | `user_id`, `role_id`, `assigned_at`, `assigned_by`  | PK kép và UNIQUE(`user_id`), bảo đảm một User chỉ có một role hiện tại;`assigned_by` để audit ai cấp quyền                                       |
 
 Role vẫn là bảng riêng thay vì enum trong `users` để quyền được cấu hình qua `role_permissions`; bảng nối chỉ còn giữ tương thích với RBAC hiện tại và bị giới hạn một dòng trên mỗi User.
+
+`maintenance:manage` là quyền riêng để tạo, gia hạn và xóa `room_status_blocks`. STAFF chỉ có `room:read` đối với Room/RoomType, nhưng có thể vận hành lịch bảo trì bằng quyền này; không dùng `room:update` cho maintenance để Staff không thể sửa master data của phòng.
 
 ### 3.3. `customer_profiles`
 
@@ -1324,7 +1326,7 @@ Danh mục nội dung email có version hiện tại để hệ thống render r
 
 ### 7.11. `email_messages`
 
-Dòng 174-177 (Admin soạn), 178-193 (System gửi).
+Dòng 174-177 (back-office có `email:send` soạn theo booking), 178-193 (System gửi). Recipient của email soạn tay luôn là `bookings.contact_email`; không nhận recipient/CC/BCC từ client để tránh lạm dụng gửi mail.
 
 | Cột                           | Kiểu        | Ràng buộc                 | Giải thích                                                                                             |
 | ------------------------------ | ------------ | --------------------------- | -------------------------------------------------------------------------------------------------------- |

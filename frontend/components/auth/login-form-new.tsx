@@ -82,7 +82,7 @@ export function LoginFormNew() {
 
       if (isBackOfficeUser(response.user)) {
         clearAuth()
-        setError("Tài khoản quản trị cần đăng nhập tại trang /admin/login.")
+        setError("Tài khoản Manager cần đăng nhập tại trang /manager/login.")
         return
       }
 

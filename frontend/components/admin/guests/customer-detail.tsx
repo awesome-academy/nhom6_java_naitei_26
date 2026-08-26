@@ -153,7 +153,7 @@ export function CustomerDetail({ publicId }: { publicId: string }) {
         <p className="text-sm text-destructive">{loadError ?? "Không tìm thấy khách hàng"}</p>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => void loadDetail()}>Thử lại</Button>
-          <Button asChild><Link href="/admin/guests">Quay lại danh sách</Link></Button>
+          <Button asChild><Link href="/manager/guests">Quay lại danh sách</Link></Button>
         </div>
       </div>
     )
@@ -166,7 +166,7 @@ export function CustomerDetail({ publicId }: { publicId: string }) {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <Button asChild variant="ghost" className="w-fit px-0">
-          <Link href="/admin/guests">
+          <Link href="/manager/guests">
             <ArrowLeft data-icon="inline-start" />
             Quay lại danh sách
           </Link>

@@ -65,7 +65,7 @@ function GoogleOAuthCallbackContent() {
 
         if (isBackOfficeUser(user)) {
           setStatus("error")
-          setErrorMessage("Tài khoản quản trị không đăng nhập bằng Google trên website khách hàng. Vui lòng dùng /admin/login.")
+          setErrorMessage("Tài khoản Manager không đăng nhập bằng Google trên website khách hàng. Vui lòng dùng /manager/login.")
           return
         }
 

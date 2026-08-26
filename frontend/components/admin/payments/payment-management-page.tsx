@@ -101,7 +101,7 @@ function isReceived(status: PaymentStatus) {
   return status === "SUCCEEDED" || status === "PARTIALLY_REFUNDED" || status === "REFUNDED"
 }
 
-export function PaymentManagementPage() {
+export function PaymentManagementPage({ portal = "/manager" }: { portal?: "/manager" }) {
   const router = useRouter()
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth()
   const [filters, setFilters] = useState(EMPTY_FILTERS)
@@ -122,9 +122,9 @@ export function PaymentManagementPage() {
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
-      router.replace("/admin/login?redirect=%2Fadmin%2Fpayments")
+      router.replace(`/manager/login?redirect=${encodeURIComponent(`${portal}/payments`)}`)
     }
-  }, [isAuthLoading, isAuthenticated, router])
+  }, [isAuthLoading, isAuthenticated, portal, router])
 
   const loadPayments = useCallback(async () => {
     if (!isAuthenticated) return
