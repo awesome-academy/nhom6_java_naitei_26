@@ -1,6 +1,5 @@
 import { Suspense } from "react"
 import Link from "next/link"
-import { AuthLayoutNew } from "@/components/auth/auth-layout-new"
 import { ResetPasswordFormNew } from "@/components/auth/reset-password-form-new"
 
 function ResetPasswordContent() {
@@ -40,9 +39,5 @@ function ResetPasswordLoading() {
 }
 
 export default function ResetPasswordPage() {
-  return (
-    <AuthLayoutNew>
-      <ResetPasswordContent />
-    </AuthLayoutNew>
-  )
+  return <ResetPasswordContent />
 }

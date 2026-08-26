@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { toast } from "sonner"
 import { Loader2, Mail, Lock, Eye, EyeOff } from "lucide-react"
-import { login, getGoogleOAuthUrl } from "@/lib/api/auth"
+import { getGoogleOAuthUrl, login, resendEmailVerification } from "@/lib/api/auth"
 import { isBackOfficeUser } from "@/lib/admin-auth"
 import { useAuth } from "@/lib/auth-context"
 import type { LoginFormData } from "@/types/auth"
@@ -24,6 +24,33 @@ const loginSchema = z.object({
   remember: z.boolean().optional(),
 })
 
+const RESEND_COOLDOWN_SECONDS = 60
+
+function PendingVerificationNotice({ email }: { email: string }) {
+  const [isVisible, setIsVisible] = useState(true)
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setIsVisible(false)
+    }, 5000)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [])
+
+  if (!isVisible) return null
+
+  return (
+    <div className="rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/5 p-4">
+      <p className="text-sm text-[var(--foreground)]">
+        <span className="font-medium">Email chưa được xác thực.</span> Chúng tôi đã gửi liên kết xác thực đến <span className="font-medium">{email}</span>.
+      </p>
+      <p className="text-xs text-[var(--muted-foreground)] mt-1">
+        Vui lòng kiểm tra hộp thư (và thư rác) để xác thực tài khoản.
+      </p>
+    </div>
+  )
+}
+
 export function LoginFormNew() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -32,10 +59,31 @@ export function LoginFormNew() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
+  const [isResendingVerification, setIsResendingVerification] = useState(false)
+  const [resendCooldown, setResendCooldown] = useState(0)
 
   // Memoize search params to prevent unnecessary re-renders
   const pendingEmail = useMemo(() => searchParams.get("email") || "", [searchParams])
   const isPendingVerification = useMemo(() => searchParams.get("pending") === "1", [searchParams])
+  const [pendingNoticeEmail] = useState(() => pendingEmail)
+  const [showPendingVerification] = useState(
+    () => isPendingVerification && Boolean(pendingEmail)
+  )
+
+  useEffect(() => {
+    if (!showPendingVerification) return
+    router.replace("/login", { scroll: false })
+  }, [router, showPendingVerification])
+
+  useEffect(() => {
+    if (resendCooldown === 0) return
+    const timeoutId = window.setTimeout(() => {
+      setResendCooldown((seconds) => Math.max(0, seconds - 1))
+    }, 1000)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [resendCooldown])
 
   const {
     register,
@@ -49,13 +97,6 @@ export function LoginFormNew() {
       remember: false,
     },
   })
-
-  // Set initial email value after mount
-  useEffect(() => {
-    if (pendingEmail && !isPendingVerification) {
-      // Only pre-fill if coming from registration
-    }
-  }, [pendingEmail, isPendingVerification])
 
   // Handle Google OAuth login
   const handleGoogleLogin = async () => {
@@ -76,6 +117,7 @@ export function LoginFormNew() {
   const onSubmit = async (data: LoginFormData) => {
     setIsLoading(true)
     setError(null)
+    setUnverifiedEmail(null)
 
     try {
       const response = await login({ email: data.email, password: data.password })
@@ -92,17 +134,36 @@ export function LoginFormNew() {
       router.refresh()
     } catch (err: unknown) {
       const error = err as { status?: number; message?: string }
-      if (error.status === 401) {
+      if (error.status === 400 || error.status === 401) {
         setError("Email hoặc mật khẩu không đúng")
       } else if (error.status === 423) {
         setError("Tài khoản đang bị khóa tạm thời. Vui lòng thử lại sau.")
-      } else if (error.status === 403) {
+      } else if (error.status === 403 && error.message === "Vui lòng xác thực email trước khi đăng nhập") {
         setError("Vui lòng xác thực email trước khi đăng nhập")
+        setUnverifiedEmail(data.email.trim())
       } else {
         setError(error.message || "Đã xảy ra lỗi. Vui lòng thử lại.")
       }
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleResendVerification = async () => {
+    if (!unverifiedEmail || isResendingVerification || resendCooldown > 0) return
+
+    setIsResendingVerification(true)
+    setError(null)
+
+    try {
+      const response = await resendEmailVerification({ email: unverifiedEmail })
+      toast.success(response.message)
+      setResendCooldown(RESEND_COOLDOWN_SECONDS)
+    } catch (err: unknown) {
+      const resendError = err as { message?: string }
+      setError(resendError.message || "Không thể gửi lại email xác thực. Vui lòng thử lại sau.")
+    } finally {
+      setIsResendingVerification(false)
     }
   }
 
@@ -133,17 +194,29 @@ export function LoginFormNew() {
         </Alert>
       )}
 
-      {/* Pending Verification Alert */}
-      {isPendingVerification && pendingEmail && (
-        <div className="rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/5 p-4">
+      {unverifiedEmail && (
+        <div className="rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/5 p-4 space-y-3">
           <p className="text-sm text-[var(--foreground)]">
-            <span className="font-medium">Email chưa được xác thực.</span> Chúng tôi đã gửi liên kết xác thực đến <span className="font-medium">{pendingEmail}</span>.
+            Chưa nhận được email xác thực cho <span className="font-medium">{unverifiedEmail}</span>?
           </p>
-          <p className="text-xs text-[var(--muted-foreground)] mt-1">
-            Vui lòng kiểm tra hộp thư (và thư rác) để xác thực tài khoản.
-          </p>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={handleResendVerification}
+            disabled={isResendingVerification || resendCooldown > 0}
+          >
+            {isResendingVerification
+              ? "Đang gửi..."
+              : resendCooldown > 0
+                ? `Gửi lại sau ${resendCooldown}s`
+                : "Gửi lại email xác thực"}
+          </Button>
         </div>
       )}
+
+      {/* Pending Verification Alert */}
+      {showPendingVerification && pendingNoticeEmail && <PendingVerificationNotice email={pendingNoticeEmail} />}
 
       {/* Form */}
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">

@@ -20,7 +20,12 @@ const registerSchema = z
   .object({
     fullName: z.string().min(2, "Họ tên phải có ít nhất 2 ký tự").max(150),
     email: z.string().min(1, "Email là bắt buộc").email("Email không hợp lệ"),
-    phone: z.string().optional(),
+    phone: z.string().optional().refine((value) => {
+      const normalized = value?.trim() ?? ""
+      if (!normalized) return true
+      const digitCount = normalized.match(/[0-9]/g)?.length ?? 0
+      return /^[0-9+() .-]+$/.test(normalized) && digitCount >= 10 && digitCount <= 15
+    }, "Số điện thoại phải có từ 10 đến 15 chữ số"),
     password: z
       .string()
       .min(12, "Mật khẩu phải có ít nhất 12 ký tự")
