@@ -38,6 +38,12 @@ public class User extends BaseEntity {
     @Column(name = "avatar_url", columnDefinition = "TEXT")
     private String avatarUrl;
 
+    @Column(name = "avatar_storage_key", columnDefinition = "TEXT")
+    private String avatarStorageKey;
+
+    @Column(name = "avatar_content_type", length = 100)
+    private String avatarContentType;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default

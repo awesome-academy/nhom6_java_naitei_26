@@ -61,6 +61,8 @@ class RoomImageServiceTest {
                 "test-access",
                 "test-secret",
                 "room-images",
+                "room-type-images",
+                "avatars",
                 Duration.ofHours(1),
                 Duration.ofMinutes(15),
                 10 * 1024 * 1024,

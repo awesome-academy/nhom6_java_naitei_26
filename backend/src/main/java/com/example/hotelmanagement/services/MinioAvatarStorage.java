@@ -6,19 +6,19 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 
-@Service("roomImageStorage")
-public class MinioRoomImageStorage implements RoomImageStorage {
+@Service("avatarStorage")
+public class MinioAvatarStorage implements AvatarStorage {
 
     private final MinioBucketImageStorage delegate;
 
-    public MinioRoomImageStorage(MinioClient minioClient, MinioProperties properties, Clock clock) {
+    public MinioAvatarStorage(MinioClient minioClient, MinioProperties properties, Clock clock) {
         this.delegate = new MinioBucketImageStorage(
                 minioClient,
-                properties.roomImagesBucket(),
+                properties.avatarsBucket(),
                 properties.uploadUrlTtl(),
                 properties.downloadUrlTtl(),
                 clock,
-                "room image"
+                "avatar"
         );
     }
 

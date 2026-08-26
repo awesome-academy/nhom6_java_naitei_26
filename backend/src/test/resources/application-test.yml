@@ -31,7 +31,10 @@ app:
     endpoint: http://localhost:9000
     access-key: test-minio-access-key
     secret-key: test-minio-secret-key
+    initialize-on-startup: false
     room-images-bucket: room-images-test
+    room-type-images-bucket: room-type-images-test
+    avatars-bucket: avatars-test
     upload-url-ttl: 1h
     download-url-ttl: 15m
     max-image-size-bytes: 10485760

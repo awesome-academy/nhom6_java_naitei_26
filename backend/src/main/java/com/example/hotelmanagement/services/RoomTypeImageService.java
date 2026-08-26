@@ -16,6 +16,7 @@ import com.example.hotelmanagement.repositories.RoomTypeImageRepository;
 import com.example.hotelmanagement.repositories.RoomTypeRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -55,7 +56,7 @@ public class RoomTypeImageService {
     public RoomTypeImageService(
             RoomTypeRepository roomTypeRepository,
             RoomTypeImageRepository roomTypeImageRepository,
-            RoomImageStorage roomImageStorage,
+            @Qualifier("roomTypeImageStorage") RoomImageStorage roomImageStorage,
             MinioProperties properties
     ) {
         this.roomTypeRepository = roomTypeRepository;
