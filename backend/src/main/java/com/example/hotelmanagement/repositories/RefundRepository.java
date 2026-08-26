@@ -16,6 +16,10 @@ import java.util.Optional;
 @Repository
 public interface RefundRepository extends JpaRepository<Refund, Long> {
 
+    @org.springframework.data.jpa.repository.Modifying(flushAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("DELETE FROM Refund refund WHERE refund.booking.id = :bookingId")
+    int deleteAllByBookingId(@org.springframework.data.repository.query.Param("bookingId") Long bookingId);
+
     boolean existsByBooking_IdAndStatusIn(Long bookingId, Collection<RefundStatus> statuses);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

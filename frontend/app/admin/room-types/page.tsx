@@ -206,8 +206,9 @@ export default function AdminRoomTypesPage() {
               Online: {option.cancellationPolicy.name}
             </Badge>
           ))}
-          {roomType.payAtHotelEnabled && <Badge variant="outline">Tại khách sạn</Badge>}
-          {roomType.bookingOptions.length === 0 && <span className="text-[var(--muted-foreground)]">Chưa gắn</span>}
+          {roomType.onlineCancellationPolicyOptions.length === 0 && (
+            <span className="text-[var(--muted-foreground)]">Chưa gắn</span>
+          )}
         </div>
       ),
     },

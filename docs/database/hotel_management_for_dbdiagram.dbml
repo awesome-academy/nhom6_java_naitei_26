@@ -449,8 +449,8 @@ Table room_types {
   size_sqm decimal(6,2)
   is_active boolean [not null, default: true]
   sort_order smallint [not null, default: 0]
-  pay_at_hotel_enabled boolean [not null, default: true, note: 'Bật option thanh toán tại khách sạn; luôn dùng NON_REFUND']
-  pay_at_hotel_price_adjustment_percent decimal(5,2) [not null, default: 10, note: 'Phụ thu cho option thanh toán tại khách sạn. CHECK 0..100']
+  pay_at_hotel_enabled boolean [not null, default: false, note: 'Legacy column; option thanh toán tại khách sạn đã bị vô hiệu hóa']
+  pay_at_hotel_price_adjustment_percent decimal(5,2) [not null, default: 0, note: 'Legacy column; không còn sử dụng']
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [not null, default: `now()`]
   deleted_at timestamptz
@@ -684,8 +684,6 @@ Table bookings {
   discount_total decimal(14,2) [not null, default: 0]
   tax_total decimal(14,2) [not null, default: 0]
   total_amount decimal(14,2) [not null]
-  deposit_percent_snapshot decimal(5,2) [not null, note: 'Tỷ lệ cọc được snapshot lúc tạo booking; thay đổi cấu hình không hồi tố booking cũ']
-  required_deposit_amount decimal(14,2) [not null, default: 0, note: 'Số tiền cọc phải thu, không tăng theo dịch vụ phát sinh sau khi đặt']
   paid_amount decimal(14,2) [not null, default: 0, note: 'Tổng payment SUCCEEDED. KHÔNG giảm khi refund']
   refunded_amount decimal(14,2) [not null, default: 0, note: 'net_received = paid_amount - refunded_amount']
   room_tax_percent_snapshot decimal(5,2) [not null, default: 0, note: 'Thuế suất tiền phòng, chốt lúc tạo booking']
@@ -722,8 +720,6 @@ khác ngày trả, khách đổi phòng giữa kỳ, overlap kiểm theo từng 
 Cần khoảng chung -> view v_booking_stay_range (MIN/MAX từ booking_rooms).
 
 CHECK (total_amount = rooms_total + services_total + tax_total - discount_total)
-CHECK (deposit_percent_snapshot > 0 AND deposit_percent_snapshot <= 100)
-CHECK (required_deposit_amount >= 0 AND required_deposit_amount <= total_amount)
 CHECK (paid_amount <= total_amount + 0.01)
 CHECK (refunded_amount <= paid_amount)
 CHECK (status<>'CHECKED_IN'  OR checked_in_at  IS NOT NULL)   -- BR-010

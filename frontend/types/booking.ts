@@ -22,7 +22,7 @@ export interface PriceCalculation {
   roomId: number | null;
   roomTypeId: number;
   roomTypeCode: string;
-  paymentOption: "ONLINE" | "PAY_AT_HOTEL";
+  paymentOption: "ONLINE";
   cancellationPolicyCode: string;
   cancellationPolicyName: string;
   priceAdjustmentPercent: number;
@@ -40,13 +40,13 @@ export interface PriceCalculation {
 }
 export interface BookingRoomItem {
   roomTypeCode: string;
-  paymentOption: "ONLINE" | "PAY_AT_HOTEL";
+  paymentOption: "ONLINE";
   cancellationPolicyCode: string;
   checkInDate: string;
   checkOutDate: string;
-  adults: number;
-  children: number;
-  guestFullName: string;
+  adults?: number;
+  children?: number;
+  guestFullName?: string;
 }
 export interface BookingCreateRequest {
   contactName?: string;
@@ -87,10 +87,9 @@ export interface Booking {
   taxTotal: number;
   roomTaxPercentSnapshot: number;
   totalAmount: number;
-  depositPercentSnapshot: number;
-  requiredDepositAmount: number;
   currency: string;
   holdExpiresAt: string | null;
+  bedSummaries: { bedType: string; quantity: number; totalAmount: number }[];
   rooms: BookingRoom[];
   createdAt: string;
 }

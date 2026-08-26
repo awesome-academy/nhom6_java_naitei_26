@@ -18,6 +18,10 @@ import java.util.List;
 public interface BookingRoomNightRepository extends JpaRepository<BookingRoomNight, Long> {
 
     @Modifying(flushAutomatically = true)
+    @Query("DELETE FROM BookingRoomNight night WHERE night.bookingRoom.booking.id = :bookingId")
+    int deleteAllByBookingId(@Param("bookingId") Long bookingId);
+
+    @Modifying(flushAutomatically = true)
     @Query("""
             UPDATE BookingRoomNight night
             SET night.bookingRoom = :newBookingRoom

@@ -23,10 +23,9 @@ public record BookingResponse(
         BigDecimal taxTotal,
         BigDecimal roomTaxPercentSnapshot,
         BigDecimal totalAmount,
-        BigDecimal depositPercentSnapshot,
-        BigDecimal requiredDepositAmount,
         String currency,
         OffsetDateTime holdExpiresAt,
+        List<BookingBedSummaryResponse> bedSummaries,
         List<BookingRoomResponse> rooms,
         OffsetDateTime createdAt
 ) {

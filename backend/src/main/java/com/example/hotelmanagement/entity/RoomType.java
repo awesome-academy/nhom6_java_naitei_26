@@ -65,11 +65,11 @@ public class RoomType extends BaseEntity {
 
     @Column(name = "pay_at_hotel_enabled", nullable = false)
     @Builder.Default
-    private Boolean payAtHotelEnabled = true;
+    private Boolean payAtHotelEnabled = false;
 
     @Column(name = "pay_at_hotel_price_adjustment_percent", nullable = false, precision = 5, scale = 2)
     @Builder.Default
-    private BigDecimal payAtHotelPriceAdjustmentPercent = new BigDecimal("10.00");
+    private BigDecimal payAtHotelPriceAdjustmentPercent = BigDecimal.ZERO;
 
     @Transient
     private CancellationPolicy cancellationPolicy;

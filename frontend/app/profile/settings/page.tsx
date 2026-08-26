@@ -193,10 +193,10 @@ export default function ProfileSettingsPage() {
           </div>
           {settings.twoFactorEnabled && (
             <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--muted)]/50 p-4">
-              <p className="text-sm text-[var(--foreground)]">
+              <div className="text-sm text-[var(--foreground)]">
                 <Badge variant="success" className="mr-2">Đã bật</Badge>
                 Tài khoản của bạn được bảo vệ bằng xác thực hai yếu tố.
-              </p>
+              </div>
             </div>
           )}
         </CardContent>

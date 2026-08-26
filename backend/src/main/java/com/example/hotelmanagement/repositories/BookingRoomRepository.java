@@ -5,6 +5,7 @@ import com.example.hotelmanagement.entity.enums.BookingRoomStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -15,6 +16,10 @@ import java.util.Set;
 
 @Repository
 public interface BookingRoomRepository extends JpaRepository<BookingRoom, Long> {
+
+    @Modifying(flushAutomatically = true)
+    @Query("DELETE FROM BookingRoom bookingRoom WHERE bookingRoom.booking.id = :bookingId")
+    int deleteAllByBookingId(@Param("bookingId") Long bookingId);
 
     @Query("""
             SELECT CASE WHEN COUNT(bookingRoom) > 0 THEN true ELSE false END

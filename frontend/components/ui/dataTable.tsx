@@ -18,9 +18,14 @@ interface DataTableProps<T> {
   emptyMessage?: string
   isLoading?: boolean
   pagination?: {
+    // Support both 0-indexed and 1-indexed page
     page: number
-    pageSize: number
-    total: number
+    size?: number
+    totalItems?: number // new format
+    totalPages?: number // new format
+    // Legacy support
+    pageSize?: number // alias for size (1-indexed)
+    total?: number // alias for totalItems (1-indexed)
     onPageChange: (page: number) => void
   }
   actions?: {
@@ -39,9 +44,17 @@ export function DataTable<T>({
   pagination,
   actions,
 }: DataTableProps<T>) {
-  const totalPages = pagination
-    ? Math.ceil(pagination.total / pagination.pageSize)
-    : 1
+  // Handle both old format (1-indexed: pageSize, total) and new format (0-indexed: size, totalItems)
+  const pageSize = pagination?.size ?? pagination?.pageSize ?? 20
+  const totalItems = pagination?.totalItems ?? pagination?.total ?? 0
+  const currentPage = pagination?.page ?? 1
+  const totalPageCount = pagination?.totalPages ?? Math.ceil(totalItems / pageSize)
+
+  const isOneIndexed = pagination && !('totalItems' in pagination) && !('totalPages' in pagination)
+  const displayPage = isOneIndexed ? currentPage : currentPage + 1
+  const adjustedTotalPages = isOneIndexed
+    ? Math.ceil(totalItems / pageSize)
+    : totalPageCount
 
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
@@ -126,30 +139,30 @@ export function DataTable<T>({
         </table>
       </div>
 
-      {pagination && totalPages > 1 && (
+      {pagination && adjustedTotalPages > 1 && (
         <div className="flex items-center justify-between border-t border-[var(--border)] px-4 py-3">
           <p className="text-sm text-[var(--muted-foreground)]">
-            Hiển thị {(pagination.page - 1) * pagination.pageSize + 1} -{" "}
-            {Math.min(pagination.page * pagination.pageSize, pagination.total)} trong{" "}
-            {pagination.total} kết quả
+            Hiển thị {(isOneIndexed ? displayPage - 1 : displayPage - 1) * pageSize + 1} -{" "}
+            {Math.min((isOneIndexed ? displayPage - 1 : displayPage - 1 + 1) * pageSize, totalItems)} trong{" "}
+            {totalItems} kết quả
           </p>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => pagination.onPageChange(pagination.page - 1)}
-              disabled={pagination.page === 1}
+              onClick={() => pagination.onPageChange(isOneIndexed ? displayPage - 1 : currentPage - 1)}
+              disabled={isOneIndexed ? displayPage === 1 : currentPage === 0}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <span className="text-sm font-medium">
-              Trang {pagination.page} / {totalPages}
+              Trang {displayPage} / {adjustedTotalPages}
             </span>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => pagination.onPageChange(pagination.page + 1)}
-              disabled={pagination.page === totalPages}
+              onClick={() => pagination.onPageChange(isOneIndexed ? displayPage + 1 : currentPage + 1)}
+              disabled={isOneIndexed ? displayPage >= adjustedTotalPages : currentPage >= adjustedTotalPages - 1}
             >
               <ChevronRight className="h-4 w-4" />
             </Button>

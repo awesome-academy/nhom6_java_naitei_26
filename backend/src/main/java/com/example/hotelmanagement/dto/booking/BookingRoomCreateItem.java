@@ -16,9 +16,9 @@ public record BookingRoomCreateItem(
         @NotBlank @Pattern(regexp = "^[A-Za-z0-9_]+$") String cancellationPolicyCode,
         @NotNull LocalDate checkInDate,
         @NotNull LocalDate checkOutDate,
-        @NotNull @Min(1) Integer adults,
-        @NotNull @Min(0) Integer children,
-        @NotBlank @Size(max = 150) String guestFullName
+        @Min(1) Integer adults,
+        @Min(0) Integer children,
+        @Size(max = 150) String guestFullName
 ) {
     public BookingRoomCreateItem(
             Long roomId,

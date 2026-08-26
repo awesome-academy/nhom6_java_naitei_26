@@ -25,4 +25,8 @@ public interface BookingGuestRepository extends JpaRepository<BookingGuest, Long
     @Modifying(flushAutomatically = true)
     @Query("DELETE FROM BookingGuest guest WHERE guest.bookingRoom.id = :bookingRoomId")
     int deleteAllByBookingRoomId(@Param("bookingRoomId") Long bookingRoomId);
+
+    @Modifying(flushAutomatically = true)
+    @Query("DELETE FROM BookingGuest guest WHERE guest.booking.id = :bookingId")
+    int deleteAllByBookingId(@Param("bookingId") Long bookingId);
 }

@@ -337,7 +337,7 @@
   - NON_REFUND: 0h → 0%
 - Snapshot policy + rules vào JSON → gửi lên booking
 - Admin gắn nhiều cancellation policy online ở từng RoomType; policy có `% tăng giá` khi bán online.
-- Mỗi RoomType có thể bật/tắt option `Thanh toán tại khách sạn`; option này luôn dùng `NON_REFUND` và có phụ thu riêng trên RoomType.
+- RoomType chỉ còn các option thanh toán online gắn với cancellation policy; option `Thanh toán tại khách sạn` đã bỏ khỏi website và không còn cấu hình trong admin.
 - Customer chọn RoomType + payment/cancellation option; backend tự assign phòng vật lý còn trống, không cho customer chọn phòng cụ thể.
 
 #### BE-4.4 | Booking Price Calculator API | Priority: Urgent | 21/08 | Est: 4h
@@ -414,7 +414,9 @@
 
 #### BE-5.2 | Booking Creation — Snapshot Pricing | Priority: Urgent | 22/08 | Est: 6h
 
-- `BookingService.createBooking()`: tạo booking ở PENDING
+- `BookingService.createBooking()`: chỉ được gọi ở bước customer đã chọn payment method; tạo booking ở PENDING
+- Trước khi insert: lock các room khả dụng, kiểm tra overlap/trạng thái lần cuối trong cùng transaction;
+  conflict thì không tạo booking/payment
 - Tính giá từng đêm → ghi `booking_room_nights` rows
 - Snapshot fields:
   - `room_tax_percent_snapshot`
@@ -468,9 +470,10 @@
 
 - Multi-step booking wizard:
   - B1: Chọn phòng & ngày (Availability API → hiển thị phòng khả dụng)
-  - B2: Nhập thông tin liên hệ + khách lưu trú
-  - B3: Review option thanh toán/chính sách hủy theo từng RoomType đã chọn
-  - B4: Đặt cọc (chọn payment method → redirect gateway)
+  - B2: Nhập thông tin liên hệ
+  - B3: Review draft và chính sách hủy; chưa tạo booking database
+  - B4: Chọn payment method, bấm tiếp tục → tạo PENDING, tạo payment đủ tổng booking → redirect gateway
+  - Website chỉ dùng payment online; backend từ chối `PAY_AT_HOTEL`
 - Progress indicator
 
 #### FE-5.2 | Customer — My Bookings | Priority: Urgent | 22/08 | Est: 4h
@@ -482,7 +485,9 @@
   - Thông tin phòng, ngày, tổng tiền, trạng thái
   - Timeline (từ `booking_status_history`)
 - Actions:
-  - Nút "Hủy booking" (nếu PENDING/CONFIRMED → BR-005)
+  - `PENDING` còn hạn: Thanh toán, Xem chi tiết, Xóa booking (hard delete nếu chưa có payment thành công)
+  - `CONFIRMED`: Hủy booking theo policy; từ `CHECKED_IN` trở đi không có xóa/hủy thường
+  - `EXPIRED`: giữ trong danh sách, không còn nút thanh toán
   - Nút "Xem hóa đơn"
 
 #### FE-5.3 | Staff — Booking Management | Priority: Urgent | 22/08 | Est: 5h
@@ -501,8 +506,9 @@
 
 **Checkpoint cuối ngày 5:**
 
-- Customer đặt 2 đêm Deluxe → tạo booking PENDING
-- Staff confirm → gán phòng 301 → check-in
+- Customer đặt 2 đêm Deluxe → chọn payment online → tạo booking PENDING và thanh toán đủ
+- Payment callback verified đủ tiền → tự động CONFIRMED; staff chỉ dùng Confirm thủ công cho trường hợp thu tiền mặt
+- Gán phòng 301 → check-in
 - Xem invoice
 
 ---
@@ -663,7 +669,9 @@
   - `payment_status`
 - Khi payment chuyển SUCCEEDED
 - BR-012: chỉ verified payment mới trigger booking CONFIRMED
-  - Tự động hạ PENDING → CONFIRMED sau deposit verified
+  - Tự động hạ PENDING → CONFIRMED sau khi thanh toán đủ toàn bộ booking được xác minh
+- Staff/admin có thể Confirm thủ công booking PENDING để ghi nhận tiền mặt ngoài payment ledger;
+  lịch sử dùng `MANUAL`, không tạo payment record tự động
 - Refund: cập nhật `refunded_amount` + `payment_status` trên 3 bảng
 
 #### BE-7.4 | Refund Service — Cancellation Refund | Priority: High | 24/08 | Est: 5h
@@ -809,6 +817,8 @@
   1. `HoldExpiryJob`:
      - Scan PENDING bookings where `hold_expires_at < now()`
      - Chuyển EXPIRED
+     - Giải phóng booking_rooms và đánh dấu payment PENDING/PROCESSING là EXPIRED
+     - Không hard delete booking
   2. `NoShowJob`:
      - Scan CONFIRMED bookings where `check_in_date < today()` and not checked in
      - Chuyển NO_SHOW

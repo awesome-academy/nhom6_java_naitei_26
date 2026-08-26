@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.booking.BookingCreateRequest;
+import com.example.hotelmanagement.dto.booking.BookingBedSummaryResponse;
 import com.example.hotelmanagement.dto.booking.BookingDetailResponse;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationRequest;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationResponse;
@@ -21,6 +22,7 @@ import com.example.hotelmanagement.entity.Room;
 import com.example.hotelmanagement.entity.RoomType;
 import com.example.hotelmanagement.entity.User;
 import com.example.hotelmanagement.entity.enums.ActorType;
+import com.example.hotelmanagement.entity.enums.BedType;
 import com.example.hotelmanagement.entity.enums.BookingPaymentStatus;
 import com.example.hotelmanagement.entity.enums.BookingRoomStatus;
 import com.example.hotelmanagement.entity.enums.BookingStatus;
@@ -33,8 +35,12 @@ import com.example.hotelmanagement.repositories.BookingGuestRepository;
 import com.example.hotelmanagement.repositories.BookingRepository;
 import com.example.hotelmanagement.repositories.BookingRoomRepository;
 import com.example.hotelmanagement.repositories.BookingSourceRepository;
+import com.example.hotelmanagement.repositories.BookingRoomNightRepository;
+import com.example.hotelmanagement.repositories.BookingStatusHistoryRepository;
 import com.example.hotelmanagement.repositories.CustomerProfileRepository;
-import com.example.hotelmanagement.repositories.HotelSettingsRepository;
+import com.example.hotelmanagement.repositories.PaymentEventRepository;
+import com.example.hotelmanagement.repositories.PaymentRepository;
+import com.example.hotelmanagement.repositories.RefundRepository;
 import com.example.hotelmanagement.repositories.RoomRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import jakarta.validation.Valid;
@@ -71,8 +77,6 @@ public class BookingService {
      * staff-assisted channels (WALK_IN/PHONE) are out of scope until STAFF is granted booking:create.
      */
     private static final String WEBSITE_SOURCE_CODE = "WEBSITE";
-    private static final String CUSTOMER_REMOVED_PENDING_BOOKING_REASON =
-            "Customer removed pending booking before payment";
     private static final Duration HOLD_DURATION = Duration.ofMinutes(15);
     private static final Set<BookingRoomStatus> ACTIVE_BOOKING_STATUSES =
             Set.of(BookingRoomStatus.RESERVED, BookingRoomStatus.OCCUPIED);
@@ -83,8 +87,12 @@ public class BookingService {
     private final BookingGuestRepository bookingGuestRepository;
     private final BookingRoomRepository bookingRoomRepository;
     private final BookingSourceRepository bookingSourceRepository;
+    private BookingRoomNightRepository bookingRoomNightRepository;
+    private BookingStatusHistoryRepository bookingStatusHistoryRepository;
     private final CustomerProfileRepository customerProfileRepository;
-    private final HotelSettingsRepository hotelSettingsRepository;
+    private PaymentEventRepository paymentEventRepository;
+    private PaymentRepository paymentRepository;
+    private RefundRepository refundRepository;
     private final RoomRepository roomRepository;
     private final BookingCalculatorService bookingCalculatorService;
     private final CancellationPolicyService cancellationPolicyService;
@@ -99,8 +107,12 @@ public class BookingService {
             BookingGuestRepository bookingGuestRepository,
             BookingRoomRepository bookingRoomRepository,
             BookingSourceRepository bookingSourceRepository,
+            BookingRoomNightRepository bookingRoomNightRepository,
+            BookingStatusHistoryRepository bookingStatusHistoryRepository,
             CustomerProfileRepository customerProfileRepository,
-            HotelSettingsRepository hotelSettingsRepository,
+            PaymentEventRepository paymentEventRepository,
+            PaymentRepository paymentRepository,
+            RefundRepository refundRepository,
             RoomRepository roomRepository,
             BookingCalculatorService bookingCalculatorService,
             CancellationPolicyService cancellationPolicyService,
@@ -112,8 +124,12 @@ public class BookingService {
         this.bookingGuestRepository = bookingGuestRepository;
         this.bookingRoomRepository = bookingRoomRepository;
         this.bookingSourceRepository = bookingSourceRepository;
+        this.bookingRoomNightRepository = bookingRoomNightRepository;
+        this.bookingStatusHistoryRepository = bookingStatusHistoryRepository;
         this.customerProfileRepository = customerProfileRepository;
-        this.hotelSettingsRepository = hotelSettingsRepository;
+        this.paymentEventRepository = paymentEventRepository;
+        this.paymentRepository = paymentRepository;
+        this.refundRepository = refundRepository;
         this.roomRepository = roomRepository;
         this.bookingCalculatorService = bookingCalculatorService;
         this.cancellationPolicyService = cancellationPolicyService;
@@ -128,7 +144,6 @@ public class BookingService {
             BookingGuestRepository bookingGuestRepository,
             BookingSourceRepository bookingSourceRepository,
             CustomerProfileRepository customerProfileRepository,
-            HotelSettingsRepository hotelSettingsRepository,
             RoomRepository roomRepository,
             BookingCalculatorService bookingCalculatorService,
             CancellationPolicyService cancellationPolicyService,
@@ -139,8 +154,12 @@ public class BookingService {
         this.bookingGuestRepository = bookingGuestRepository;
         this.bookingRoomRepository = bookingRoomRepository;
         this.bookingSourceRepository = bookingSourceRepository;
+        this.bookingRoomNightRepository = null;
+        this.bookingStatusHistoryRepository = null;
         this.customerProfileRepository = customerProfileRepository;
-        this.hotelSettingsRepository = hotelSettingsRepository;
+        this.paymentEventRepository = null;
+        this.paymentRepository = null;
+        this.refundRepository = null;
         this.roomRepository = roomRepository;
         this.bookingCalculatorService = bookingCalculatorService;
         this.cancellationPolicyService = cancellationPolicyService;
@@ -154,7 +173,6 @@ public class BookingService {
             BookingRoomRepository bookingRoomRepository,
             BookingSourceRepository bookingSourceRepository,
             CustomerProfileRepository customerProfileRepository,
-            HotelSettingsRepository hotelSettingsRepository,
             RoomRepository roomRepository,
             BookingCalculatorService bookingCalculatorService,
             CancellationPolicyService cancellationPolicyService,
@@ -167,7 +185,6 @@ public class BookingService {
                 null,
                 bookingSourceRepository,
                 customerProfileRepository,
-                hotelSettingsRepository,
                 roomRepository,
                 bookingCalculatorService,
                 cancellationPolicyService,
@@ -210,8 +227,13 @@ public class BookingService {
         int totalChildren = 0;
 
         for (BookingRoomCreateItem item : request.rooms()) {
+            if (item.paymentOption() == com.example.hotelmanagement.entity.enums.BookingPaymentOption.PAY_AT_HOTEL) {
+                throw new BusinessValidationException("Website bookings must use online payment");
+            }
             Room room = assignAvailableRoom(item);
             BookingOptionSelection optionSelection = resolveBookingOption(item, room);
+            int adults = 1;
+            int children = 0;
             BookingPriceCalculationResponse priceCalculation = bookingCalculatorService.calculatePrice(
                     new BookingPriceCalculationRequest(
                             item.roomTypeCode(),
@@ -219,8 +241,8 @@ public class BookingService {
                             item.cancellationPolicyCode(),
                             item.checkInDate(),
                             item.checkOutDate(),
-                            item.adults(),
-                            item.children()
+                            adults,
+                            children
                     )
             );
             RoomType roomType = optionSelection.roomType();
@@ -237,7 +259,7 @@ public class BookingService {
                     .paymentOption(optionSelection.paymentOption())
                     .priceAdjustmentPercentSnapshot(optionSelection.priceAdjustmentPercent())
                     .status(BookingRoomStatus.RESERVED)
-                    .guestCount(item.adults() + item.children())
+                    .guestCount(adults + children)
                     .build();
             if (bookingOptionResolverService == null) {
                 cancellationPolicyService.applyPolicySnapshot(bookingRoom, optionSelection.cancellationPolicy());
@@ -264,13 +286,13 @@ public class BookingService {
                     BookingGuest.builder()
                             .booking(booking)
                             .bookingRoom(bookingRoom)
-                            .fullName(normalizeOrDefault(item.guestFullName(), booking.getContactName()))
+                            .fullName(booking.getContactName())
                             .build()
             );
             roomsTotal = roomsTotal.add(priceCalculation.roomsTotal());
             taxTotal = taxTotal.add(priceCalculation.taxTotal());
-            totalAdults += item.adults();
-            totalChildren += item.children();
+            totalAdults += adults;
+            totalChildren += children;
             if (roomTaxPercentSnapshot == null) {
                 roomTaxPercentSnapshot = priceCalculation.roomTaxPercentSnapshot();
             }
@@ -285,12 +307,6 @@ public class BookingService {
         booking.setTaxTotal(taxTotal.setScale(2, RoundingMode.HALF_UP));
         booking.setRoomTaxPercentSnapshot(roomTaxPercentSnapshot);
         booking.setTotalAmount(roomsTotal.add(taxTotal).setScale(2, RoundingMode.HALF_UP));
-        BigDecimal depositPercentSnapshot = getDefaultDepositPercent();
-        booking.setDepositPercentSnapshot(depositPercentSnapshot);
-        booking.setRequiredDepositAmount(calculateRequiredDepositAmount(
-                booking.getTotalAmount(),
-                depositPercentSnapshot
-        ));
         if (currency != null) {
             booking.setCurrency(currency);
         }
@@ -326,7 +342,6 @@ public class BookingService {
     public List<BookingResponse> getMyBookings(Long userId) {
         return bookingRepository.findAllByCustomerProfile_User_IdOrderByCreatedAtDesc(userId)
                 .stream()
-                .filter(booking -> !isCustomerRemovedPendingBooking(booking))
                 .map(this::mapResponse)
                 .toList();
     }
@@ -336,7 +351,6 @@ public class BookingService {
     public BookingDetailResponse getMyBookingDetail(String bookingPublicId, Long userId) {
         Booking booking = bookingRepository
                 .findOneByPublicIdAndCustomerProfile_User_Id(bookingPublicId, userId)
-                .filter(customerBooking -> !isCustomerRemovedPendingBooking(customerBooking))
                 .orElseThrow(() -> new ResourceNotFoundException("Booking", bookingPublicId));
         return mapDetailResponse(booking);
     }
@@ -375,17 +389,25 @@ public class BookingService {
     @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
     public void deletePendingBooking(String bookingPublicId, Long userId) {
         Booking booking = getPendingCustomerBookingForUpdate(bookingPublicId, userId);
-        booking.setStatus(BookingStatus.CANCELLED);
-        booking.setCancelledAt(OffsetDateTime.now(clock));
-        booking.setCancelledBy(userId);
-        booking.setCancellationReason(CUSTOMER_REMOVED_PENDING_BOOKING_REASON);
-        Booking cancelledBooking = bookingRepository.saveAndFlush(booking);
-        emailService.sendBookingCancelledEmail(cancelledBooking);
+        hardDeleteUnpaidPendingBooking(booking);
     }
 
-    private boolean isCustomerRemovedPendingBooking(Booking booking) {
-        return booking.getStatus() == BookingStatus.CANCELLED
-                && CUSTOMER_REMOVED_PENDING_BOOKING_REASON.equals(booking.getCancellationReason());
+    private void hardDeleteUnpaidPendingBooking(Booking booking) {
+        if (booking.getId() == null || bookingRoomNightRepository == null
+                || bookingStatusHistoryRepository == null || paymentEventRepository == null
+                || paymentRepository == null || refundRepository == null) {
+            bookingRepository.delete(booking);
+            return;
+        }
+        refundRepository.deleteAllByBookingId(booking.getId());
+        paymentEventRepository.deleteAllByBookingId(booking.getId());
+        paymentRepository.deleteAllByBookingId(booking.getId());
+        bookingStatusHistoryRepository.deleteAllByBookingId(booking.getId());
+        bookingGuestRepository.deleteAllByBookingId(booking.getId());
+        bookingRoomNightRepository.deleteAllByBookingId(booking.getId());
+        bookingRoomRepository.deleteAllByBookingId(booking.getId());
+        bookingRepository.deleteRowById(booking.getId());
+        bookingRepository.flush();
     }
 
     private Booking getPendingCustomerBookingForUpdate(String bookingPublicId, Long userId) {
@@ -396,7 +418,13 @@ public class BookingService {
             throw new BusinessValidationException("Only pending bookings can be changed before payment");
         }
         if (booking.getPaymentStatus() != BookingPaymentStatus.UNPAID
-                || booking.getPaidAmount().compareTo(BigDecimal.ZERO) > 0) {
+                || booking.getPaidAmount().compareTo(BigDecimal.ZERO) > 0
+                || (paymentRepository != null && booking.getId() != null
+                && paymentRepository.existsByBooking_IdAndStatusIn(
+                booking.getId(),
+                Set.of(com.example.hotelmanagement.entity.enums.PaymentStatus.SUCCEEDED,
+                        com.example.hotelmanagement.entity.enums.PaymentStatus.PARTIALLY_REFUNDED,
+                        com.example.hotelmanagement.entity.enums.PaymentStatus.REFUNDED)))) {
             throw new BusinessValidationException("Bookings with received payments cannot be deleted here");
         }
         return booking;
@@ -502,22 +530,6 @@ public class BookingService {
         return value.strip();
     }
 
-    private BigDecimal getDefaultDepositPercent() {
-        BigDecimal depositPercent = hotelSettingsRepository
-                .getDecimalValue(HotelSettingsService.DEPOSIT_PERCENT_KEY);
-        if (depositPercent == null
-                || depositPercent.signum() <= 0
-                || depositPercent.compareTo(ONE_HUNDRED) > 0) {
-            throw new BusinessValidationException("Default deposit percentage must be greater than 0 and at most 100");
-        }
-        return depositPercent.setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private BigDecimal calculateRequiredDepositAmount(BigDecimal totalAmount, BigDecimal depositPercent) {
-        return totalAmount.multiply(depositPercent)
-                .divide(ONE_HUNDRED, 2, RoundingMode.HALF_UP);
-    }
-
     private String normalizeOptionalText(String value) {
         if (value == null) {
             return null;
@@ -543,10 +555,9 @@ public class BookingService {
                 booking.getTaxTotal(),
                 booking.getRoomTaxPercentSnapshot(),
                 booking.getTotalAmount(),
-                booking.getDepositPercentSnapshot(),
-                booking.getRequiredDepositAmount(),
                 booking.getCurrency(),
                 booking.getHoldExpiresAt(),
+                buildBedSummaries(booking),
                 booking.getBookingRooms().stream().map(this::mapRoomResponse).toList(),
                 booking.getCreatedAt()
         );
@@ -587,7 +598,7 @@ public class BookingService {
     private BookingRoomResponse mapRoomResponse(BookingRoom bookingRoom) {
         return new BookingRoomResponse(
                 bookingRoom.getId(),
-                null,
+                bookingRoom.getRoom() == null ? null : bookingRoom.getRoom().getRoomNumber(),
                 bookingRoom.getRoomTypeCodeSnapshot(),
                 bookingRoom.getRoomTypeNameSnapshot(),
                 bookingRoom.getCheckInDate(),
@@ -604,7 +615,39 @@ public class BookingService {
                 bookingRoom.getBookingRoomNights().stream()
                         .sorted(java.util.Comparator.comparing(BookingRoomNight::getStayDate))
                         .map(night -> new BookingRoomNightResponse(night.getStayDate(), night.getPrice()))
-                        .toList()
+                .toList()
         );
+    }
+
+    private List<BookingBedSummaryResponse> buildBedSummaries(Booking booking) {
+        record BookingBedSummary(int quantity, BigDecimal totalAmount) {
+        }
+        java.util.Map<BedType, BookingBedSummary> summaries = new java.util.EnumMap<>(BedType.class);
+        for (BookingRoom bookingRoom : booking.getBookingRooms()) {
+            if (bookingRoom.getRoomType() == null || bookingRoom.getRoomType().getBeds() == null) {
+                continue;
+            }
+            for (var bed : bookingRoom.getRoomType().getBeds()) {
+                BookingBedSummary current = summaries.getOrDefault(
+                        bed.getBedType(),
+                        new BookingBedSummary(0, BigDecimal.ZERO)
+                );
+                summaries.put(
+                        bed.getBedType(),
+                        new BookingBedSummary(
+                                current.quantity() + bed.getQuantity(),
+                                current.totalAmount().add(bookingRoom.getRoomSubtotal())
+                        )
+                );
+            }
+        }
+        return summaries.entrySet().stream()
+                .sorted(java.util.Map.Entry.comparingByKey())
+                .map(entry -> new BookingBedSummaryResponse(
+                        entry.getKey(),
+                        entry.getValue().quantity(),
+                        entry.getValue().totalAmount().setScale(2, RoundingMode.HALF_UP)
+                ))
+                .toList();
     }
 }

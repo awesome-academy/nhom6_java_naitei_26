@@ -114,7 +114,7 @@ public class PaymentService {
                 .paymentCode(generatePaymentCode())
                 .booking(booking)
                 .method(request.method())
-                .amount(calculateOutstandingDepositAmount(booking))
+                .amount(calculateOutstandingBookingAmount(booking))
                 .currency(booking.getCurrency())
                 .status(PaymentStatus.PENDING)
                 .provider(resolveProvider(request.method()))
@@ -228,17 +228,14 @@ public class PaymentService {
         if (booking.getHoldExpiresAt() == null || !booking.getHoldExpiresAt().isAfter(now)) {
             throw new BusinessValidationException("The booking payment hold has expired");
         }
-        if (calculateOutstandingDepositAmount(booking).signum() <= 0) {
-            throw new BusinessValidationException("This booking has no outstanding deposit balance");
+        if (calculateOutstandingBookingAmount(booking).signum() <= 0) {
+            throw new BusinessValidationException("This booking has no outstanding balance");
         }
     }
 
-    private BigDecimal calculateOutstandingDepositAmount(Booking booking) {
-        if (booking.getRequiredDepositAmount() == null) {
-            throw new BusinessValidationException("Booking deposit requirement is not available");
-        }
+    private BigDecimal calculateOutstandingBookingAmount(Booking booking) {
         BigDecimal paidAmount = booking.getPaidAmount() == null ? BigDecimal.ZERO : booking.getPaidAmount();
-        return booking.getRequiredDepositAmount().subtract(paidAmount);
+        return booking.getTotalAmount().subtract(paidAmount);
     }
 
     private OffsetDateTime calculatePaymentExpiresAt(Booking booking) {
@@ -348,11 +345,10 @@ public class PaymentService {
         if (!RETRYABLE_PAYMENT_STATUSES.contains(payment.getStatus())
                 || booking.getStatus() != BookingStatus.PENDING
                 || booking.getHoldExpiresAt() == null
-                || !booking.getHoldExpiresAt().isAfter(OffsetDateTime.now(clock))
-                || booking.getRequiredDepositAmount() == null) {
+                || !booking.getHoldExpiresAt().isAfter(OffsetDateTime.now(clock))) {
             return false;
         }
         BigDecimal paidAmount = booking.getPaidAmount() == null ? BigDecimal.ZERO : booking.getPaidAmount();
-        return booking.getRequiredDepositAmount().subtract(paidAmount).signum() > 0;
+        return booking.getTotalAmount().subtract(paidAmount).signum() > 0;
     }
 }

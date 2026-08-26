@@ -8,4 +8,10 @@ import org.springframework.stereotype.Repository;
 public interface PaymentEventRepository extends JpaRepository<PaymentEvent, Long> {
 
     boolean existsByProviderAndProviderEventId(String provider, String providerEventId);
+
+    @org.springframework.data.jpa.repository.Modifying(flushAutomatically = true)
+    @org.springframework.data.jpa.repository.Query(
+            "DELETE FROM PaymentEvent event WHERE event.payment.booking.id = :bookingId"
+    )
+    int deleteAllByBookingId(@org.springframework.data.repository.query.Param("bookingId") Long bookingId);
 }

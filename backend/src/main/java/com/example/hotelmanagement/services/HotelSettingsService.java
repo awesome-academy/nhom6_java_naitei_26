@@ -35,7 +35,6 @@ public class HotelSettingsService {
     public static final String TIMEZONE_KEY = "hotel_timezone";
     public static final String CURRENCY_KEY = "default_currency";
     public static final String ROOM_TAX_PERCENT_KEY = "default_room_tax_percent";
-    public static final String DEPOSIT_PERCENT_KEY = "default_deposit_percent";
     public static final String NO_SHOW_CHARGE_PERCENT_KEY = "default_no_show_charge_percent";
 
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
@@ -78,13 +77,6 @@ public class HotelSettingsService {
                     HotelSettings.DataType.NUMBER
             );
         }
-        if (request.defaultDepositPercent() != null) {
-            upsert(
-                    DEPOSIT_PERCENT_KEY,
-                    normalizeDepositPercent(request.defaultDepositPercent()).toPlainString(),
-                    HotelSettings.DataType.NUMBER
-            );
-        }
         if (request.defaultNoShowChargePercent() != null) {
             upsert(
                     NO_SHOW_CHARGE_PERCENT_KEY,
@@ -110,7 +102,6 @@ public class HotelSettingsService {
                 getRequiredString(TIMEZONE_KEY),
                 getRequiredString(CURRENCY_KEY),
                 getRequiredPercent(ROOM_TAX_PERCENT_KEY),
-                getRequiredPercent(DEPOSIT_PERCENT_KEY),
                 getRequiredPercent(NO_SHOW_CHARGE_PERCENT_KEY)
         );
     }
@@ -167,10 +158,4 @@ public class HotelSettingsService {
         return value.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal normalizeDepositPercent(BigDecimal value) {
-        if (value.signum() <= 0 || value.compareTo(MAX_PERCENT) > 0) {
-            throw new BusinessValidationException("Deposit percentage must be greater than 0 and at most 100");
-        }
-        return value.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-    }
 }
