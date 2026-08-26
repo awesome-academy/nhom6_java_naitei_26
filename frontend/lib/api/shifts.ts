@@ -20,6 +20,19 @@ export function getShiftAssignments(from: string, to: string): Promise<ShiftAssi
   return apiClient.get<ShiftAssignment[]>(`/api/shift-assignments?${query.toString()}`)
 }
 
+export function getOwnShiftAssignments(from: string, to: string): Promise<ShiftAssignment[]> {
+  const query = new URLSearchParams({ from, to })
+  return apiClient.get<ShiftAssignment[]>(`/api/staff/shift-assignments?${query.toString()}`)
+}
+
+export function completeOwnShift(publicId: string): Promise<ShiftAssignment> {
+  return apiClient.post<ShiftAssignment>(`/api/staff/shift-assignments/${publicId}/complete`, {})
+}
+
+export function reportOwnAbsence(publicId: string, note: string): Promise<ShiftAssignment> {
+  return apiClient.post<ShiftAssignment>(`/api/staff/shift-assignments/${publicId}/absent`, { note })
+}
+
 export function createShiftAssignment(
   request: CreateShiftAssignmentRequest
 ): Promise<ShiftAssignment> {

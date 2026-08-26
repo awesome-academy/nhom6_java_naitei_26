@@ -31,6 +31,13 @@ public interface ShiftAssignmentRepository extends JpaRepository<ShiftAssignment
             String employeeCode
     );
 
+    @EntityGraph(attributePaths = {"staffProfile.user", "shift"})
+    List<ShiftAssignment> findByStaffProfile_User_IdAndWorkDateBetweenOrderByWorkDateAscShiftStartAtAsc(
+            Long userId,
+            LocalDate from,
+            LocalDate to
+    );
+
     @Query("""
             SELECT CASE WHEN COUNT(assignment) > 0 THEN true ELSE false END
             FROM ShiftAssignment assignment

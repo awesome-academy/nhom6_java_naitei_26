@@ -11,6 +11,8 @@ public final class PermissionExpressions {
     public static final String ROOM_UPDATE = "hasAuthority('room:update')";
     public static final String ROOM_DELETE = "hasAuthority('room:delete')";
     public static final String SHIFT_MANAGE = "hasAuthority('shift:manage')";
+    public static final String SHIFT_READ_OWN = "hasAuthority('shift:read_own')";
+    public static final String SHIFT_UPDATE_OWN = "hasAuthority('shift:update_own')";
     public static final String RBAC_READ = "hasAuthority('rbac:read')";
     public static final String RBAC_MANAGE = "hasAuthority('rbac:manage')";
     public static final String STAFF_MANAGE = "hasAuthority('staff:manage')";

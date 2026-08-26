@@ -1,5 +1,6 @@
 package com.example.hotelmanagement.services;
 
+import com.example.hotelmanagement.audit.AuditMutation;
 import com.example.hotelmanagement.config.HotelProperties;
 import com.example.hotelmanagement.dto.shiftassignment.ShiftAssignmentCreateRequest;
 import com.example.hotelmanagement.dto.shiftassignment.ShiftAssignmentResponse;
@@ -24,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -34,8 +36,9 @@ import java.util.UUID;
 @Service
 @Validated
 @Transactional
-@PreAuthorize(PermissionExpressions.SHIFT_MANAGE)
 public class ShiftAssignmentService {
+
+    private static final int MAX_ABSENCE_NOTE_LENGTH = 10_000;
 
     private static final Set<AssignmentStatus> EFFECTIVE_STATUSES = Set.of(
             AssignmentStatus.SCHEDULED,
@@ -46,20 +49,24 @@ public class ShiftAssignmentService {
     private final StaffProfileRepository staffProfileRepository;
     private final ShiftRepository shiftRepository;
     private final HotelProperties hotelProperties;
+    private final Clock clock;
 
     public ShiftAssignmentService(
             ShiftAssignmentRepository shiftAssignmentRepository,
             StaffProfileRepository staffProfileRepository,
             ShiftRepository shiftRepository,
-            HotelProperties hotelProperties
+            HotelProperties hotelProperties,
+            Clock clock
     ) {
         this.shiftAssignmentRepository = shiftAssignmentRepository;
         this.staffProfileRepository = staffProfileRepository;
         this.shiftRepository = shiftRepository;
         this.hotelProperties = hotelProperties;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.SHIFT_MANAGE)
     public List<ShiftAssignmentResponse> getShiftAssignments() {
         return shiftAssignmentRepository.findAllByOrderByWorkDateAscShiftStartAtAsc()
                 .stream()
@@ -68,12 +75,14 @@ public class ShiftAssignmentService {
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.SHIFT_MANAGE)
     public ShiftAssignmentResponse getShiftAssignment(UUID publicId) {
         return mapShiftAssignmentResponse(getExistingAssignment(publicId));
     }
 
     /** BE-8.1: lịch ca theo ngày/tuần — cả hai đầu khoảng đều bao gồm (inclusive). */
     @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.SHIFT_MANAGE)
     public List<ShiftAssignmentResponse> getShiftAssignmentsByDateRange(LocalDate from, LocalDate to) {
         if (from == null || to == null) {
             throw new BusinessValidationException("Both 'from' and 'to' dates are required");
@@ -89,6 +98,7 @@ public class ShiftAssignmentService {
 
     /** BE-8.1: lịch ca theo staff — xem một nhân viên trực ngày nào. */
     @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.SHIFT_MANAGE)
     public List<ShiftAssignmentResponse> getShiftAssignmentsByStaff(String employeeCode) {
         String normalizedEmployeeCode = normalizeCode(employeeCode, "Employee code");
         return shiftAssignmentRepository
@@ -98,6 +108,7 @@ public class ShiftAssignmentService {
                 .toList();
     }
 
+    @PreAuthorize(PermissionExpressions.SHIFT_MANAGE)
     public ShiftAssignmentResponse createShiftAssignment(
             @Valid ShiftAssignmentCreateRequest request,
             Long assignedBy
@@ -124,6 +135,7 @@ public class ShiftAssignmentService {
         return mapShiftAssignmentResponse(shiftAssignmentRepository.saveAndFlush(assignment));
     }
 
+    @PreAuthorize(PermissionExpressions.SHIFT_MANAGE)
     public ShiftAssignmentResponse updateShiftAssignment(
             UUID publicId,
             @Valid ShiftAssignmentUpdateRequest request,
@@ -151,10 +163,56 @@ public class ShiftAssignmentService {
         return mapShiftAssignmentResponse(shiftAssignmentRepository.saveAndFlush(assignment));
     }
 
+    @PreAuthorize(PermissionExpressions.SHIFT_MANAGE)
     public void deleteShiftAssignment(UUID publicId) {
         ShiftAssignment assignment = getExistingAssignment(publicId);
         assignment.setStatus(AssignmentStatus.CANCELLED);
         shiftAssignmentRepository.saveAndFlush(assignment);
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.SHIFT_READ_OWN)
+    public List<ShiftAssignmentResponse> getOwnShiftAssignments(
+            Long userId,
+            LocalDate from,
+            LocalDate to
+    ) {
+        validateDateRange(from, to);
+        return shiftAssignmentRepository
+                .findByStaffProfile_User_IdAndWorkDateBetweenOrderByWorkDateAscShiftStartAtAsc(userId, from, to)
+                .stream()
+                .map(this::mapShiftAssignmentResponse)
+                .toList();
+    }
+
+    @AuditMutation(action = "SHIFT_ASSIGNMENT_COMPLETED", entityType = "shift_assignment")
+    @PreAuthorize(PermissionExpressions.SHIFT_UPDATE_OWN)
+    public ShiftAssignmentResponse completeOwnShift(UUID publicId, Long userId) {
+        ShiftAssignment assignment = getOwnAssignment(publicId, userId);
+        validateScheduledAssignment(assignment);
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        if (now.isBefore(assignment.getShiftEndAt())) {
+            throw new BusinessValidationException("A shift can only be completed after its end time");
+        }
+        assignment.setStatus(AssignmentStatus.COMPLETED);
+        return mapShiftAssignmentResponse(shiftAssignmentRepository.saveAndFlush(assignment));
+    }
+
+    @AuditMutation(action = "SHIFT_ASSIGNMENT_ABSENT", entityType = "shift_assignment")
+    @PreAuthorize(PermissionExpressions.SHIFT_UPDATE_OWN)
+    public ShiftAssignmentResponse reportOwnAbsence(UUID publicId, Long userId, String note) {
+        ShiftAssignment assignment = getOwnAssignment(publicId, userId);
+        validateScheduledAssignment(assignment);
+        String normalizedNote = normalizeOptionalText(note);
+        if (normalizedNote == null) {
+            throw new BusinessValidationException("Absence note cannot be blank");
+        }
+        if (normalizedNote.length() > MAX_ABSENCE_NOTE_LENGTH) {
+            throw new BusinessValidationException("Absence note cannot exceed 10000 characters");
+        }
+        assignment.setStatus(AssignmentStatus.ABSENT);
+        assignment.setNote(normalizedNote);
+        return mapShiftAssignmentResponse(shiftAssignmentRepository.saveAndFlush(assignment));
     }
 
     private ShiftAssignment getExistingAssignment(UUID publicId) {
@@ -163,6 +221,29 @@ public class ShiftAssignmentService {
                         "Shift assignment",
                         publicId.toString()
                 ));
+    }
+
+    private ShiftAssignment getOwnAssignment(UUID publicId, Long userId) {
+        ShiftAssignment assignment = getExistingAssignment(publicId);
+        if (!assignment.getStaffProfile().getUser().getId().equals(userId)) {
+            throw new ResourceNotFoundException("Shift assignment", publicId.toString());
+        }
+        return assignment;
+    }
+
+    private void validateScheduledAssignment(ShiftAssignment assignment) {
+        if (assignment.getStatus() != AssignmentStatus.SCHEDULED) {
+            throw new BusinessValidationException("Only scheduled shifts can be updated");
+        }
+    }
+
+    private void validateDateRange(LocalDate from, LocalDate to) {
+        if (from == null || to == null) {
+            throw new BusinessValidationException("Both 'from' and 'to' dates are required");
+        }
+        if (to.isBefore(from)) {
+            throw new BusinessValidationException("'to' date cannot be before 'from' date");
+        }
     }
 
     private StaffProfile getActiveStaffProfile(String employeeCode) {

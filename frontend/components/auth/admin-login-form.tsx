@@ -27,7 +27,11 @@ const adminLoginSchema = z.object({
 type AdminLoginFormValues = z.infer<typeof adminLoginSchema>
 
 function getSafeRedirect(value: string | null): string {
-  if (!value || !value.startsWith("/admin") || value.startsWith("/admin/login")) {
+  if (
+    !value
+    || (!value.startsWith("/admin") && !value.startsWith("/staff"))
+    || value.startsWith("/admin/login")
+  ) {
     return "/admin"
   }
   return value
