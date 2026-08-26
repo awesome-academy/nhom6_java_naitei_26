@@ -1299,6 +1299,7 @@ Dòng 98-101, BR-006, BR-007.
 | `title`                                 | VARCHAR(200)  | NULL                                             |                                                                                       |
 | `comment`                               | TEXT          | NULL                                             | Dòng 100: bình luận                                                                |
 | `status`                                | review_status | NOT NULL default`PUBLISHED`                    | `PENDING / PUBLISHED / HIDDEN / REJECTED` — cần kiểm duyệt nội dung xúc phạm |
+| `moderation_reason`                     | TEXT          | NULL                                             | Lý do moderation hiện tại; bắt buộc khi `status='REJECTED'`, xóa khi chuyển sang `PUBLISHED` hoặc `HIDDEN` |
 | `staff_reply`                           | TEXT          | NULL                                             | Khách sạn phản hồi                                                                |
 | `staff_reply_by` / `staff_replied_at` |               | NULL                                             |                                                                                       |
 | `created_at` / `updated_at`           | TIMESTAMPTZ   | NOT NULL default now()                           |                                                                                       |

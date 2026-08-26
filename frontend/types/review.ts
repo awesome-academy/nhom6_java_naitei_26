@@ -3,6 +3,9 @@ export type ReviewStatus = "PENDING" | "PUBLISHED" | "HIDDEN" | "REJECTED"
 export interface Review {
   id: number
   bookingPublicId: string
+  bookingCode: string | null
+  customerName: string | null
+  customerEmail: string | null
   roomNumber: string | null
   roomTypeCode: string | null
   roomTypeName: string | null
@@ -14,11 +17,29 @@ export interface Review {
   title: string | null
   comment: string | null
   status: ReviewStatus
+  moderationReason: string | null
   staffReply: string | null
   staffReplyBy: number | null
   staffRepliedAt: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface ReviewListResponse {
+  items: Review[]
+  page: number
+  size: number
+  totalItems: number
+  totalPages: number
+}
+
+export interface ReviewModerationRequest {
+  status: Exclude<ReviewStatus, "PENDING">
+  moderationReason?: string
+}
+
+export interface ReviewReplyRequest {
+  staffReply: string
 }
 
 export interface ReviewCreateRequest {
