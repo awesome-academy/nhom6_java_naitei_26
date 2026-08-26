@@ -5,14 +5,15 @@ import { Ban, Download, FileText, Loader2, ReceiptText } from "lucide-react"
 import { toast } from "sonner"
 
 import { InvoiceIssuanceDialog } from "@/components/admin/bookings/invoice-issuance-dialog"
-import { InvoicePreview } from "@/components/admin/bookings/invoice-preview"
+import { InvoicePreview } from "@/components/invoice/invoice-preview"
 import { VoidInvoiceDialog } from "@/components/admin/bookings/void-invoice-dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { getInvoicePdf } from "@/lib/api/invoices"
-import type { BookingStaffDetail, InvoiceResponse } from "@/types/booking-staff"
+import type { BookingStaffDetail } from "@/types/booking-staff"
+import type { InvoiceResponse } from "@/types/invoice"
 
 interface InvoicePanelProps {
   booking: BookingStaffDetail

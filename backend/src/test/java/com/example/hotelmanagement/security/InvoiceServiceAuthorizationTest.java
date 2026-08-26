@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.security;
 
 import com.example.hotelmanagement.dto.invoice.InvoiceBuyerUpdateRequest;
+import com.example.hotelmanagement.entity.enums.InvoiceStatus;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.FolioChargeRepository;
 import com.example.hotelmanagement.repositories.InvoiceItemRepository;
@@ -15,7 +16,9 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
@@ -27,6 +30,7 @@ import static org.mockito.Mockito.when;
 class InvoiceServiceAuthorizationTest {
 
     private static final String INVOICE_PUBLIC_ID = "22222222-2222-2222-2222-222222222222";
+    private static final String BOOKING_PUBLIC_ID = "11111111-1111-1111-1111-111111111111";
 
     @Autowired
     private InvoiceService invoiceService;
@@ -91,5 +95,31 @@ class InvoiceServiceAuthorizationTest {
                 new InvoiceVoidRequest("Wrong invoice", false)
         )).isInstanceOf(ResourceNotFoundException.class);
         verify(invoiceRepository).findForUpdateByPublicId(INVOICE_PUBLIC_ID);
+    }
+
+    @Test
+    @WithMockUser(authorities = "invoice:issue")
+    void invoiceIssuePermissionCannotUseCustomerInvoiceLookup() {
+        assertThatThrownBy(() -> invoiceService.getCustomerInvoice(BOOKING_PUBLIC_ID, 88L))
+                .isInstanceOf(AccessDeniedException.class);
+        verifyNoInteractions(invoiceRepository, invoiceItemRepository, folioChargeRepository);
+    }
+
+    @Test
+    @WithMockUser(authorities = "booking:read_own")
+    void bookingReadOwnPermissionReachesOwnedInvoiceQuery() {
+        when(invoiceRepository.findCustomerVisibleInvoices(
+                BOOKING_PUBLIC_ID,
+                88L,
+                Set.of(InvoiceStatus.ISSUED, InvoiceStatus.VOID)
+        )).thenReturn(List.of());
+
+        assertThatThrownBy(() -> invoiceService.getCustomerInvoice(BOOKING_PUBLIC_ID, 88L))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(invoiceRepository).findCustomerVisibleInvoices(
+                BOOKING_PUBLIC_ID,
+                88L,
+                Set.of(InvoiceStatus.ISSUED, InvoiceStatus.VOID)
+        );
     }
 }

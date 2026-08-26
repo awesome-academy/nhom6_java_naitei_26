@@ -45,6 +45,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -65,6 +66,10 @@ public class InvoiceService {
     private static final String SERVICE_REFERENCE_TYPE = "FOLIO_CHARGE";
     private static final String INVOICE_NUMBER_PREFIX = "INV";
     private static final int INVOICE_NUMBER_MAX_ATTEMPTS = 5;
+    private static final Set<InvoiceStatus> CUSTOMER_VISIBLE_STATUSES = Set.of(
+            InvoiceStatus.ISSUED,
+            InvoiceStatus.VOID
+    );
 
     private final InvoiceRepository invoiceRepository;
     private final InvoiceItemRepository invoiceItemRepository;
@@ -146,6 +151,33 @@ public class InvoiceService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Draft invoice for booking",
                         normalizedPublicId
+                ));
+        return mapResponse(invoice);
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.BOOKING_READ_OWN)
+    public InvoiceResponse getCustomerInvoice(String bookingPublicId, Long userId) {
+        String normalizedBookingPublicId = normalizePublicId(
+                bookingPublicId,
+                "Booking public id"
+        );
+        Long normalizedUserId = validatePositiveId(userId, "User id");
+        List<Invoice> invoices = invoiceRepository
+                .findCustomerVisibleInvoices(
+                        normalizedBookingPublicId,
+                        normalizedUserId,
+                        CUSTOMER_VISIBLE_STATUSES
+                );
+        Invoice invoice = invoices.stream()
+                .filter(candidate -> candidate.getStatus() == InvoiceStatus.ISSUED)
+                .findFirst()
+                .or(() -> invoices.stream()
+                        .filter(candidate -> candidate.getStatus() == InvoiceStatus.VOID)
+                        .findFirst())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Customer-visible invoice for booking",
+                        normalizedBookingPublicId
                 ));
         return mapResponse(invoice);
     }

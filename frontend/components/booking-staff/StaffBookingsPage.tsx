@@ -36,8 +36,8 @@ import {
   BookingListFilterRequest,
   BookingStatus,
   FolioChargeResponse,
-  InvoiceResponse,
 } from "@/types/booking-staff";
+import type { InvoiceResponse } from "@/types/invoice";
 import type { ServiceItemOption } from "@/types/folio";
 import { useAuth } from "@/lib/auth-context";
 import {

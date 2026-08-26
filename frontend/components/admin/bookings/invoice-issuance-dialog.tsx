@@ -8,7 +8,7 @@ import { toast } from "sonner"
 import { z } from "zod"
 
 import { AddInvoiceAdjustmentDialog } from "@/components/admin/bookings/add-invoice-adjustment-dialog"
-import { InvoicePreview } from "@/components/admin/bookings/invoice-preview"
+import { InvoicePreview } from "@/components/invoice/invoice-preview"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -29,7 +29,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { issueInvoice, updateInvoiceBuyer } from "@/lib/api/invoices"
-import type { BookingStaffDetail, InvoiceResponse } from "@/types/booking-staff"
+import type { BookingStaffDetail } from "@/types/booking-staff"
+import type { InvoiceResponse } from "@/types/invoice"
 
 const optionalEmail = z.union([
   z.literal(""),

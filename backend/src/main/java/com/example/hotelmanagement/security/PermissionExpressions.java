@@ -3,6 +3,7 @@ package com.example.hotelmanagement.security;
 public final class PermissionExpressions {
 
     public static final String BOOKING_CREATE = "hasAuthority('booking:create')";
+    public static final String BOOKING_READ_OWN = "hasAuthority('booking:read_own')";
     public static final String PAYMENT_CREATE = "hasAuthority('booking:create')";
     public static final String PAYMENT_MANAGE = "hasAuthority('payment:manage')";
     public static final String ROOM_READ = "hasAuthority('room:read')";

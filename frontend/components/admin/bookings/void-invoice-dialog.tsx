@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/form"
 import { Textarea } from "@/components/ui/textarea"
 import { voidInvoice } from "@/lib/api/invoices"
-import type { InvoiceResponse } from "@/types/booking-staff"
+import type { InvoiceResponse } from "@/types/invoice"
 
 const formSchema = z.object({
   reason: z.string().trim().min(1, "Lý do hủy là bắt buộc").max(2000, "Lý do tối đa 2.000 ký tự"),

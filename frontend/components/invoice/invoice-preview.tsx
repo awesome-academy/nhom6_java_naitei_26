@@ -6,7 +6,7 @@ import { vi } from "date-fns/locale"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
-import type { InvoiceResponse } from "@/types/booking-staff"
+import type { InvoiceResponse } from "@/types/invoice"
 
 export interface InvoiceBuyerPreview {
   buyerName: string
@@ -26,8 +26,6 @@ const lineTypeLabels: Record<InvoiceResponse["items"][number]["lineType"], strin
   ROOM: "Tiền phòng",
   SERVICE: "Dịch vụ",
   ADJUSTMENT: "Điều chỉnh",
-  TAX: "Thuế",
-  DISCOUNT: "Giảm giá",
 }
 
 function formatMoney(value: number, currency: string): string {

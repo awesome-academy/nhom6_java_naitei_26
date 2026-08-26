@@ -1,5 +1,7 @@
 // Staff-facing booking types
 
+import type { InvoiceResponse } from "@/types/invoice";
+
 export type BookingStatus =
   | "PENDING"
   | "CONFIRMED"
@@ -175,46 +177,6 @@ export interface PaymentResponse {
   qrCodeValue: string | null;
   expiresAt: string | null;
   createdAt: string;
-}
-
-export interface InvoiceItemResponse {
-  id: number;
-  lineType: "ROOM" | "SERVICE" | "ADJUSTMENT" | "TAX" | "DISCOUNT";
-  description: string;
-  quantity: number;
-  unitPrice: number;
-  lineSubtotal: number;
-  discountAmount: number;
-  taxPercent: number;
-  taxAmount: number;
-  lineTotal: number;
-  referenceType: string | null;
-  referenceId: number | null;
-  sortOrder: number;
-}
-
-export interface InvoiceResponse {
-  publicId: string;
-  invoiceNumber: string | null;
-  bookingPublicId: string;
-  status: "DRAFT" | "ISSUED" | "VOID";
-  paymentStatus: "UNPAID" | "PARTIALLY_PAID" | "PAID" | "REFUNDED";
-  issuedAt: string | null;
-  issuedBy: number | null;
-  buyerName: string;
-  buyerAddress: string | null;
-  buyerTaxCode: string | null;
-  buyerEmail: string | null;
-  subtotal: number;
-  discountTotal: number;
-  taxTotal: number;
-  totalAmount: number;
-  paidAmount: number;
-  refundedAmount: number;
-  currency: string;
-  items: InvoiceItemResponse[];
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface StatusHistoryResponse {

@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -36,6 +37,8 @@ import static org.mockito.Mockito.when;
 class InvoicePdfServiceTest {
 
     private static final String INVOICE_PUBLIC_ID = "22222222-2222-2222-2222-222222222222";
+    private static final String BOOKING_PUBLIC_ID = "11111111-1111-1111-1111-111111111111";
+    private static final Long CUSTOMER_USER_ID = 88L;
     private static final Clock FIXED_CLOCK = Clock.fixed(
             Instant.parse("2026-08-23T09:00:00Z"),
             ZoneOffset.UTC
@@ -138,6 +141,50 @@ class InvoicePdfServiceTest {
 
         assertThat(response.url()).isEqualTo("https://minio/presigned");
         verify(invoicePdfStorage).uploadPdf(anyString(), any());
+    }
+
+    @Test
+    void customerDownloadUsesExactOwnedVisibleInvoice() {
+        Invoice invoice = issuedInvoice();
+        invoice.setPdfStorageKey("invoices/20/existing.pdf");
+        when(invoiceRepository.findCustomerVisibleInvoice(
+                INVOICE_PUBLIC_ID,
+                BOOKING_PUBLIC_ID,
+                CUSTOMER_USER_ID,
+                Set.of(InvoiceStatus.ISSUED, InvoiceStatus.VOID)
+        )).thenReturn(Optional.of(invoice));
+        when(invoicePdfStorage.createDownloadUrl("invoices/20/existing.pdf")).thenReturn(
+                new InvoicePdfStorage.PresignedUrl(
+                        "https://minio/customer-invoice",
+                        OffsetDateTime.now(FIXED_CLOCK).plusHours(1)
+                )
+        );
+
+        InvoicePdfResponse response = invoicePdfService.getCustomerDownloadUrl(
+                BOOKING_PUBLIC_ID,
+                INVOICE_PUBLIC_ID,
+                CUSTOMER_USER_ID
+        );
+
+        assertThat(response.url()).isEqualTo("https://minio/customer-invoice");
+        verify(invoicePdfStorage).createDownloadUrl("invoices/20/existing.pdf");
+    }
+
+    @Test
+    void customerDownloadHidesUnownedOrMismatchedInvoice() {
+        when(invoiceRepository.findCustomerVisibleInvoice(
+                INVOICE_PUBLIC_ID,
+                BOOKING_PUBLIC_ID,
+                CUSTOMER_USER_ID,
+                Set.of(InvoiceStatus.ISSUED, InvoiceStatus.VOID)
+        )).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> invoicePdfService.getCustomerDownloadUrl(
+                BOOKING_PUBLIC_ID,
+                INVOICE_PUBLIC_ID,
+                CUSTOMER_USER_ID
+        )).isInstanceOf(ResourceNotFoundException.class);
+        verify(invoicePdfStorage, never()).createDownloadUrl(anyString());
     }
 
     private Invoice issuedInvoice() {

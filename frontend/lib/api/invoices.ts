@@ -1,9 +1,9 @@
 import { apiClient } from "@/lib/api/client"
-import type { InvoiceResponse } from "@/types/booking-staff"
 import type {
   InvoiceAdjustmentRequest,
   InvoiceBuyerUpdateRequest,
   InvoicePdfResponse,
+  InvoiceResponse,
   InvoiceVoidRequest,
   InvoiceVoidResponse,
 } from "@/types/invoice"
