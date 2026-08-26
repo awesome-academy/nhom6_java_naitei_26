@@ -1,7 +1,6 @@
 package com.example.hotelmanagement.repositories;
 
 import com.example.hotelmanagement.entity.RateOverride;
-import com.example.hotelmanagement.entity.Room;
 import com.example.hotelmanagement.entity.RoomType;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,45 +27,22 @@ class RateOverrideRepositoryTest {
     @Autowired
     private RoomTypeRepository roomTypeRepository;
 
-    @Autowired
-    private RoomRepository roomRepository;
-
     @Test
-    void findActiveConflictsFiltersByExactTargetAndExcludedId() {
+    void findActiveConflictsFiltersByRoomTypeAndExcludedId() {
         RoomType roomType = roomTypeRepository.saveAndFlush(createRoomType());
-        Room room = roomRepository.saveAndFlush(
-                Room.builder()
-                        .roomNumber("A101")
-                        .roomType(roomType)
-                        .isActive(true)
-                        .build()
-        );
         RateOverride roomTypeRate = rateOverrideRepository.saveAndFlush(
-                createRateOverride(roomType, null, true)
+                createRateOverride(roomType, true)
         );
-        RateOverride roomRate = rateOverrideRepository.saveAndFlush(
-                createRateOverride(null, room, true)
-        );
-        rateOverrideRepository.saveAndFlush(createRateOverride(roomType, null, false));
+        rateOverrideRepository.saveAndFlush(createRateOverride(roomType, false));
 
         List<RateOverride> roomTypeConflicts = rateOverrideRepository.findActiveConflicts(
-                null,
                 roomType.getId(),
                 START_DATE,
                 END_DATE,
                 5,
                 null
         );
-        List<RateOverride> roomConflicts = rateOverrideRepository.findActiveConflicts(
-                room.getId(),
-                null,
-                START_DATE,
-                END_DATE,
-                5,
-                null
-        );
         List<RateOverride> excludedConflicts = rateOverrideRepository.findActiveConflicts(
-                null,
                 roomType.getId(),
                 START_DATE,
                 END_DATE,
@@ -75,18 +51,16 @@ class RateOverrideRepositoryTest {
         );
 
         assertEquals(List.of(roomTypeRate.getId()), getRateOverrideIds(roomTypeConflicts));
-        assertEquals(List.of(roomRate.getId()), getRateOverrideIds(roomConflicts));
         assertTrue(excludedConflicts.isEmpty());
         assertEquals(
-                2,
+                1,
                 rateOverrideRepository.findAllByIsActiveTrueOrderByStartDateAscPriorityDescIdAsc().size()
         );
     }
 
-    private RateOverride createRateOverride(RoomType roomType, Room room, boolean active) {
+    private RateOverride createRateOverride(RoomType roomType, boolean active) {
         return RateOverride.builder()
                 .roomType(roomType)
-                .room(room)
                 .name("Weekend")
                 .startDate(START_DATE)
                 .endDate(END_DATE)

@@ -127,7 +127,6 @@ class RateOverrideEndpointSecurityTest {
                 88L,
                 "DLX",
                 "Deluxe",
-                null,
                 "Weekend",
                 java.time.LocalDate.of(2026, 8, 21),
                 java.time.LocalDate.of(2026, 8, 25),

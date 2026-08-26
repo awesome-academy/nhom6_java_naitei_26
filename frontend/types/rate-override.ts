@@ -1,8 +1,7 @@
 export interface RateOverride {
   id: number
-  roomTypeCode: string | null
-  roomTypeName: string | null
-  roomNumber: string | null
+  roomTypeCode: string
+  roomTypeName: string
   name: string
   startDate: string
   endDate: string

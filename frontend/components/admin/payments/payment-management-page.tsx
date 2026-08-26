@@ -101,7 +101,7 @@ function isReceived(status: PaymentStatus) {
   return status === "SUCCEEDED" || status === "PARTIALLY_REFUNDED" || status === "REFUNDED"
 }
 
-export function PaymentManagementPage() {
+export function PaymentManagementPage({ portal = "/manager" }: { portal?: "/manager" }) {
   const router = useRouter()
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth()
   const [filters, setFilters] = useState(EMPTY_FILTERS)
@@ -122,9 +122,9 @@ export function PaymentManagementPage() {
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
-      router.replace("/admin/login?redirect=%2Fadmin%2Fpayments")
+      router.replace(`/manager/login?redirect=${encodeURIComponent(`${portal}/payments`)}`)
     }
-  }, [isAuthLoading, isAuthenticated, router])
+  }, [isAuthLoading, isAuthenticated, portal, router])
 
   const loadPayments = useCallback(async () => {
     if (!isAuthenticated) return
@@ -302,9 +302,9 @@ export function PaymentManagementPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
+        <div>
           <h1 className="text-2xl font-bold">Quản lý thanh toán</h1>
-          <p className="text-sm text-muted-foreground">Theo dõi payment, xác minh tiền mặt và tạo yêu cầu hoàn tiền.</p>
+          <p className="text-sm text-[var(--muted-foreground)]">Theo dõi payment, xác minh tiền mặt và tạo yêu cầu hoàn tiền.</p>
         </div>
         <Button variant="outline" onClick={() => void loadPayments()} disabled={isLoading}>
           <RefreshCw data-icon="inline-start" className={isLoading ? "animate-spin" : undefined} /> Làm mới

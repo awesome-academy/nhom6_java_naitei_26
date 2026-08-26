@@ -236,8 +236,8 @@ class RoomAuthorizationTest {
     }
 
     @Test
-    @WithMockUser(authorities = "room:read")
-    void roomStatusBlockMutationsRequireRoomUpdatePermission() throws Exception {
+    @WithMockUser(authorities = "room:update")
+    void roomUpdatePermissionDoesNotGrantMaintenanceBlockMutations() throws Exception {
         mockMvc.perform(post("/api/room-status-blocks")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -270,14 +270,14 @@ class RoomAuthorizationTest {
     }
 
     @Test
-    void roomUpdatePermissionCreatesBlockAndUsesAuthenticatedUser() throws Exception {
+    void maintenanceManagePermissionCreatesBlockAndUsesAuthenticatedUser() throws Exception {
         UUID publicId = UUID.randomUUID();
         UserPrincipal principal = principal(99L);
         when(roomStatusBlockService.createBlock(any(), eq(99L))).thenReturn(blockResponse(publicId));
         var authentication = UsernamePasswordAuthenticationToken.authenticated(
                 principal,
                 null,
-                List.of(new SimpleGrantedAuthority("room:update"))
+                List.of(new SimpleGrantedAuthority("maintenance:manage"))
         );
 
         mockMvc.perform(post("/api/room-status-blocks")
@@ -301,8 +301,8 @@ class RoomAuthorizationTest {
     }
 
     @Test
-    @WithMockUser(authorities = "room:update")
-    void roomUpdatePermissionAllowsExtendAndDelete() throws Exception {
+    @WithMockUser(authorities = "maintenance:manage")
+    void maintenanceManagePermissionAllowsExtendAndDelete() throws Exception {
         UUID publicId = UUID.randomUUID();
         when(roomStatusBlockService.extendBlock(eq(publicId), any())).thenReturn(blockResponse(publicId));
 

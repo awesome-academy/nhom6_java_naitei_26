@@ -1,7 +1,8 @@
 import { apiClient } from "@/lib/api/client"
 import type {
   StaffHireRequest, StaffListItem, StaffManagementListItem, StaffPasswordUpdateRequest,
-  StaffProfile, StaffProfileUpdateRequest, StaffEmploymentStatusUpdateRequest,
+  StaffOwnProfile, StaffOwnProfileUpdateRequest, StaffProfile, StaffProfileUpdateRequest,
+  StaffEmploymentStatusUpdateRequest,
 } from "@/types/staff"
 
 export function getStaffProfiles(active = true): Promise<StaffListItem[]> {
@@ -26,4 +27,12 @@ export function resetStaffPassword(employeeCode: string, request: StaffPasswordU
 }
 export function resendStaffInvitation(employeeCode: string): Promise<void> {
   return apiClient.post<void>(`/api/staff-profiles/${encodeURIComponent(employeeCode)}/invitation/resend`, {})
+}
+
+export function getOwnStaffProfile(): Promise<StaffOwnProfile> {
+  return apiClient.get<StaffOwnProfile>("/api/staff-profiles/me")
+}
+
+export function updateOwnStaffProfile(request: StaffOwnProfileUpdateRequest): Promise<StaffOwnProfile> {
+  return apiClient.patch<StaffOwnProfile>("/api/staff-profiles/me", request)
 }

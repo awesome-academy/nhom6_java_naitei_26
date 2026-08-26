@@ -68,7 +68,7 @@ Mỗi thực thể dưới đây tồn tại vì một câu trong tài liệu y�
 
 **Pricing & Policy**
 
-- **RateOverride** — giá thực bán khác giá niêm yết theo mùa/cuối tuần/dịp lễ. **Master/config data**: dùng để *tính* giá lúc đặt, không dùng để *tính lại* booking cũ.
+- **RateOverride** — giá thực bán khác giá niêm yết theo mùa/cuối tuần/dịp lễ ở cấp **RoomType**. **Master/config data**: dùng để *tính* giá lúc đặt, không dùng để *tính lại* booking cũ.
 - **CancellationPolicy + CancellationPolicyRule** — dòng 97 và BR-005: "hệ thống tính số tiền hoàn dựa trên **thời điểm hủy**". Một mốc thời gian duy nhất không diễn đạt được chính sách thực tế nhiều bậc (72h → 100%, 30h → 50%, 0h → 0%), nên Policy tách thành nhiều Rule. Policy còn giữ `% tăng giá` cho option thanh toán online. Admin chọn nhiều policy online cho từng RoomType qua bảng nối; website và admin không còn option thanh toán tại khách sạn. Toàn bộ policy + rules + phụ thu được snapshot vào từng `booking_rooms` để đổi chính sách không hồi tố khách cũ.
 
 **Booking & Availability**
@@ -95,7 +95,7 @@ Mỗi thực thể dưới đây tồn tại vì một câu trong tài liệu y�
 **Feedback, Comms, Audit**
 
 - **Review** — dòng 98-101: chỉ khách đã hoàn tất lưu trú mới được đánh giá; đánh giá phòng, chất lượng, nhân viên/dịch vụ; **mỗi booking tối đa một review** (BR-007) → `booking_id UNIQUE`.
-- **EmailMessage** — dòng 174-177 và 185-193: Admin soạn email, System gửi, "lưu trạng thái gửi và lịch sử email". Cần cho retry khi gửi lỗi và cho việc chứng minh đã gửi email xác nhận booking.
+- **EmailMessage** — dòng 174-177 và 185-193: Back-office có quyền `email:send` soạn email theo booking, System gửi, "lưu trạng thái gửi và lịch sử email". Cần cho retry khi gửi lỗi và cho việc chứng minh đã gửi email xác nhận booking.
 - **AuditLog** — BR-008 nhắc "audit", dòng 167 nhắc "audit history". Ghi thao tác đổi giá, hủy booking, void hóa đơn.
 
 ### 2.3. Quan hệ giữa các thực thể
@@ -109,7 +109,7 @@ RoomType 1─N Room                 RoomType N─N Amenity
 RoomType 1─N RoomTypeBed          RoomType 1─N RoomTypeImage
 Room     N─N Amenity              Room     1─N RoomImage
 Room     1─N RoomStatusBlock
-RoomType 1─N RateOverride  (hoặc gắn trực tiếp Room)
+RoomType 1─N RateOverride
 
 CancellationPolicy 1─N CancellationPolicyRule
 
@@ -211,6 +211,8 @@ Tài khoản đăng nhập. Không chứa thuộc tính riêng của khách hay 
 | `user_roles`       | `user_id`, `role_id`, `assigned_at`, `assigned_by`  | PK kép và UNIQUE(`user_id`), bảo đảm một User chỉ có một role hiện tại;`assigned_by` để audit ai cấp quyền                                       |
 
 Role vẫn là bảng riêng thay vì enum trong `users` để quyền được cấu hình qua `role_permissions`; bảng nối chỉ còn giữ tương thích với RBAC hiện tại và bị giới hạn một dòng trên mỗi User.
+
+`maintenance:manage` là quyền riêng để tạo, gia hạn và xóa `room_status_blocks`. STAFF chỉ có `room:read` đối với Room/RoomType, nhưng có thể vận hành lịch bảo trì bằng quyền này; không dùng `room:update` cho maintenance để Staff không thể sửa master data của phòng.
 
 ### 3.3. `customer_profiles`
 
@@ -523,8 +525,7 @@ Giá theo mùa/cuối tuần/dịp lễ. Dòng 75 yêu cầu "tính số đêm l
 | Cột                          | Kiểu         | Ràng buộc                    | Giải thích                                                                                                                      |
 | ----------------------------- | ------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                        | BIGINT        | PK                             |                                                                                                                                   |
-| `room_type_id`              | BIGINT        | NULL, FK→room_types CASCADE   |                                                                                                                                   |
-| `room_id`                   | BIGINT        | NULL, FK→rooms CASCADE        |                                                                                                                                   |
+| `room_type_id`              | BIGINT        | NOT NULL, FK→room_types CASCADE | Rule áp dụng cho toàn bộ phòng thuộc loại phòng này                                                                                |
 | `name`                      | VARCHAR(120)  | NOT NULL                       | "Tết 2027", "Cuối tuần hè"                                                                                                    |
 | `start_date` / `end_date` | DATE          | NOT NULL, CHECK`end > start` |                                                                                                                                   |
 | `price`                     | NUMERIC(14,2) | NOT NULL, CHECK`>= 0`        | Giá tuyệt đối cho một đêm                                                                                                  |
@@ -532,7 +533,7 @@ Giá theo mùa/cuối tuần/dịp lễ. Dòng 75 yêu cầu "tính số đêm l
 | `priority`                  | SMALLINT      | NOT NULL default 0             | Khi nhiều rule trùng ngày, lấy`priority` cao nhất. Bắt buộc phải có, nếu không kết quả tính giá là ngẫu nhiên |
 | `is_active`                 | BOOLEAN       | NOT NULL default true          |                                                                                                                                   |
 
-CHECK: `(room_type_id IS NOT NULL) <> (room_id IS NOT NULL)` — đúng một trong hai, tránh dòng vừa gắn loại phòng vừa gắn phòng gây nhập nhằng.
+Rate override luôn phải có `room_type_id`, áp dụng cho toàn bộ phòng thuộc loại phòng đó. Không hỗ trợ cấu hình giá riêng theo từng `room_id`.
 
 Thứ tự tính giá một đêm: `rate_override` (priority cao nhất) → `rooms.price_override` → `room_types.base_price`.
 
@@ -1325,7 +1326,7 @@ Danh mục nội dung email có version hiện tại để hệ thống render r
 
 ### 7.11. `email_messages`
 
-Dòng 174-177 (Admin soạn), 178-193 (System gửi).
+Dòng 174-177 (back-office có `email:send` soạn theo booking), 178-193 (System gửi). Recipient của email soạn tay luôn là `bookings.contact_email`; không nhận recipient/CC/BCC từ client để tránh lạm dụng gửi mail.
 
 | Cột                           | Kiểu        | Ràng buộc                 | Giải thích                                                                                             |
 | ------------------------------ | ------------ | --------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -1590,11 +1591,11 @@ START TRANSACTION;
          COALESCE(
            (SELECT o.price FROM rate_overrides o
             WHERE o.is_active
-              AND (o.room_id = $16 OR o.room_type_id = rt.id)
+              AND o.room_type_id = rt.id
               AND n.stay_date BETWEEN o.start_date AND o.end_date - INTERVAL 1 DAY
               AND (o.weekdays IS NULL
                    OR JSON_CONTAINS(o.weekdays, CAST(DAYOFWEEK(n.stay_date) - 1 AS JSON)))
-            ORDER BY o.priority DESC, o.room_id IS NOT NULL DESC
+            ORDER BY o.priority DESC, o.id ASC
             LIMIT 1),
            r.price_override, rt.base_price)
   FROM nights n

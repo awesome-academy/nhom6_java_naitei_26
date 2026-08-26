@@ -66,7 +66,7 @@ public class RoomStatusBlockService {
                 .toList();
     }
 
-    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
+    @PreAuthorize(PermissionExpressions.MAINTENANCE_MANAGE)
     public RoomStatusBlockResponse createBlock(
             @Valid RoomStatusBlockCreateRequest request,
             Long createdBy
@@ -100,7 +100,7 @@ public class RoomStatusBlockService {
         }
     }
 
-    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
+    @PreAuthorize(PermissionExpressions.MAINTENANCE_MANAGE)
     public RoomStatusBlockResponse extendBlock(
             UUID publicId,
             @Valid RoomStatusBlockExtendRequest request
@@ -129,7 +129,7 @@ public class RoomStatusBlockService {
         }
     }
 
-    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
+    @PreAuthorize(PermissionExpressions.MAINTENANCE_MANAGE)
     public void deleteBlock(UUID publicId) {
         RoomStatusBlock block = getExistingBlock(publicId);
         getActiveRoomForUpdate(block.getRoom().getRoomNumber());

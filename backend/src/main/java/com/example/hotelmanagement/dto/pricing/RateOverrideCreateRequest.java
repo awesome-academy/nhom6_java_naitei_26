@@ -14,8 +14,7 @@ import java.time.LocalDate;
 import java.util.Set;
 
 public record RateOverrideCreateRequest(
-        @Positive Long roomTypeId,
-        @Positive Long roomId,
+        @NotNull @Positive Long roomTypeId,
         @NotBlank @Size(max = 120) String name,
         @NotNull LocalDate startDate,
         @NotNull LocalDate endDate,

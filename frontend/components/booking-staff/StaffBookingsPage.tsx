@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { BookingFilters, BookingFilterValues } from "./BookingFilters";
 import { BookingStatsCards } from "./BookingStatsCards";
 import { RoomAssignmentModal } from "./RoomAssignmentModal";
+import { BookingEmailDialog } from "./booking-email-dialog";
 import { FolioPanel } from "@/components/admin/bookings/folio-panel";
 import { InvoicePanel } from "@/components/admin/bookings/invoice-panel";
 import {
@@ -116,12 +117,13 @@ const EMPTY_FILTERS: BookingFilterValues = {
   checkInTo: "",
 };
 
-export function StaffBookingsPage() {
+export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager" }) {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const canManageFolio = user?.permissions.includes("invoice:issue") ?? false;
   const canIssueInvoice = user?.permissions.includes("invoice:issue") ?? false;
   const canVoidInvoice = user?.permissions.includes("invoice:void") ?? false;
+  const canSendEmail = user?.permissions.includes("email:send") ?? false;
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // State
@@ -145,9 +147,9 @@ export function StaffBookingsPage() {
   // Auth redirect
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
-      router.replace("/admin/login?redirect=%2Fadmin%2Fbookings");
+      router.replace(`/manager/login?redirect=${encodeURIComponent(`${portal}/bookings`)}`);
     }
-  }, [isAuthLoading, isAuthenticated, router]);
+  }, [isAuthLoading, isAuthenticated, portal, router]);
 
   // Filters
   const [filters, setFilters] = useState<BookingFilterValues>(EMPTY_FILTERS);
@@ -508,11 +510,10 @@ export function StaffBookingsPage() {
   ];
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[var(--foreground)]">Quản lý đặt phòng</h1>
+          <h1 className="text-2xl font-bold">Quản lý đặt phòng</h1>
           <p className="text-sm text-[var(--muted-foreground)]">
             Theo dõi và quản lý tất cả đơn đặt phòng
           </p>
@@ -595,6 +596,11 @@ export function StaffBookingsPage() {
 
               {/* Action Buttons */}
               <div className="flex flex-wrap gap-2 border-b py-4">
+                <BookingEmailDialog
+                  bookingPublicId={selectedBooking.publicId}
+                  contactEmail={selectedBooking.contactEmail}
+                  canSend={canSendEmail}
+                />
                 {selectedBooking.status === "PENDING" && (
                   <Button
                     size="sm"

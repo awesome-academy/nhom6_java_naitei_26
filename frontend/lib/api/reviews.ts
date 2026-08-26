@@ -41,6 +41,21 @@ export function getAdminReviews(filters: AdminReviewFilters = {}): Promise<Revie
   return apiClient.get<ReviewListResponse>(`/api/admin/reviews?${params.toString()}`)
 }
 
+export function getStaffReviews(filters: AdminReviewFilters = {}): Promise<ReviewListResponse> {
+  const params = new URLSearchParams()
+  if (filters.status) params.set("status", filters.status)
+  if (filters.roomTypeCode) params.set("roomTypeCode", filters.roomTypeCode)
+  if (filters.rating) params.set("rating", String(filters.rating))
+  params.set("page", String(filters.page ?? 0))
+  params.set("size", String(filters.size ?? 20))
+  return apiClient.get<Omit<ReviewListResponse, "items"> & { items: Array<Omit<Review, "moderationReason">> }>(
+    `/api/staff/reviews?${params.toString()}`,
+  ).then((response) => ({
+    ...response,
+    items: response.items.map((review) => ({ ...review, moderationReason: null })),
+  }))
+}
+
 export function moderateBookingReview(
   bookingPublicId: string,
   request: ReviewModerationRequest,

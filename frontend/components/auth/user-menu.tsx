@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/DropdownMenu";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-import { isBackOfficeUser, isStaffUser } from "@/lib/admin-auth";
+import { isAdminUser, isBackOfficeUser, isStaffUser } from "@/lib/admin-auth";
 import { logout } from "@/lib/api/auth";
 import { getStoredTokens } from "@/lib/api/auth";
 import {
@@ -44,8 +44,9 @@ export function UserMenu() {
 
   if (!user) return null;
 
-  const isAdmin = isBackOfficeUser(user);
+  const isAdmin = isAdminUser(user);
   const isStaff = isStaffUser(user);
+  const isBackOffice = isBackOfficeUser(user);
 
   const handleLogout = async () => {
     setOpen(false);
@@ -93,7 +94,7 @@ export function UserMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link
-            href="/profile"
+            href={isBackOffice ? "/manager/profile" : "/profile"}
             className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] group cursor-pointer"
           >
             <User className="h-4 w-4 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-bold transition-all" />
@@ -102,35 +103,39 @@ export function UserMenu() {
             </span>
           </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link
-            href="/profile/bookings"
-            className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] group cursor-pointer"
-          >
-            <Calendar className="h-4 w-4 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-bold transition-all" />
-            <span className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-semibold transition-all">
-              Đơn đặt phòng
-            </span>
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link
-            href="/profile/settings"
-            className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] group cursor-pointer"
-          >
-            <Settings className="h-4 w-4 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-bold transition-all" />
-            <span className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-semibold transition-all">
-              Cài đặt
-            </span>
-          </Link>
-        </DropdownMenuItem>
-        {isAdmin && (
+        {!isBackOffice && (
+          <>
+            <DropdownMenuItem asChild>
+              <Link
+                href="/profile/bookings"
+                className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] group cursor-pointer"
+              >
+                <Calendar className="h-4 w-4 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-bold transition-all" />
+                <span className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-semibold transition-all">
+                  Đơn đặt phòng
+                </span>
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link
+                href="/profile/settings"
+                className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] group cursor-pointer"
+              >
+                <Settings className="h-4 w-4 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-bold transition-all" />
+                <span className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-semibold transition-all">
+                  Cài đặt
+                </span>
+              </Link>
+            </DropdownMenuItem>
+          </>
+        )}
+        {(isAdmin || isStaff) && (
           <>
             <DropdownMenuSeparator />
             {isStaff && (
               <DropdownMenuItem asChild>
                 <Link
-                  href="/staff/shifts"
+                  href="/manager/shifts"
                   className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] group"
                 >
                   <Calendar className="h-4 w-4 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" />
@@ -140,17 +145,19 @@ export function UserMenu() {
                 </Link>
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem asChild>
-              <Link
-                href="/admin"
-                className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] group cursor-pointer"
-              >
-                <ShieldCheck className="h-4 w-4 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-bold transition-all" />
-                <span className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-semibold transition-all">
-                  Quản trị
-                </span>
-              </Link>
-            </DropdownMenuItem>
+            {isAdmin && (
+              <DropdownMenuItem asChild>
+                <Link
+                  href="/manager"
+                  className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] group cursor-pointer"
+                >
+                  <ShieldCheck className="h-4 w-4 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-bold transition-all" />
+                  <span className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] group-hover:font-semibold transition-all">
+                    Quản trị
+                  </span>
+                </Link>
+              </DropdownMenuItem>
+            )}
           </>
         )}
         <DropdownMenuSeparator />

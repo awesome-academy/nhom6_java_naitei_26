@@ -168,11 +168,12 @@ export default function StaffShiftSchedulePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm text-muted-foreground">Xin chào, {currentUser?.fullName}</p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Lịch ca của tôi</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Lịch làm việc trong tuần hiện tại và tuần kế tiếp</p>
+          <h1 className="text-2xl font-bold">Lịch ca của tôi</h1>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Lịch làm việc trong tuần hiện tại và tuần kế tiếp{currentUser?.fullName ? ` · ${currentUser.fullName}` : ""}.
+          </p>
         </div>
         <Button type="button" variant="outline" onClick={() => void loadAssignments()} disabled={isLoading}>
           {isLoading ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <RefreshCw data-icon="inline-start" />}

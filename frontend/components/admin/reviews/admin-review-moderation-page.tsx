@@ -30,7 +30,7 @@ import { Separator } from "@/components/ui/separator"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
-import { getAdminReviews, moderateBookingReview, replyToBookingReview } from "@/lib/api/reviews"
+import { getAdminReviews, getStaffReviews, moderateBookingReview, replyToBookingReview } from "@/lib/api/reviews"
 import { getRoomTypes } from "@/lib/api/room-types"
 import type { Review, ReviewStatus } from "@/types/review"
 import type { RoomType } from "@/types/room-type"
@@ -87,7 +87,8 @@ function RatingValue({ value }: { value: number | null }) {
   )
 }
 
-export function AdminReviewModerationPage() {
+export function AdminReviewModerationPage({ mode = "admin" }: { mode?: "admin" | "staff" }) {
+  const canModerate = mode === "admin"
   const [reviews, setReviews] = useState<Review[]>([])
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([])
   const [status, setStatus] = useState<ReviewStatus | typeof ALL>(ALL)
@@ -108,7 +109,7 @@ export function AdminReviewModerationPage() {
     setIsLoading(true)
     setLoadError(null)
     try {
-      const response = await getAdminReviews({
+      const response = await (canModerate ? getAdminReviews : getStaffReviews)({
         status: status === ALL ? undefined : status,
         roomTypeCode: roomTypeCode === ALL ? undefined : roomTypeCode,
         rating: rating === ALL ? undefined : Number(rating),
@@ -124,7 +125,7 @@ export function AdminReviewModerationPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [page, rating, roomTypeCode, status])
+  }, [canModerate, page, rating, roomTypeCode, status])
 
   useEffect(() => {
     void getRoomTypes()
@@ -257,10 +258,10 @@ export function AdminReviewModerationPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">Đánh giá</h1>
-          <p className="text-sm text-muted-foreground">
-            Kiểm duyệt nội dung đánh giá và phản hồi khách hàng.
+        <div>
+          <h1 className="text-2xl font-bold">Đánh giá</h1>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            {canModerate ? "Kiểm duyệt nội dung đánh giá và phản hồi khách hàng." : "Xem đánh giá và phản hồi khách hàng."}
           </p>
         </div>
         <Badge variant="outline" className="gap-2 px-3 py-1.5">
@@ -271,7 +272,7 @@ export function AdminReviewModerationPage() {
       <Card>
         <CardHeader>
           <CardTitle>Danh sách đánh giá</CardTitle>
-          <CardDescription>Chọn một dòng để xem đầy đủ nội dung và xử lý moderation.</CardDescription>
+          <CardDescription>{canModerate ? "Chọn một dòng để xem đầy đủ nội dung và xử lý moderation." : "Chọn một dòng để xem đầy đủ nội dung và phản hồi khách hàng."}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="grid gap-3 md:grid-cols-3">
@@ -348,9 +349,10 @@ export function AdminReviewModerationPage() {
         onModerate={(nextStatus) => void applyModeration(nextStatus)}
         onReply={() => void submitReply()}
         onReject={() => { setRejectTarget(selectedReview); setModerationReason("") }}
+        canModerate={canModerate}
       />
 
-      <Dialog open={rejectTarget !== null} onOpenChange={(open) => { if (!open && !mutation) setRejectTarget(null) }}>
+      {canModerate && <Dialog open={rejectTarget !== null} onOpenChange={(open) => { if (!open && !mutation) setRejectTarget(null) }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Từ chối đánh giá</DialogTitle>
@@ -368,7 +370,7 @@ export function AdminReviewModerationPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
     </div>
   )
 }
@@ -382,9 +384,10 @@ interface ReviewDetailSheetProps {
   onModerate: (status: Exclude<ReviewStatus, "PENDING">) => void
   onReply: () => void
   onReject: () => void
+  canModerate: boolean
 }
 
-function ReviewDetailSheet({ review, replyDraft, mutation, onReplyDraftChange, onOpenChange, onModerate, onReply, onReject }: ReviewDetailSheetProps) {
+function ReviewDetailSheet({ review, replyDraft, mutation, onReplyDraftChange, onOpenChange, onModerate, onReply, onReject, canModerate }: ReviewDetailSheetProps) {
   return (
     <Sheet open={review !== null} onOpenChange={onOpenChange}>
       <SheetContent className="max-w-2xl">
@@ -438,7 +441,7 @@ function ReviewDetailSheet({ review, replyDraft, mutation, onReplyDraftChange, o
                   </div>
                   <DetailGrid rows={[["Ngày gửi", formatDateTime(review.createdAt)], ["Cập nhật", formatDateTime(review.updatedAt)]]} />
                 </section>
-                {review.moderationReason && (
+                {canModerate && review.moderationReason && (
                   <section className="flex flex-col gap-2">
                     <h3 className="text-sm font-semibold">Lý do moderation</h3>
                     <p className="whitespace-pre-wrap rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">{review.moderationReason}</p>
@@ -457,12 +460,14 @@ function ReviewDetailSheet({ review, replyDraft, mutation, onReplyDraftChange, o
                   </Button>
                   {review.staffReply && <p className="text-xs text-muted-foreground">Phản hồi hiện tại sẽ được cập nhật khi lưu nội dung mới.</p>}
                 </section>
-                <Separator />
-                <div className="flex flex-wrap justify-end gap-2 pt-1">
-                  <Button variant="outline" disabled={mutation !== null} onClick={() => onModerate("HIDDEN")}>Ẩn</Button>
-                  <Button variant="destructive" disabled={mutation !== null} onClick={onReject}>Từ chối</Button>
-                  <Button disabled={mutation !== null} onClick={() => onModerate("PUBLISHED")}>Phê duyệt</Button>
-                </div>
+                {canModerate && <>
+                  <Separator />
+                  <div className="flex flex-wrap justify-end gap-2 pt-1">
+                    <Button variant="outline" disabled={mutation !== null} onClick={() => onModerate("HIDDEN")}>Ẩn</Button>
+                    <Button variant="destructive" disabled={mutation !== null} onClick={onReject}>Từ chối</Button>
+                    <Button disabled={mutation !== null} onClick={() => onModerate("PUBLISHED")}>Phê duyệt</Button>
+                  </div>
+                </>}
               </div>
             </div>
           </>

@@ -5,6 +5,8 @@ import com.example.hotelmanagement.dto.review.ReviewListResponse;
 import com.example.hotelmanagement.dto.review.ReviewModerationRequest;
 import com.example.hotelmanagement.dto.review.ReviewReplyRequest;
 import com.example.hotelmanagement.dto.review.ReviewResponse;
+import com.example.hotelmanagement.dto.review.StaffReviewListResponse;
+import com.example.hotelmanagement.dto.review.StaffReviewResponse;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.BookingRoom;
 import com.example.hotelmanagement.entity.CustomerProfile;
@@ -142,6 +144,37 @@ public class ReviewService {
         );
     }
 
+    @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.REVIEW_REPLY)
+    public StaffReviewListResponse listReviewsForStaffReply(
+            ReviewStatus status,
+            String roomTypeCode,
+            Integer rating,
+            Integer page,
+            Integer size
+    ) {
+        int normalizedPage = page == null || page < 0 ? 0 : page;
+        int normalizedSize = size == null || size <= 0 ? 20 : Math.min(size, 100);
+        String normalizedRoomTypeCode = normalizeOptionalText(roomTypeCode);
+        if (rating != null && (rating < 1 || rating > 5)) {
+            throw new BusinessValidationException("Overall rating must be between 1 and 5");
+        }
+
+        Page<Review> reviews = reviewRepository.findAllForStaffReply(
+                status,
+                normalizedRoomTypeCode,
+                rating,
+                PageRequest.of(normalizedPage, normalizedSize)
+        );
+        return new StaffReviewListResponse(
+                reviews.getContent().stream().map(this::mapStaffResponse).toList(),
+                reviews.getNumber(),
+                reviews.getSize(),
+                reviews.getTotalElements(),
+                reviews.getTotalPages()
+        );
+    }
+
     /** Admin approve/reject: PENDING (or an already-moderated review) -> PUBLISHED/HIDDEN/REJECTED. */
     @PreAuthorize(PermissionExpressions.REVIEW_MODERATE)
     public ReviewResponse moderate(String bookingPublicId, ReviewModerationRequest request) {
@@ -222,6 +255,33 @@ public class ReviewService {
                 review.getStaffRepliedAt(),
                 review.getCreatedAt(),
                 review.getUpdatedAt()
+        );
+    }
+
+    private StaffReviewResponse mapStaffResponse(Review review) {
+        ReviewResponse response = mapResponse(review);
+        return new StaffReviewResponse(
+                response.id(),
+                response.bookingPublicId(),
+                response.bookingCode(),
+                response.customerName(),
+                response.customerEmail(),
+                response.roomNumber(),
+                response.roomTypeCode(),
+                response.roomTypeName(),
+                response.overallRating(),
+                response.roomRating(),
+                response.cleanlinessRating(),
+                response.serviceRating(),
+                response.valueRating(),
+                response.title(),
+                response.comment(),
+                response.status(),
+                response.staffReply(),
+                response.staffReplyBy(),
+                response.staffRepliedAt(),
+                response.createdAt(),
+                response.updatedAt()
         );
     }
 

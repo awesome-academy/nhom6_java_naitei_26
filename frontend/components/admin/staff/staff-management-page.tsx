@@ -62,6 +62,16 @@ function parseVndInput(value: string) {
   const digits = value.replace(/\D/g, "")
   return digits ? Number(digits) : null
 }
+function formatSalary(value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === "") return "Chưa cập nhật"
+  const amount = typeof value === "number" ? value : Number(value.replace(/,/g, ""))
+  return Number.isFinite(amount) ? `${vndFormatter.format(amount)} VND` : "Chưa cập nhật"
+}
+function formatSalaryInput(value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === "") return ""
+  const amount = typeof value === "number" ? value : Number(value.replace(/,/g, ""))
+  return Number.isFinite(amount) ? formatVndInput(String(Math.trunc(amount))) : ""
+}
 
 export default function StaffManagementPage() {
   const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth()
@@ -107,7 +117,11 @@ export default function StaffManagementPage() {
   function openCreate() { setCreateForm(emptyCreateForm()); setCreateOpen(true) }
   function openEdit(member: StaffManagementListItem) {
     setEditingStaff(member)
-    setEditForm({ position: member.position ?? "", department: member.department ?? "", baseSalary: "" })
+    setEditForm({
+      position: member.position ?? "",
+      department: member.department ?? "",
+      baseSalary: formatSalaryInput(member.baseSalary),
+    })
     setEditOpen(true)
   }
   function openPassword(member: StaffManagementListItem) {
@@ -190,17 +204,19 @@ export default function StaffManagementPage() {
   const columns = [
     { key: "staff", header: "Nhân viên", render: (member: StaffManagementListItem) => <div><div className="font-medium">{member.fullName}</div><div className="text-xs text-muted-foreground">{member.employeeCode}</div></div> },
     { key: "email", header: "Email", render: (member: StaffManagementListItem) => member.email },
+    { key: "phone", header: "Số điện thoại", render: (member: StaffManagementListItem) => member.phone || "Chưa cập nhật" },
     { key: "account", header: "Tài khoản", render: (member: StaffManagementListItem) => <Badge variant={member.accountStatus === "ACTIVE" ? "active" : "warning"}>{accountLabels[member.accountStatus] ?? member.accountStatus}</Badge> },
     { key: "position", header: "Chức danh", render: (member: StaffManagementListItem) => <div><div>{member.position || "Chưa cập nhật"}</div><div className="text-xs text-muted-foreground">{member.department || "Chưa phân phòng ban"}</div></div> },
+    { key: "baseSalary", header: "Lương cơ bản", render: (member: StaffManagementListItem) => formatSalary(member.baseSalary) },
     { key: "hiredAt", header: "Ngày vào làm", render: (member: StaffManagementListItem) => formatDate(member.hiredAt) },
     { key: "status", header: "Trạng thái", render: (member: StaffManagementListItem) => <Badge variant={statusVariants[member.employmentStatus]}>{statusLabels[member.employmentStatus]}</Badge> },
     { key: "actions", header: "Thao tác", className: "text-right", render: (member: StaffManagementListItem) => <div className="flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => openEdit(member)} disabled={isSubmitting}><Pencil data-icon="inline-start" /> Sửa</Button><Button variant="ghost" size="sm" onClick={() => openPassword(member)} disabled={isSubmitting}><KeyRound data-icon="inline-start" /> Mật khẩu</Button>{member.accountStatus === "PENDING_VERIFICATION" && <Button variant="outline" size="sm" onClick={() => void resendInvitation(member)} disabled={isSubmitting}>Gửi lại</Button>}{member.employmentStatus !== "TERMINATED" && <Button variant="outline" size="sm" onClick={() => openStatus(member)} disabled={isSubmitting}><UserRoundX data-icon="inline-start" /> Trạng thái</Button>}</div> },
   ]
 
   return <div className="flex flex-col gap-6">
-    <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center"><div><h1 className="text-2xl font-bold tracking-tight">Quản lý nhân viên</h1><p className="text-sm text-muted-foreground">Tạo tài khoản Staff độc lập và quản lý hồ sơ, trạng thái, mật khẩu.</p></div><div className="flex gap-2"><Button variant="outline" onClick={() => void loadData()} disabled={isLoading}><RefreshCw data-icon="inline-start" /> Làm mới</Button><Button onClick={openCreate}><UserPlus data-icon="inline-start" /> Tạo tài khoản Staff</Button></div></div>
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="text-2xl font-bold">Quản lý nhân viên</h1><p className="text-sm text-[var(--muted-foreground)]">Tạo tài khoản Staff độc lập và quản lý hồ sơ, trạng thái, mật khẩu.</p></div><div className="flex gap-2"><Button variant="outline" onClick={() => void loadData()} disabled={isLoading}><RefreshCw data-icon="inline-start" /> Làm mới</Button><Button onClick={openCreate}><UserPlus data-icon="inline-start" /> Tạo tài khoản Staff</Button></div></div>
     {loadError && <Card><CardContent className="flex items-center justify-between gap-4 p-4 text-sm text-destructive"><span>{loadError}</span><Button variant="outline" size="sm" onClick={() => void loadData()}>Thử lại</Button></CardContent></Card>}
-    <Card><CardHeader><CardTitle>Danh sách Staff</CardTitle><CardDescription>{staff.length} hồ sơ · bao gồm lời mời chưa xác thực và Staff đã nghỉ việc</CardDescription></CardHeader><CardContent className="flex flex-col gap-4"><div className="relative max-w-xl"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" /><Input className="pl-10" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm theo mã, tên, email, chức danh..." /></div>{isLoading ? <Skeleton className="h-96 w-full" /> : <DataTable columns={columns} data={filteredStaff} keyExtractor={(member) => member.employeeCode} emptyMessage="Chưa có Staff phù hợp" />}</CardContent></Card>
+    <Card><CardHeader><CardTitle>Danh sách Staff</CardTitle><CardDescription>{staff.length} hồ sơ · bao gồm lời mời chưa xác thực và Staff đã nghỉ việc</CardDescription></CardHeader><CardContent className="flex flex-col gap-4"><div className="relative max-w-xl"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" /><Input className="pl-10" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm theo mã, tên, email, chức danh..." /></div>{isLoading ? <Skeleton className="h-96 w-full" /> : <DataTable columns={columns} data={filteredStaff} keyExtractor={(member) => member.employeeCode} emptyMessage="Chưa có Staff phù hợp" tableWrapperClassName="max-h-[32rem] overflow-y-auto" />}</CardContent></Card>
 
     <Dialog open={createOpen} onOpenChange={(open) => !isSubmitting && setCreateOpen(open)}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Tạo tài khoản Staff</DialogTitle><DialogDescription>Staff sẽ nhận email invitation để xác thực và đặt mật khẩu chính thức. Mật khẩu tạm không được gửi trong email.</DialogDescription></DialogHeader><div className="grid gap-4 md:grid-cols-2"><div className="grid gap-2"><Label htmlFor="create-email">Email Staff *</Label><Input id="create-email" type="email" value={createForm.email} onChange={(event) => setCreateForm((current) => ({ ...current, email: event.target.value }))} /></div><div className="grid gap-2"><Label htmlFor="create-name">Họ và tên *</Label><Input id="create-name" value={createForm.fullName} onChange={(event) => setCreateForm((current) => ({ ...current, fullName: event.target.value }))} /></div><div className="grid gap-2"><Label htmlFor="create-phone">Số điện thoại</Label><Input id="create-phone" value={createForm.phone} onChange={(event) => setCreateForm((current) => ({ ...current, phone: event.target.value }))} /></div><div className="grid gap-2"><Label htmlFor="create-password">Mật khẩu tạm *</Label><Input id="create-password" type="password" autoComplete="new-password" value={createForm.temporaryPassword} onChange={(event) => setCreateForm((current) => ({ ...current, temporaryPassword: event.target.value }))} placeholder="Tối thiểu 12 ký tự" /></div><div className="grid gap-2"><Label htmlFor="create-position">Chức danh</Label><Input id="create-position" value={createForm.position} onChange={(event) => setCreateForm((current) => ({ ...current, position: event.target.value }))} placeholder="Có thể để trống" /></div><div className="grid gap-2"><Label htmlFor="create-department">Phòng ban</Label><Input id="create-department" value={createForm.department} onChange={(event) => setCreateForm((current) => ({ ...current, department: event.target.value }))} placeholder="Có thể để trống" /></div><div className="grid gap-2"><Label htmlFor="create-hired-at">Ngày vào làm</Label><Input id="create-hired-at" type="date" value={createForm.hiredAt} onChange={(event) => setCreateForm((current) => ({ ...current, hiredAt: event.target.value }))} /></div><div className="grid gap-2"><div className="flex items-center justify-between"><Label htmlFor="create-salary">Lương cơ bản</Label><span className="text-xs font-medium text-muted-foreground">VND</span></div><Input id="create-salary" inputMode="numeric" value={createForm.baseSalary} onChange={(event) => setCreateForm((current) => ({ ...current, baseSalary: formatVndInput(event.target.value) }))} placeholder="8.000.000" /></div></div><DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)} disabled={isSubmitting}>Hủy</Button><Button onClick={() => void submitCreate()} disabled={isSubmitting}>{isSubmitting ? <Loader2 className="animate-spin" /> : <UserPlus data-icon="inline-start" />} Tạo và gửi invitation</Button></DialogFooter></DialogContent></Dialog>
 

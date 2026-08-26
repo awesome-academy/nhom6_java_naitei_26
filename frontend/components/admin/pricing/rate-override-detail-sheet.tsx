@@ -43,9 +43,7 @@ export function RateOverrideDetailSheet({
             </SheetHeader>
 
             <dl className="grid gap-5 p-6 text-sm">
-              <Detail label="Đối tượng" value={override.roomTypeName
-                ? `${override.roomTypeCode} · ${override.roomTypeName}`
-                : `Phòng ${override.roomNumber}`} />
+              <Detail label="Loại phòng" value={`${override.roomTypeCode} · ${override.roomTypeName}`} />
               <Detail
                 label="Khoảng ngày"
                 value={`${format(parseISO(override.startDate), "dd/MM/yyyy", { locale: vi })} – ${format(parseISO(override.endDate), "dd/MM/yyyy", { locale: vi })} (không gồm ngày cuối)`}
