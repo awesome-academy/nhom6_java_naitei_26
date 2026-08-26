@@ -94,6 +94,18 @@ public class ReviewService {
         return mapResponse(reviewRepository.saveAndFlush(reviewBuilder.build()));
     }
 
+    /** Returns the current customer's review for the booking, if one has already been submitted. */
+    @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.REVIEW_CREATE)
+    public ReviewResponse getReview(String bookingPublicId, Long actorUserId) {
+        bookingRepository.findOneByPublicIdAndCustomerProfile_User_Id(bookingPublicId, actorUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", bookingPublicId));
+
+        Review review = reviewRepository.findByBooking_PublicId(bookingPublicId)
+                .orElseThrow(() -> new ResourceNotFoundException("Review", bookingPublicId));
+        return mapResponse(review);
+    }
+
     /** Admin approve/reject: PENDING (or an already-moderated review) -> PUBLISHED/HIDDEN/REJECTED. */
     @PreAuthorize(PermissionExpressions.REVIEW_MODERATE)
     public ReviewResponse moderate(String bookingPublicId, ReviewModerationRequest request) {

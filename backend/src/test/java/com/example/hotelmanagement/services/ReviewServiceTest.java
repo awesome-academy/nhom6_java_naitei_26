@@ -149,6 +149,42 @@ class ReviewServiceTest {
     }
 
     @Test
+    void getReviewReturnsOwnedBookingReview() {
+        Booking booking = checkedOutBooking(1);
+        Review review = pendingReview();
+        review.setBooking(booking);
+        when(bookingRepository.findOneByPublicIdAndCustomerProfile_User_Id(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID))
+                .thenReturn(Optional.of(booking));
+        when(reviewRepository.findByBooking_PublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(review));
+
+        ReviewResponse response = reviewService.getReview(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID);
+
+        assertThat(response.status()).isEqualTo(ReviewStatus.PENDING);
+        assertThat(response.bookingPublicId()).isEqualTo(BOOKING_PUBLIC_ID);
+    }
+
+    @Test
+    void getReviewRejectsBookingNotOwnedByActor() {
+        when(bookingRepository.findOneByPublicIdAndCustomerProfile_User_Id(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> reviewService.getReview(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(reviewRepository, never()).findByBooking_PublicId(any());
+    }
+
+    @Test
+    void getReviewReturnsNotFoundWhenOwnedBookingHasNoReview() {
+        Booking booking = checkedOutBooking(1);
+        when(bookingRepository.findOneByPublicIdAndCustomerProfile_User_Id(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID))
+                .thenReturn(Optional.of(booking));
+        when(reviewRepository.findByBooking_PublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> reviewService.getReview(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
     void moderateTransitionsPendingToPublished() {
         Review review = pendingReview();
         when(reviewRepository.findForUpdateByBooking_PublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(review));

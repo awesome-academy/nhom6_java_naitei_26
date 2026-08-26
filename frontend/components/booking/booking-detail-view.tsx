@@ -11,6 +11,7 @@ import {
   CreditCard,
   Hotel,
   Mail,
+  MessageSquareText,
   Phone,
   ReceiptText,
   UserRound,
@@ -40,6 +41,7 @@ import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { getMyBookingDetail } from "@/lib/api/booking"
 import { cancelBooking, deletePendingBooking } from "@/lib/api/booking"
+import { getBookingReview } from "@/lib/api/reviews"
 import type {
   Booking,
   BookingDetail,
@@ -166,6 +168,7 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
   const [detail, setDetail] = useState<BookingDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [hasReview, setHasReview] = useState<boolean | null>(null)
 
   useEffect(() => {
     let ignore = false
@@ -173,9 +176,23 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
     async function loadBookingDetail() {
       setIsLoading(true)
       setError(null)
+      setHasReview(null)
       try {
         const response = await getMyBookingDetail(publicId)
-        if (!ignore) setDetail(response)
+        if (ignore) return
+        setDetail(response)
+
+        if (response.booking.status !== "CHECKED_OUT") {
+          setHasReview(false)
+          return
+        }
+
+        try {
+          await getBookingReview(publicId)
+          if (!ignore) setHasReview(true)
+        } catch {
+          if (!ignore) setHasReview(false)
+        }
       } catch (loadError) {
         if (!ignore) setError(getErrorMessage(loadError))
       } finally {
@@ -254,12 +271,23 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
             </Button>
           )}
           {booking.status === "CHECKED_OUT" && (
-            <Button asChild>
-              <Link href={`/profile/bookings/${encodeURIComponent(booking.publicId)}/invoice`}>
-                <ReceiptText data-icon="inline-start" />
-                Xem hóa đơn
-              </Link>
-            </Button>
+            <>
+              <Button asChild>
+                <Link href={`/profile/bookings/${encodeURIComponent(booking.publicId)}/invoice`}>
+                  <ReceiptText data-icon="inline-start" />
+                  Xem hóa đơn
+                </Link>
+              </Button>
+              {hasReview === false && (
+                <Button asChild variant="outline">
+                  <Link href={`/profile/bookings/${encodeURIComponent(booking.publicId)}/review`}>
+                    <MessageSquareText data-icon="inline-start" />
+                    Viết đánh giá
+                  </Link>
+                </Button>
+              )}
+              {hasReview === true && <Badge variant="secondary">Đã gửi đánh giá</Badge>}
+            </>
           )}
           {canCancelBooking(booking) && (
             <Button variant="outline" onClick={cancelCurrentBooking}>Hủy booking</Button>
