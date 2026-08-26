@@ -14,6 +14,7 @@ public record AuthProperties(
     @Min(1) int maxFailedLoginAttempts,
     @NotNull Duration lockDuration,
     @NotNull Duration emailVerificationTokenTtl,
+    @NotNull Duration emailVerificationResendCooldown,
     @NotNull Duration passwordResetTokenTtl,
     @NotBlank String frontendVerifyUrl,
     @NotBlank String frontendResetUrl,

@@ -3,6 +3,7 @@ package com.example.hotelmanagement.services;
 import com.example.hotelmanagement.dto.auth.AuthMessageResponse;
 import com.example.hotelmanagement.dto.auth.AuthResponse;
 import com.example.hotelmanagement.dto.auth.EmailVerificationRequest;
+import com.example.hotelmanagement.dto.auth.EmailVerificationResendRequest;
 import com.example.hotelmanagement.dto.auth.LoginRequest;
 import com.example.hotelmanagement.dto.auth.OAuthGoogleRequest;
 import com.example.hotelmanagement.dto.auth.PasswordResetConfirmRequest;
@@ -97,6 +98,10 @@ public class AuthService {
             AuthToken token = existingToken.get();
             user = token.getUser();
 
+            if (token.getUsedAt() == null && !token.getExpiresAt().isAfter(now())) {
+                throw new AuthException(HttpStatus.GONE, "Token xác thực đã hết hạn");
+            }
+
             // If token is not yet used, consume it and activate user
             if (token.getUsedAt() == null) {
                 boolean wasUnverified = user.getEmailVerifiedAt() == null;
@@ -140,6 +145,23 @@ public class AuthService {
 
         // Token not found at all
         throw new AuthException(HttpStatus.BAD_REQUEST, "Token xác thực không hợp lệ");
+    }
+
+    @Transactional
+    public AuthMessageResponse resendEmailVerification(EmailVerificationResendRequest request) {
+        String email = normalizeEmail(request.email());
+        userRepository.findByEmailIgnoreCaseAndDeletedAtIsNull(email)
+            .filter(this::isPendingEmailVerification)
+            .ifPresent(user -> authTokenService.createResendEmailVerificationToken(user, null)
+                .ifPresent(token -> emailService.sendVerificationEmail(
+                    user.getEmail(),
+                    user.getFullName(),
+                    token.value()
+                )));
+
+        return new AuthMessageResponse(
+            "Nếu tài khoản chưa được xác thực, chúng tôi sẽ gửi liên kết xác thực đến email của bạn."
+        );
     }
 
     @Transactional
@@ -317,6 +339,10 @@ public class AuthService {
             user.setStatus(UserStatus.ACTIVE);
         }
         return user;
+    }
+
+    private boolean isPendingEmailVerification(User user) {
+        return user.getStatus() == UserStatus.PENDING_VERIFICATION && user.getEmailVerifiedAt() == null;
     }
 
     private void ensureUserCanAuthenticate(User user) {

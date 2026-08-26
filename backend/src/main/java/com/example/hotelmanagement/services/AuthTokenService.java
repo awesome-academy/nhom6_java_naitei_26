@@ -55,6 +55,23 @@ public class AuthTokenService {
     }
 
     @Transactional
+    public Optional<IssuedAuthToken> createResendEmailVerificationToken(User user, String requestedIp) {
+        OffsetDateTime requestedAt = now();
+        OffsetDateTime cooldownStartedAt = requestedAt.minus(authProperties.emailVerificationResendCooldown());
+        boolean requestedRecently = authTokenRepository.existsByUserAndTokenTypeAndCreatedAtAfter(
+            user,
+            AuthTokenType.EMAIL_VERIFICATION,
+            cooldownStartedAt
+        );
+
+        if (requestedRecently) {
+            return Optional.empty();
+        }
+
+        return Optional.of(createToken(user, AuthTokenType.EMAIL_VERIFICATION, requestedIp));
+    }
+
+    @Transactional
     public AuthToken validateToken(String rawToken, AuthTokenType expectedType) {
         String tokenHash = hashToken(requireTokenValue(rawToken));
         AuthToken authToken = authTokenRepository.findByTokenHashForUpdate(tokenHash)

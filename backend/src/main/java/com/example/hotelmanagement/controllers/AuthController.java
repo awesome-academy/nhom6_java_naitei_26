@@ -3,6 +3,7 @@ package com.example.hotelmanagement.controllers;
 import com.example.hotelmanagement.dto.auth.AuthResponse;
 import com.example.hotelmanagement.dto.auth.AuthMessageResponse;
 import com.example.hotelmanagement.dto.auth.EmailVerificationRequest;
+import com.example.hotelmanagement.dto.auth.EmailVerificationResendRequest;
 import com.example.hotelmanagement.dto.auth.LoginRequest;
 import com.example.hotelmanagement.dto.auth.LogoutRequest;
 import com.example.hotelmanagement.dto.auth.OAuthGoogleRequest;
@@ -69,6 +70,23 @@ public class AuthController {
     @PostMapping("/verify-email")
     public AuthMessageResponse verifyEmail(@Valid @RequestBody EmailVerificationRequest request) {
         return authService.verifyEmail(request);
+    }
+
+    @Operation(
+        summary = "Resend email verification link",
+        description = "Requests a new one-time verification link for a pending customer account."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "202", description = "Resend request accepted",
+            content = @Content(schema = @Schema(implementation = AuthMessageResponse.class))),
+        @ApiResponse(responseCode = "400", description = "Invalid request body",
+            content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
+    })
+    @PostMapping("/verify-email/resend")
+    public ResponseEntity<AuthMessageResponse> resendEmailVerification(
+        @Valid @RequestBody EmailVerificationResendRequest request
+    ) {
+        return ResponseEntity.accepted().body(authService.resendEmailVerification(request));
     }
 
     @Operation(
