@@ -145,7 +145,7 @@ export function CustomerList() {
               className="truncate text-left font-medium text-foreground hover:text-accent"
               onClick={(event) => {
                 event.stopPropagation()
-                router.push(`/admin/guests/${customer.publicId}`)
+                router.push(`/manager/guests/${customer.publicId}`)
               }}
             >
               {customer.fullName}
@@ -195,7 +195,7 @@ export function CustomerList() {
               aria-label={`Xem ${customer.fullName}`}
               onClick={(event) => {
                 event.stopPropagation()
-                router.push(`/admin/guests/${customer.publicId}`)
+                router.push(`/manager/guests/${customer.publicId}`)
               }}
             >
               <Eye data-icon="inline-start" />
@@ -298,7 +298,7 @@ export function CustomerList() {
               columns={columns}
               data={customers}
               keyExtractor={(customer) => customer.publicId}
-              onRowClick={(customer) => router.push(`/admin/guests/${customer.publicId}`)}
+              onRowClick={(customer) => router.push(`/manager/guests/${customer.publicId}`)}
               emptyMessage="Không tìm thấy tài khoản customer"
             />
           )}

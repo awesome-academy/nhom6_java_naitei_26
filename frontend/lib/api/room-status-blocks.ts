@@ -17,3 +17,17 @@ export function createRoomStatusBlock(
 ): Promise<RoomStatusBlock> {
   return apiClient.post<RoomStatusBlock>("/api/room-status-blocks", request)
 }
+
+export function extendRoomStatusBlock(
+  publicId: string,
+  newEndDate: string,
+): Promise<RoomStatusBlock> {
+  return apiClient.patch<RoomStatusBlock>(
+    `/api/room-status-blocks/${encodeURIComponent(publicId)}/extend`,
+    { newEndDate },
+  )
+}
+
+export function deleteRoomStatusBlock(publicId: string): Promise<void> {
+  return apiClient.delete<void>(`/api/room-status-blocks/${encodeURIComponent(publicId)}`)
+}

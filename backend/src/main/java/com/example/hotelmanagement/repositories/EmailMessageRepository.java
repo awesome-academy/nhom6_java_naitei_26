@@ -48,4 +48,6 @@ public interface EmailMessageRepository extends JpaRepository<EmailMessage, Long
             @Param("now") OffsetDateTime now,
             @Param("reason") String reason
     );
+
+    List<EmailMessage> findTop20ByRelatedBookingIdOrderByCreatedAtDesc(Long relatedBookingId);
 }

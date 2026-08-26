@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.security;
 
 import com.example.hotelmanagement.dto.review.ReviewListResponse;
+import com.example.hotelmanagement.dto.review.StaffReviewListResponse;
 import com.example.hotelmanagement.entity.User;
 import com.example.hotelmanagement.entity.enums.UserStatus;
 import com.example.hotelmanagement.services.ReviewService;
@@ -81,6 +82,27 @@ class ReviewEndpointAuthorizationTest {
     void reviewCreatePermissionCannotListReviews() throws Exception {
         mockMvc.perform(get("/api/admin/reviews")
                         .with(authentication(authenticationWith("review:create"))))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(reviewService);
+    }
+
+    @Test
+    void staffReplyPermissionCanListReviewsForReplies() throws Exception {
+        org.mockito.Mockito.when(reviewService.listReviewsForStaffReply(null, null, null, 0, 20))
+                .thenReturn(new StaffReviewListResponse(List.of(), 0, 20, 0, 0));
+
+        mockMvc.perform(get("/api/staff/reviews")
+                        .with(authentication(authenticationWith("review:reply"))))
+                .andExpect(status().isOk());
+
+        verify(reviewService).listReviewsForStaffReply(null, null, null, 0, 20);
+    }
+
+    @Test
+    void reviewModeratePermissionCannotListStaffReplyReviews() throws Exception {
+        mockMvc.perform(get("/api/staff/reviews")
+                        .with(authentication(authenticationWith("review:moderate"))))
                 .andExpect(status().isForbidden());
 
         verifyNoInteractions(reviewService);

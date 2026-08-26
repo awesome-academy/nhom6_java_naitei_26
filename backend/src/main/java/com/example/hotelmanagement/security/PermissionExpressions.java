@@ -10,6 +10,7 @@ public final class PermissionExpressions {
     public static final String ROOM_CREATE = "hasAuthority('room:create')";
     public static final String ROOM_UPDATE = "hasAuthority('room:update')";
     public static final String ROOM_DELETE = "hasAuthority('room:delete')";
+    public static final String MAINTENANCE_MANAGE = "hasAuthority('maintenance:manage')";
     public static final String SHIFT_MANAGE = "hasAuthority('shift:manage')";
     public static final String SHIFT_READ_OWN = "hasAuthority('shift:read_own')";
     public static final String SHIFT_UPDATE_OWN = "hasAuthority('shift:update_own')";
@@ -40,6 +41,7 @@ public final class PermissionExpressions {
     public static final String REVIEW_CREATE = "hasAuthority('review:create')";
     public static final String REVIEW_MODERATE = "hasAuthority('review:moderate')";
     public static final String REVIEW_REPLY = "hasAuthority('review:reply')";
+    public static final String EMAIL_SEND = "hasAuthority('email:send')";
 
     private PermissionExpressions() {
     }
