@@ -36,21 +36,63 @@ public class BookingOptionResolverService {
             BookingPaymentOption paymentOption,
             String cancellationPolicyCode
     ) {
-        RoomType roomType = roomTypeRepository.findByCodeIgnoreCaseAndDeletedAtIsNull(normalizeCode(roomTypeCode))
-                .orElseThrow(() -> new ResourceNotFoundException("Room type", roomTypeCode));
-        if (!Boolean.TRUE.equals(roomType.getIsActive())) {
-            throw new BusinessValidationException("Only active room types can be booked");
-        }
-
-        BookingPaymentOption normalizedPaymentOption = paymentOption == null
-                ? BookingPaymentOption.ONLINE
-                : paymentOption;
+        RoomType roomType = findActiveRoomType(roomTypeCode);
+        BookingPaymentOption normalizedPaymentOption = normalizePaymentOption(paymentOption);
         String normalizedPolicyCode = normalizeCode(cancellationPolicyCode);
 
         if (normalizedPaymentOption == BookingPaymentOption.PAY_AT_HOTEL) {
             return resolvePayAtHotelOption(roomType, normalizedPolicyCode);
         }
         return resolveOnlineOption(roomType, normalizedPolicyCode);
+    }
+
+    /**
+     * Staff-assisted bookings are walk-in bookings and always use the active
+     * non-refundable policy, regardless of which online policy options are
+     * configured for the room type.
+     */
+    public BookingOptionSelection resolveStaffBooking(
+            String roomTypeCode,
+            BookingPaymentOption paymentOption
+    ) {
+        RoomType roomType = findActiveRoomType(roomTypeCode);
+        BookingPaymentOption normalizedPaymentOption = normalizePaymentOption(paymentOption);
+        CancellationPolicy nonRefundPolicy = cancellationPolicyRepository
+                .findByCodeIgnoreCaseAndIsActiveTrue(NON_REFUND_POLICY_CODE)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Active cancellation policy", NON_REFUND_POLICY_CODE
+                ));
+
+        if (normalizedPaymentOption == BookingPaymentOption.PAY_AT_HOTEL) {
+            if (!Boolean.TRUE.equals(roomType.getPayAtHotelEnabled())) {
+                throw new BusinessValidationException("Pay at hotel is not enabled for this room type");
+            }
+            return new BookingOptionSelection(
+                    roomType,
+                    normalizedPaymentOption,
+                    nonRefundPolicy,
+                    normalizePercent(roomType.getPayAtHotelPriceAdjustmentPercent())
+            );
+        }
+        return new BookingOptionSelection(
+                roomType,
+                BookingPaymentOption.ONLINE,
+                nonRefundPolicy,
+                normalizePercent(nonRefundPolicy.getPriceAdjustmentPercent())
+        );
+    }
+
+    private RoomType findActiveRoomType(String roomTypeCode) {
+        RoomType roomType = roomTypeRepository.findByCodeIgnoreCaseAndDeletedAtIsNull(normalizeCode(roomTypeCode))
+                .orElseThrow(() -> new ResourceNotFoundException("Room type", roomTypeCode));
+        if (!Boolean.TRUE.equals(roomType.getIsActive())) {
+            throw new BusinessValidationException("Only active room types can be booked");
+        }
+        return roomType;
+    }
+
+    private BookingPaymentOption normalizePaymentOption(BookingPaymentOption paymentOption) {
+        return paymentOption == null ? BookingPaymentOption.ONLINE : paymentOption;
     }
 
     private BookingOptionSelection resolveOnlineOption(RoomType roomType, String cancellationPolicyCode) {

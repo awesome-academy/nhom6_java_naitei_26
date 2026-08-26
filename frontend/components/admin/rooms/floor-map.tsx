@@ -3,28 +3,48 @@ import { BedDouble, Building2, Wrench } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import type { HousekeepingStatus, Room } from "@/types/room"
+import type { HousekeepingStatus, Room, RoomBookingStatus } from "@/types/room"
 
 const tileStyles: Record<HousekeepingStatus, string> = {
   CLEAN: "border-green-300 bg-green-50 text-green-950 hover:bg-green-100",
   DIRTY: "border-red-300 bg-red-50 text-red-950 hover:bg-red-100",
   CLEANING: "border-orange-300 bg-orange-50 text-orange-950 hover:bg-orange-100",
-  INSPECTED: "border-slate-300 bg-slate-50 text-slate-950 hover:bg-slate-100",
 }
 
 const housekeepingLabels: Record<HousekeepingStatus, string> = {
   CLEAN: "Sạch",
   DIRTY: "Bẩn",
   CLEANING: "Đang dọn",
-  INSPECTED: "Đã kiểm tra",
+}
+
+const bookingLabels: Record<RoomBookingStatus, string> = {
+  HELD: "Đang giữ",
+  RESERVED: "Đã đặt",
+  OCCUPIED: "Đang ở",
+}
+
+const operationalLabels: Record<Room["operationalStatus"], string> = {
+  ACTIVE: "Hoạt động",
+  MAINTENANCE: "Bảo trì",
+  OUT_OF_SERVICE: "Ngừng phục vụ",
+  RENOVATION: "Cải tạo",
 }
 
 interface FloorMapProps {
   rooms: Room[]
+  occupancyByRoom: Record<string, RoomBookingStatus | null>
+  occupancyLoading: boolean
+  occupancyError: string | null
   onSelectRoom: (room: Room) => void
 }
 
-export function FloorMap({ rooms, onSelectRoom }: FloorMapProps) {
+export function FloorMap({
+  rooms,
+  occupancyByRoom,
+  occupancyLoading,
+  occupancyError,
+  onSelectRoom,
+}: FloorMapProps) {
   const groupedRooms = new Map<number | null, Room[]>()
   rooms.forEach((room) => {
     const current = groupedRooms.get(room.floor) ?? []
@@ -55,8 +75,14 @@ export function FloorMap({ rooms, onSelectRoom }: FloorMapProps) {
         <Legend color="bg-green-500" label="CLEAN — Sạch" />
         <Legend color="bg-red-500" label="DIRTY — Bẩn" />
         <Legend color="bg-orange-500" label="CLEANING — Đang dọn" />
-        <Legend color="bg-slate-400" label="INSPECTED — Đã kiểm tra" />
+        <Legend color="bg-blue-500" label="Đang ở / đã đặt / đang giữ" />
       </div>
+
+      {occupancyError && (
+        <p className="text-sm text-[var(--destructive)]">
+          Không thể tải trạng thái đặt phòng: {occupancyError}
+        </p>
+      )}
 
       {floors.map(([floor, floorRooms]) => (
         <Card key={floor ?? "unassigned"}>
@@ -78,15 +104,25 @@ export function FloorMap({ rooms, onSelectRoom }: FloorMapProps) {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <BedDouble className="h-5 w-5" />
-                    {room.operationalStatus !== "ACTIVE" && (
-                      <Wrench className="h-4 w-4" aria-label="Phòng không hoạt động" />
-                    )}
+                    <div className="flex items-center gap-1">
+                      {room.operationalStatus !== "ACTIVE" && (
+                        <Wrench className="h-4 w-4" aria-label="Phòng không hoạt động" />
+                      )}
+                    </div>
                   </div>
                   <p className="mt-3 text-lg font-bold">{room.roomNumber}</p>
                   <p className="truncate text-xs opacity-75">{room.roomTypeName}</p>
-                  <Badge className="mt-2 bg-white/70" variant="outline">
-                    {housekeepingLabels[room.housekeepingStatus]}
-                  </Badge>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    <Badge className="bg-white/70" variant="outline">
+                      {housekeepingLabels[room.housekeepingStatus]}
+                    </Badge>
+                    <Badge className="bg-white/70" variant={getBookingVariant(occupancyByRoom[room.roomNumber])}>
+                      {getBookingLabel(occupancyByRoom[room.roomNumber], occupancyLoading, occupancyError !== null)}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 truncate text-[11px] opacity-75">
+                    {operationalLabels[room.operationalStatus]}
+                  </p>
                 </button>
               ))}
             </div>
@@ -104,4 +140,21 @@ function Legend({ color, label }: { color: string; label: string }) {
       <span>{label}</span>
     </div>
   )
+}
+
+function getBookingLabel(
+  status: RoomBookingStatus | null | undefined,
+  loading: boolean,
+  hasError: boolean
+): string {
+  if (loading) return "Đang tải"
+  if (hasError && status === undefined) return "Chưa xác định"
+  return status ? bookingLabels[status] : "Trống"
+}
+
+function getBookingVariant(status: RoomBookingStatus | null | undefined) {
+  if (status === "OCCUPIED") return "success" as const
+  if (status === "RESERVED") return "confirmed" as const
+  if (status === "HELD") return "warning" as const
+  return "outline" as const
 }

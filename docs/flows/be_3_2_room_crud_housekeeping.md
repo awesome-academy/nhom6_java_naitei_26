@@ -23,7 +23,8 @@ BE-3.2 không thay đổi `operational_status`, không quản lý Room Status Bl
 | `POST` | `/api/rooms` | `room:create` | `201`, phòng vừa tạo |
 | `PUT` | `/api/rooms/{roomNumber}` | `room:update` | `200`, phòng sau cập nhật |
 | `DELETE` | `/api/rooms/{roomNumber}` | `room:delete` | `204`, không có body |
-| `PATCH` | `/api/rooms/{roomNumber}/housekeeping-status` | `room:update` | `200`, trạng thái mới |
+| `PATCH` | `/api/rooms/{roomNumber}/housekeeping-status` | `room:housekeeping:update` | `200`, trạng thái mới |
+| `GET` | `/api/rooms/occupancy` | `room:occupancy:read` | `200`, trạng thái booking hiệu lực theo ngày |
 | `POST` | `/api/rooms/{roomNumber}/images/upload-url` | `room:update` | `200`, presigned PUT URL |
 | `POST` | `/api/rooms/{roomNumber}/images/confirm` | `room:update` | `201`, metadata ảnh đã lưu |
 | `PUT` | `/api/rooms/{roomNumber}/images/order` | `room:update` | `200`, danh sách ảnh theo thứ tự mới |
@@ -133,11 +134,22 @@ CLEAN ──checkout/mark dirty──> DIRTY ──start cleaning──> CLEANIN
 Quy tắc:
 
 - Gửi lại đúng trạng thái hiện tại là idempotent: trả `200` và không ghi DB lại.
-- Nhảy cóc, đi ngược chu trình hoặc chuyển tới/từ `INSPECTED` trả `400`.
-- `INSPECTED` được giữ trong enum/schema để tương thích dữ liệu nhưng chưa tham gia flow BE-3.2.
+- Nhảy cóc hoặc đi ngược chu trình trả `400`.
+- Migration V39 chuẩn hóa dữ liệu housekeeping legacy về `CLEAN` trước khi thu hẹp enum database còn ba giá trị.
 - Checkout chưa nằm trong task này; integration tương lai phải gọi cùng logic chuyển trạng thái thay vì cập nhật DB trực tiếp.
 
-## 6. Flow upload ảnh qua MinIO
+## 6. Room occupancy theo ngày
+
+`GET /api/rooms/occupancy?date=YYYY-MM-DD` trả các phòng đang có booking hiệu lực trong khoảng nửa mở `[checkInDate, checkOutDate)`. Nếu bỏ `date`, backend dùng ngày hiện tại theo timezone khách sạn.
+
+- `PENDING + RESERVED` ánh xạ thành `HELD`.
+- `CONFIRMED + RESERVED` ánh xạ thành `RESERVED`.
+- `CHECKED_IN + OCCUPIED` ánh xạ thành `OCCUPIED`.
+- Phòng không có booking hiệu lực vẫn được trả về với `bookingStatus: null`.
+
+Occupancy chỉ mô tả booking trong ngày và không thay đổi logic availability hoặc housekeeping.
+
+## 7. Flow upload ảnh qua MinIO
 
 Bucket mặc định là `room-images`. Backend tự kiểm tra và tạo bucket khi có thao tác storage đầu tiên; application context không cần kết nối MinIO lúc khởi động.
 
@@ -199,7 +211,7 @@ Request chỉ gửi lại UUID và alt text:
 - Service gán `sortOrder = 0..n-1`.
 - Chỉ ảnh đầu tiên có `isPrimary = true`; mọi ảnh còn lại là `false`.
 
-## 7. Cấu hình MinIO
+## 8. Cấu hình MinIO
 
 | Biến môi trường | Mục đích | Giá trị mặc định |
 | --- | --- | --- |
@@ -210,7 +222,7 @@ Request chỉ gửi lại UUID và alt text:
 
 Credential không được hard-code. Nếu MinIO không khả dụng, adapter log lỗi kèm ngữ cảnh object/room phù hợp, bọc bằng custom exception và API trả `503` với thông báo an toàn.
 
-## 8. Bảng lỗi API
+## 9. Bảng lỗi API
 
 | HTTP | Trường hợp |
 | --- | --- |
@@ -221,7 +233,7 @@ Credential không được hard-code. Nếu MinIO không khả dụng, adapter l
 | `409 Conflict` | Trùng `roomNumber`, xác nhận lặp object hoặc vi phạm constraint dữ liệu |
 | `503 Service Unavailable` | MinIO/bucket tạm thời không khả dụng |
 
-## 9. Kiểm thử
+## 10. Kiểm thử
 
 - Unit test `RoomService`: chuẩn hóa và mặc định khi tạo, duplicate, Room Type inactive, reassign, soft-delete, filter validation và state machine.
 - Repository test: xác nhận bộ lọc tiện nghi dùng hợp Room Type/phòng và semantics AND.

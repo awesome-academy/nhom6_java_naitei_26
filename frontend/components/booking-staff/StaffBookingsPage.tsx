@@ -20,6 +20,9 @@ import { BookingFilters, BookingFilterValues } from "./BookingFilters";
 import { BookingStatsCards } from "./BookingStatsCards";
 import { RoomAssignmentModal } from "./RoomAssignmentModal";
 import { BookingEmailDialog } from "./booking-email-dialog";
+import { StaffBookingCreateDialog } from "./StaffBookingCreateDialog";
+import { StaffBookingPaymentDialog } from "./StaffBookingPaymentDialog";
+import { BookingCheckInDialog } from "./BookingCheckInDialog";
 import { FolioPanel } from "@/components/admin/bookings/folio-panel";
 import { InvoicePanel } from "@/components/admin/bookings/invoice-panel";
 import {
@@ -40,6 +43,7 @@ import {
   BookingStatus,
   FolioChargeResponse,
 } from "@/types/booking-staff";
+import type { Booking } from "@/types/booking";
 import type { InvoiceResponse } from "@/types/invoice";
 import type { ServiceItemOption } from "@/types/folio";
 import { useAuth } from "@/lib/auth-context";
@@ -47,6 +51,7 @@ import {
   AlertCircle,
   Ban,
   CheckCircle2,
+  CreditCard,
   Loader2,
   LogIn,
   LogOut,
@@ -102,6 +107,30 @@ function formatDateTime(dateStr: string | null): string {
   return format(new Date(dateStr), "dd/MM/yyyy HH:mm", { locale: vi });
 }
 
+function groupGuestsByRoom(guests: BookingStaffDetail["guests"]) {
+  const groups = new Map<string, {
+    key: string;
+    label: string;
+    guests: BookingStaffDetail["guests"];
+  }>();
+
+  guests.forEach((guest) => {
+    const key = guest.bookingRoomId === null ? "unassigned" : String(guest.bookingRoomId);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.guests.push(guest);
+      return;
+    }
+    groups.set(key, {
+      key,
+      label: guest.roomNumber ? `Phòng ${guest.roomNumber}` : "Chưa gán phòng",
+      guests: [guest],
+    });
+  });
+
+  return [...groups.values()];
+}
+
 function toIsoDate(value: string): string | null {
   const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value);
   if (!match) return null;
@@ -129,12 +158,13 @@ const EMPTY_FILTERS: BookingFilterValues = {
 
 export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager" }) {
   const router = useRouter();
-  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { user, isAuthenticated, isLoading: isAuthLoading, refreshUser } = useAuth();
   const canManageFolio = user?.permissions.includes("invoice:issue") ?? false;
   const canIssueInvoice = user?.permissions.includes("invoice:issue") ?? false;
   const canVoidInvoice = user?.permissions.includes("invoice:void") ?? false;
   const canSendEmail = user?.permissions.includes("email:send") ?? false;
   const canManageRefund = user?.permissions.includes("refund:approve") ?? false;
+  const canCreateStaffBooking = user?.permissions.includes("booking:create_staff") ?? false;
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // State
@@ -186,6 +216,17 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
 
   // Action loading states
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [isCreateBookingOpen, setIsCreateBookingOpen] = useState(false);
+  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
+  const [isCheckInDialogOpen, setIsCheckInDialogOpen] = useState(false);
+
+  useEffect(() => {
+    if (isAuthLoading || !isAuthenticated) return;
+    const timer = window.setTimeout(() => {
+      void refreshUser();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [isAuthLoading, isAuthenticated, refreshUser]);
 
   // Refund
   const [refund, setRefund] = useState<RefundResponse | null>(null);
@@ -421,6 +462,10 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
   // Check-in
   const handleCheckIn = async () => {
     if (!selectedBooking) return;
+    if (selectedBooking.sourceCode !== "STAFF_MANUAL") {
+      setIsCheckInDialogOpen(true);
+      return;
+    }
     if (!confirm("Xác nhận check-in cho booking này?")) return;
     setIsActionLoading(true);
     try {
@@ -571,10 +616,12 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
             Theo dõi và quản lý tất cả đơn đặt phòng
           </p>
         </div>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
+        {canCreateStaffBooking && (
+        <Button onClick={() => setIsCreateBookingOpen(true)}>
+          <Plus data-icon="inline-start" />
           Tạo đơn mới
         </Button>
+        )}
       </div>
 
       {/* Stats */}
@@ -655,18 +702,33 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
                   canSend={canSendEmail}
                 />
                 {selectedBooking.status === "PENDING" && (
-                  <Button
-                    size="sm"
-                    onClick={handleConfirm}
-                    disabled={isActionLoading}
-                  >
-                    {isActionLoading ? (
-                      <Loader2 data-icon="inline-start" className="animate-spin" />
-                    ) : (
-                      <CheckCircle2 data-icon="inline-start" />
+                  <>
+                    {selectedBooking.sourceCode === "STAFF_MANUAL" && selectedBooking.paymentStatus !== "PAID" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setIsPaymentDialogOpen(true)}
+                        disabled={isActionLoading}
+                      >
+                        <CreditCard data-icon="inline-start" />
+                        Thanh toán
+                      </Button>
                     )}
-                    Xác nhận
-                  </Button>
+                    {selectedBooking.sourceCode === "STAFF_MANUAL" && (
+                      <Button
+                        size="sm"
+                        onClick={handleConfirm}
+                        disabled={isActionLoading}
+                      >
+                        {isActionLoading ? (
+                          <Loader2 data-icon="inline-start" className="animate-spin" />
+                        ) : (
+                          <CheckCircle2 data-icon="inline-start" />
+                        )}
+                        {selectedBooking.paymentStatus === "PAID" ? "Xác nhận & check-in" : "Xác nhận tiền mặt & check-in"}
+                      </Button>
+                    )}
+                  </>
                 )}
                 {selectedBooking.status === "CONFIRMED" && (
                   <>
@@ -750,6 +812,14 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
                     <div>
                       <Label className="text-muted-foreground">Ngày tạo</Label>
                       <p>{formatDateTime(selectedBooking.createdAt)}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Check-in</Label>
+                      <p>{formatDateTime(selectedBooking.checkedInAt)}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Nhân viên check-in</Label>
+                      <p>{selectedBooking.checkedInByName || "-"}</p>
                     </div>
                   </div>
 
@@ -864,20 +934,29 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
                   {selectedBooking.guests.length === 0 ? (
                     <p className="text-muted-foreground">Chưa có thông tin khách</p>
                   ) : (
-                    selectedBooking.guests.map((guest) => (
-                      <Card key={guest.id}>
-                        <CardContent className="pt-4">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="font-medium">{guest.fullName}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {guest.nationality || "Không rõ quốc tịch"}
-                              </p>
+                    groupGuestsByRoom(selectedBooking.guests).map((group) => (
+                      <Card key={group.key}>
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base">{group.label}</CardTitle>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-3">
+                          {group.guests.map((guest, index) => (
+                            <div key={guest.id} className="flex items-start justify-between gap-3 rounded-lg bg-muted/30 p-3">
+                              <div>
+                                <p className="font-medium">
+                                  {index === 0 ? "Khách chính: " : `Khách phụ ${index}: `}
+                                  {guest.fullName}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {guest.nationality || "Không rõ quốc tịch"}
+                                  {guest.idDocumentType ? ` · ${guest.idDocumentType}` : ""}
+                                </p>
+                              </div>
+                              {guest.hasIdDocument && (
+                                <Badge variant="success">Đã có giấy tờ</Badge>
+                              )}
                             </div>
-                            {guest.hasIdDocument && (
-                              <Badge variant="success">Có CCCD</Badge>
-                            )}
-                          </div>
+                          ))}
                         </CardContent>
                       </Card>
                     ))
@@ -921,10 +1000,10 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
                                 <div className="font-medium">
                                   {payment.paymentCode}
                                   <Badge
-                                    variant={payment.status === "COMPLETED" ? "success" : "pending"}
+                                    variant={payment.status === "SUCCEEDED" ? "success" : "pending"}
                                     className="ml-2"
                                   >
-                                    {payment.status === "COMPLETED" ? "Hoàn thành" : payment.status}
+                                    {payment.status === "SUCCEEDED" ? "Hoàn thành" : payment.status}
                                   </Badge>
                                 </div>
                                 <p className="text-sm text-muted-foreground">
@@ -1029,6 +1108,29 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
         </SheetContent>
       </Sheet>
 
+      {selectedBooking && (
+        <StaffBookingPaymentDialog
+          open={isPaymentDialogOpen}
+          onOpenChange={setIsPaymentDialogOpen}
+          bookingPublicId={selectedBooking.publicId}
+          bookingCode={selectedBooking.bookingCode}
+          amount={Math.max(0, selectedBooking.totalAmount - selectedBooking.paidAmount)}
+          currency={selectedBooking.currency}
+        />
+      )}
+
+      {selectedBooking && (
+        <BookingCheckInDialog
+          open={isCheckInDialogOpen}
+          onOpenChange={setIsCheckInDialogOpen}
+          booking={selectedBooking}
+          onSuccess={async () => {
+            await loadBookings();
+            await openBookingDetail(selectedBooking.publicId);
+          }}
+        />
+      )}
+
       {/* Room Assignment Modal */}
       {selectedBooking && assigningRoomId && (
         <RoomAssignmentModal
@@ -1038,6 +1140,19 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
           bookingPublicId={selectedBooking.publicId}
           bookingRoomId={assigningRoomId}
           bookingRoomType={assigningRoomType}
+        />
+      )}
+
+      {canCreateStaffBooking && (
+        <StaffBookingCreateDialog
+          open={isCreateBookingOpen}
+          onOpenChange={setIsCreateBookingOpen}
+          onCreated={async (createdBooking: Booking) => {
+            await loadBookings();
+            await openBookingDetail(createdBooking.publicId);
+            setIsPaymentDialogOpen(true);
+          }}
+          onOpenBooking={openBookingDetail}
         />
       )}
 

@@ -2,8 +2,10 @@ package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.booking.BookingResponse;
 import com.example.hotelmanagement.entity.Booking;
+import com.example.hotelmanagement.entity.BookingRoom;
 import com.example.hotelmanagement.entity.BookingSource;
 import com.example.hotelmanagement.entity.CustomerProfile;
+import com.example.hotelmanagement.entity.Room;
 import com.example.hotelmanagement.entity.StaffProfile;
 import com.example.hotelmanagement.entity.User;
 import com.example.hotelmanagement.entity.enums.ActorType;
@@ -121,6 +123,21 @@ class BookingStateMachineServiceTest {
         assertThatThrownBy(() -> service.checkIn(BOOKING_PUBLIC_ID, STAFF_USER_ID))
                 .isInstanceOf(BusinessValidationException.class);
         verify(bookingRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void checkInAllowsAuthorizedAdminWithoutStaffProfile() {
+        stubSaveAndFlushReturnsArgument();
+        Booking booking = createBooking(BookingStatus.CONFIRMED, true);
+        when(bookingRepository.findForUpdateByPublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(booking));
+        when(staffProfileRepository.findByUser_Id(STAFF_USER_ID)).thenReturn(Optional.empty());
+        authenticateAs("booking:check_in");
+
+        BookingResponse response = service.checkIn(BOOKING_PUBLIC_ID, STAFF_USER_ID);
+
+        assertThat(response.status()).isEqualTo(BookingStatus.CHECKED_IN);
+        assertThat(booking.getCheckedInBy()).isNull();
+        assertThat(booking.getCheckedInAt()).isEqualTo(OffsetDateTime.now(FIXED_CLOCK));
     }
 
     @Test
@@ -346,6 +363,12 @@ class BookingStateMachineServiceTest {
             CustomerProfile customerProfile = CustomerProfile.builder().user(user).build();
             booking.setCustomerProfile(customerProfile);
         }
+        BookingRoom bookingRoom = BookingRoom.builder()
+                .booking(booking)
+                .room(Room.builder().roomNumber("101").build())
+                .build();
+        bookingRoom.setId(1L);
+        booking.getBookingRooms().add(bookingRoom);
         return booking;
     }
 

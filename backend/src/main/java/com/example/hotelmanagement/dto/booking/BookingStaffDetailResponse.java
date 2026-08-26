@@ -97,6 +97,8 @@ public record BookingStaffDetailResponse(
      */
     public record BookingGuestResponse(
             Long id,
+            Long bookingRoomId,
+            String roomNumber,
             String fullName,
             String nationality,
             String idDocumentType,

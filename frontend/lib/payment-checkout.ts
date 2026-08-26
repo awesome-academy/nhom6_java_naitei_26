@@ -17,7 +17,9 @@ export interface PaymentCheckoutSession {
   expiresAt: string | null
 }
 
-export function savePaymentCheckout(booking: Booking, payment: PaymentResponse) {
+type CheckoutBooking = Pick<Booking, "publicId" | "bookingCode">
+
+export function savePaymentCheckout(booking: CheckoutBooking, payment: PaymentResponse) {
   const checkout: PaymentCheckoutSession = {
     bookingPublicId: booking.publicId,
     bookingCode: booking.bookingCode,
@@ -87,8 +89,9 @@ export function clearPaymentIdempotencyKey(
 }
 
 export function redirectToPaymentCheckout(
-  booking: Booking,
-  payment: PaymentResponse
+  booking: CheckoutBooking,
+  payment: PaymentResponse,
+  options?: { staffBooking?: boolean }
 ) {
   if (!payment.paymentUrl) {
     throw new Error("Cổng thanh toán không trả về địa chỉ checkout.")
@@ -100,6 +103,13 @@ export function redirectToPaymentCheckout(
   }
 
   savePaymentCheckout(booking, payment)
+
+  if (options?.staffBooking && payment.provider === "MOCK_WALLET") {
+    window.location.assign(
+      `/manager/bookings/payment/${encodeURIComponent(payment.paymentCode)}?bookingId=${encodeURIComponent(booking.publicId)}`
+    )
+    return
+  }
 
   if (payment.checkoutFields.length > 0) {
     const form = document.createElement("form")

@@ -141,7 +141,7 @@ public class RoomService {
         roomRepository.saveAndFlush(room);
     }
 
-    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
+    @PreAuthorize(PermissionExpressions.HOUSEKEEPING_UPDATE)
     public RoomResponse updateHousekeepingStatus(
             String roomNumber,
             @Valid HousekeepingStatusUpdateRequest request
@@ -170,7 +170,6 @@ public class RoomService {
             case CLEAN -> requestedStatus == HousekeepingStatus.DIRTY;
             case DIRTY -> requestedStatus == HousekeepingStatus.CLEANING;
             case CLEANING -> requestedStatus == HousekeepingStatus.CLEAN;
-            case INSPECTED -> false;
         };
     }
 

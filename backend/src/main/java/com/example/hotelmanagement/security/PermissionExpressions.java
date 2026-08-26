@@ -3,12 +3,19 @@ package com.example.hotelmanagement.security;
 public final class PermissionExpressions {
 
     public static final String BOOKING_CREATE = "hasAuthority('booking:create')";
+    public static final String STAFF_BOOKING_CREATE = "hasAuthority('booking:create_staff')";
+    public static final String STAFF_BOOKING_PAYMENT = "hasAuthority('booking:create_staff')";
+    public static final String BOOKING_PRICE_CALCULATE =
+            "hasAnyAuthority('booking:create', 'booking:create_staff')";
     public static final String BOOKING_READ_OWN = "hasAuthority('booking:read_own')";
     public static final String PAYMENT_CREATE = "hasAuthority('booking:create')";
     public static final String PAYMENT_MANAGE = "hasAuthority('payment:manage')";
     public static final String ROOM_READ = "hasAuthority('room:read')";
     public static final String ROOM_CREATE = "hasAuthority('room:create')";
     public static final String ROOM_UPDATE = "hasAuthority('room:update')";
+    public static final String HOUSEKEEPING_UPDATE = "hasAuthority('room:housekeeping:update')";
+    public static final String ROOM_OCCUPANCY_READ = "hasAuthority('room:occupancy:read')";
+    public static final String ROOM_BOOKING_MAP_READ = "hasAuthority('room:booking_map:read')";
     public static final String ROOM_DELETE = "hasAuthority('room:delete')";
     public static final String MAINTENANCE_MANAGE = "hasAuthority('maintenance:manage')";
     public static final String SHIFT_MANAGE = "hasAuthority('shift:manage')";

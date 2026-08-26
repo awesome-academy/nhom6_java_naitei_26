@@ -19,7 +19,6 @@ const housekeepingLabels: Record<HousekeepingStatus, string> = {
   CLEAN: "Sạch",
   DIRTY: "Bẩn",
   CLEANING: "Đang dọn",
-  INSPECTED: "Đã kiểm tra",
 }
 
 const operationalLabels: Record<RoomOperationalStatus, string> = {
@@ -91,15 +90,7 @@ export function RoomDetailSheet({
                   </Badge>
                 </StatusBlock>
                 <StatusBlock label="Housekeeping">
-                  <Badge variant={
-                    room.housekeepingStatus === "CLEAN"
-                      ? "success"
-                      : room.housekeepingStatus === "DIRTY"
-                        ? "destructive"
-                        : room.housekeepingStatus === "CLEANING"
-                          ? "warning"
-                          : "secondary"
-                  }>
+                  <Badge variant={getHousekeepingVariant(room.housekeepingStatus)}>
                     {housekeepingLabels[room.housekeepingStatus]}
                   </Badge>
                 </StatusBlock>
@@ -147,6 +138,12 @@ export function RoomDetailSheet({
       </SheetContent>
     </Sheet>
   )
+}
+
+function getHousekeepingVariant(status: HousekeepingStatus) {
+  if (status === "CLEAN") return "success" as const
+  if (status === "DIRTY") return "destructive" as const
+  return "warning" as const
 }
 
 function StatusBlock({ label, children }: { label: string; children: React.ReactNode }) {

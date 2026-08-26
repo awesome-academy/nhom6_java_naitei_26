@@ -7,6 +7,9 @@ import com.example.hotelmanagement.dto.booking.BookingPriceCalculationRequest;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationResponse;
 import com.example.hotelmanagement.dto.booking.BookingResponse;
 import com.example.hotelmanagement.dto.booking.BookingRoomCreateItem;
+import com.example.hotelmanagement.dto.booking.StaffBookingCreateRequest;
+import com.example.hotelmanagement.dto.booking.StaffBookingGuestCreateItem;
+import com.example.hotelmanagement.dto.booking.StaffBookingRoomCreateItem;
 import com.example.hotelmanagement.dto.booking.BookingRoomNightResponse;
 import com.example.hotelmanagement.dto.booking.BookingRoomResponse;
 import com.example.hotelmanagement.dto.booking.BookingStatusHistoryResponse;
@@ -20,12 +23,14 @@ import com.example.hotelmanagement.entity.BookingStatusHistory;
 import com.example.hotelmanagement.entity.CustomerProfile;
 import com.example.hotelmanagement.entity.Room;
 import com.example.hotelmanagement.entity.RoomType;
+import com.example.hotelmanagement.entity.StaffProfile;
 import com.example.hotelmanagement.entity.User;
 import com.example.hotelmanagement.entity.enums.ActorType;
 import com.example.hotelmanagement.entity.enums.BedType;
 import com.example.hotelmanagement.entity.enums.BookingPaymentStatus;
 import com.example.hotelmanagement.entity.enums.BookingRoomStatus;
 import com.example.hotelmanagement.entity.enums.BookingStatus;
+import com.example.hotelmanagement.entity.enums.HousekeepingStatus;
 import com.example.hotelmanagement.entity.enums.RoomOperationalStatus;
 import com.example.hotelmanagement.entity.enums.StatusChangeSource;
 import com.example.hotelmanagement.exceptions.BookingRoomConflictException;
@@ -42,6 +47,8 @@ import com.example.hotelmanagement.repositories.PaymentEventRepository;
 import com.example.hotelmanagement.repositories.PaymentRepository;
 import com.example.hotelmanagement.repositories.RefundRepository;
 import com.example.hotelmanagement.repositories.RoomRepository;
+import com.example.hotelmanagement.repositories.RoomStatusBlockRepository;
+import com.example.hotelmanagement.repositories.StaffProfileRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -61,6 +68,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -74,10 +82,14 @@ public class BookingService {
 
     /**
      * Self-service bookings created through this API always originate from the website channel;
-     * staff-assisted channels (WALK_IN/PHONE) are out of scope until STAFF is granted booking:create.
+     * Staff-assisted bookings use the separate STAFF_MANUAL source and permission.
      */
     private static final String WEBSITE_SOURCE_CODE = "WEBSITE";
+    private static final String STAFF_MANUAL_SOURCE_CODE = "STAFF_MANUAL";
+    private static final String NON_REFUND_POLICY_CODE = "NON_REFUND";
     private static final Duration HOLD_DURATION = Duration.ofMinutes(15);
+    private static final int MAX_BOOKING_GUEST_NAME_LENGTH = 150;
+    private static final int MAX_BOOKING_GUEST_DOCUMENT_LENGTH = 120;
     private static final Set<BookingRoomStatus> ACTIVE_BOOKING_STATUSES =
             Set.of(BookingRoomStatus.RESERVED, BookingRoomStatus.OCCUPIED);
     private static final int BOOKING_CODE_MAX_ATTEMPTS = 5;
@@ -94,10 +106,13 @@ public class BookingService {
     private PaymentRepository paymentRepository;
     private RefundRepository refundRepository;
     private final RoomRepository roomRepository;
+    private final RoomStatusBlockRepository roomStatusBlockRepository;
     private final BookingCalculatorService bookingCalculatorService;
     private final CancellationPolicyService cancellationPolicyService;
     private final BookingOptionResolverService bookingOptionResolverService;
     private final EmailService emailService;
+    private final GuestDocumentCryptoService guestDocumentCryptoService;
+    private final StaffProfileRepository staffProfileRepository;
     private final Clock clock;
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -118,7 +133,10 @@ public class BookingService {
             CancellationPolicyService cancellationPolicyService,
             BookingOptionResolverService bookingOptionResolverService,
             EmailService emailService,
-            Clock clock
+            Clock clock,
+            RoomStatusBlockRepository roomStatusBlockRepository,
+            GuestDocumentCryptoService guestDocumentCryptoService,
+            StaffProfileRepository staffProfileRepository
     ) {
         this.bookingRepository = bookingRepository;
         this.bookingGuestRepository = bookingGuestRepository;
@@ -131,10 +149,13 @@ public class BookingService {
         this.paymentRepository = paymentRepository;
         this.refundRepository = refundRepository;
         this.roomRepository = roomRepository;
+        this.roomStatusBlockRepository = roomStatusBlockRepository;
         this.bookingCalculatorService = bookingCalculatorService;
         this.cancellationPolicyService = cancellationPolicyService;
         this.bookingOptionResolverService = bookingOptionResolverService;
         this.emailService = emailService;
+        this.guestDocumentCryptoService = guestDocumentCryptoService;
+        this.staffProfileRepository = staffProfileRepository;
         this.clock = clock;
     }
 
@@ -161,10 +182,13 @@ public class BookingService {
         this.paymentRepository = null;
         this.refundRepository = null;
         this.roomRepository = roomRepository;
+        this.roomStatusBlockRepository = null;
         this.bookingCalculatorService = bookingCalculatorService;
         this.cancellationPolicyService = cancellationPolicyService;
         this.bookingOptionResolverService = null;
         this.emailService = emailService;
+        this.guestDocumentCryptoService = null;
+        this.staffProfileRepository = null;
         this.clock = clock;
     }
 
@@ -335,6 +359,284 @@ public class BookingService {
                     exception
             );
         }
+    }
+
+    @PreAuthorize(PermissionExpressions.STAFF_BOOKING_CREATE)
+    public BookingResponse createStaffBooking(@Valid StaffBookingCreateRequest request, Long userId) {
+        if (request == null || request.contactName() == null || request.contactName().isBlank()) {
+            throw new BusinessValidationException("Contact name is required");
+        }
+        if (request.contactPhone() == null || request.contactPhone().isBlank()) {
+            throw new BusinessValidationException("Contact phone is required");
+        }
+        if (request.rooms() == null || request.rooms().isEmpty()) {
+            throw new BusinessValidationException("At least one room is required");
+        }
+        BookingSource source = bookingSourceRepository
+                .findByCodeIgnoreCaseAndIsActiveTrue(STAFF_MANUAL_SOURCE_CODE)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking source", STAFF_MANUAL_SOURCE_CODE));
+        Long assignedByStaffId = resolveAssignedByStaffId(userId);
+
+        Booking booking = Booking.builder()
+                .publicId(java.util.UUID.randomUUID().toString())
+                .bookingCode(generateBookingCode())
+                .customerProfile(null)
+                .source(source)
+                .sourceCommissionPercentSnapshot(source.getCommissionPercent())
+                .status(BookingStatus.PENDING)
+                .contactName(request.contactName().strip())
+                .contactEmail(normalizeOptionalText(request.contactEmail()))
+                .contactPhone(normalizeOptionalText(request.contactPhone()))
+                .specialRequests(normalizeOptionalText(request.specialRequests()))
+                .holdExpiresAt(OffsetDateTime.now(clock).plus(HOLD_DURATION))
+                .createdBy(userId)
+                .build();
+
+        BigDecimal roomsTotal = BigDecimal.ZERO;
+        BigDecimal taxTotal = BigDecimal.ZERO;
+        BigDecimal roomTaxPercentSnapshot = null;
+        String currency = null;
+        int totalAdults = 0;
+        int totalChildren = 0;
+        Set<String> selectedRoomNumbers = new HashSet<>();
+
+        for (StaffBookingRoomCreateItem item : request.rooms()) {
+            if (item == null || item.roomNumber() == null || item.roomNumber().isBlank()) {
+                throw new BusinessValidationException("Room number is required");
+            }
+            if (!selectedRoomNumbers.add(item.roomNumber().strip().toUpperCase(Locale.ROOT))) {
+                throw new BusinessValidationException("A room cannot be selected more than once");
+            }
+            validateStaffGuests(item);
+            Room room = findStaffRoomForBooking(item);
+            BookingOptionSelection optionSelection = bookingOptionResolverService.resolveStaffBooking(
+                    item.roomTypeCode(), item.paymentOption()
+            );
+            validateSelectedRoom(room, optionSelection.roomType(), item);
+
+            BookingPriceCalculationResponse priceCalculation = bookingCalculatorService.calculateStaffPrice(
+                    new BookingPriceCalculationRequest(
+                            item.roomTypeCode(),
+                            item.paymentOption(),
+                            NON_REFUND_POLICY_CODE,
+                            item.checkInDate(),
+                            item.checkOutDate(),
+                            item.guestCount(),
+                            0
+                    )
+            );
+
+            BookingRoom bookingRoom = BookingRoom.builder()
+                    .booking(booking)
+                    .room(room)
+                    .roomType(optionSelection.roomType())
+                    .roomTypeCodeSnapshot(optionSelection.roomType().getCode())
+                    .roomTypeNameSnapshot(optionSelection.roomType().getName())
+                    .checkInDate(item.checkInDate())
+                    .checkOutDate(item.checkOutDate())
+                    .roomSubtotal(priceCalculation.roomsTotal())
+                    .paymentOption(optionSelection.paymentOption())
+                    .priceAdjustmentPercentSnapshot(optionSelection.priceAdjustmentPercent())
+                    .status(BookingRoomStatus.RESERVED)
+                    .guestCount(item.guestCount())
+                    .assignedAt(OffsetDateTime.now(clock))
+                    .assignedBy(assignedByStaffId)
+                    .build();
+            cancellationPolicyService.applyPolicySnapshot(
+                    bookingRoom,
+                    optionSelection.cancellationPolicy(),
+                    optionSelection.priceAdjustmentPercent()
+            );
+
+            for (DailyRateResponse dailyRate : priceCalculation.dailyRates()) {
+                bookingRoom.getBookingRoomNights().add(
+                        BookingRoomNight.builder()
+                                .bookingRoom(bookingRoom)
+                                .stayDate(dailyRate.date())
+                                .price(dailyRate.price())
+                                .build()
+                );
+            }
+
+            booking.getBookingRooms().add(bookingRoom);
+            for (StaffBookingGuestCreateItem guestItem : item.guests()) {
+                booking.getBookingGuests().add(buildStaffBookingGuest(booking, bookingRoom, guestItem));
+            }
+            roomsTotal = roomsTotal.add(priceCalculation.roomsTotal());
+            taxTotal = taxTotal.add(priceCalculation.taxTotal());
+            totalAdults += item.guestCount();
+            if (roomTaxPercentSnapshot == null) {
+                roomTaxPercentSnapshot = priceCalculation.roomTaxPercentSnapshot();
+            }
+            if (currency == null) {
+                currency = priceCalculation.currency();
+            }
+        }
+
+        booking.setAdults(totalAdults);
+        booking.setChildren(totalChildren);
+        booking.setRoomsTotal(roomsTotal.setScale(2, RoundingMode.HALF_UP));
+        booking.setTaxTotal(taxTotal.setScale(2, RoundingMode.HALF_UP));
+        booking.setRoomTaxPercentSnapshot(roomTaxPercentSnapshot);
+        booking.setTotalAmount(roomsTotal.add(taxTotal).setScale(2, RoundingMode.HALF_UP));
+        if (currency != null) {
+            booking.setCurrency(currency);
+        }
+        booking.getStatusHistory().add(
+                BookingStatusHistory.builder()
+                        .booking(booking)
+                        .fromStatus(null)
+                        .toStatus(BookingStatus.PENDING)
+                        .actorType(ActorType.USER)
+                        .changedBy(userId)
+                        .source(StatusChangeSource.MANUAL)
+                        .build()
+        );
+
+        try {
+            return mapResponse(bookingRepository.saveAndFlush(booking));
+        } catch (DataIntegrityViolationException exception) {
+            log.warn(
+                    "Database rejected staff booking creation bookingCode={}",
+                    booking.getBookingCode(),
+                    exception
+            );
+            throw new BookingRoomConflictException(
+                    "One or more selected rooms are no longer available for the requested dates",
+                    exception
+            );
+        }
+    }
+
+    /**
+     * booking_rooms.assigned_by references staff_profiles.id, while the authenticated
+     * principal supplies users.id. Admins may create staff-assisted bookings without a
+     * staff profile, so the nullable assignment remains empty in that case; bookings.created_by
+     * still records the authenticated user.
+     */
+    private Long resolveAssignedByStaffId(Long userId) {
+        if (staffProfileRepository == null || userId == null) {
+            return null;
+        }
+        Long staffProfileId = staffProfileRepository.findByUser_Id(userId)
+                .map(StaffProfile::getId)
+                .orElse(null);
+        if (staffProfileId == null) {
+            log.warn("Booking creator has no staff profile; leaving assignedBy null userId={}", userId);
+        }
+        return staffProfileId;
+    }
+
+    private Room findStaffRoomForBooking(StaffBookingRoomCreateItem item) {
+        if (item.checkInDate() == null || item.checkOutDate() == null
+                || !item.checkOutDate().isAfter(item.checkInDate())) {
+            throw new BusinessValidationException("Check-out date must be after check-in date");
+        }
+        Room room = roomRepository.findOperationalForUpdateByRoomNumber(item.roomNumber().strip())
+                .orElseThrow(() -> new BookingRoomConflictException(
+                        "Room " + item.roomNumber() + " is not available"
+                ));
+        if (room.getHousekeepingStatus() != HousekeepingStatus.CLEAN) {
+            throw new BookingRoomConflictException("Room " + room.getRoomNumber() + " is not clean");
+        }
+        if (room.getOperationalStatus() != RoomOperationalStatus.ACTIVE || !Boolean.TRUE.equals(room.getIsActive())) {
+            throw new BookingRoomConflictException("Room " + room.getRoomNumber() + " is not operationally active");
+        }
+        if (bookingRoomRepository.existsOverlappingBooking(
+                room.getId(),
+                ACTIVE_BOOKING_STATUSES,
+                item.checkInDate(),
+                item.checkOutDate()
+        )) {
+            throw new BookingRoomConflictException("Room " + room.getRoomNumber() + " is already booked");
+        }
+        if (roomStatusBlockRepository == null || roomStatusBlockRepository.existsOverlappingBlock(
+                room.getId(), item.checkInDate(), item.checkOutDate()
+        )) {
+            throw new BookingRoomConflictException("Room " + room.getRoomNumber() + " has a status block");
+        }
+        return room;
+    }
+
+    private void validateSelectedRoom(
+            Room room,
+            RoomType requestedRoomType,
+            StaffBookingRoomCreateItem item
+    ) {
+        if (room.getRoomType() == null
+                || !room.getRoomType().getCode().equalsIgnoreCase(requestedRoomType.getCode())) {
+            throw new BusinessValidationException("Selected room does not match the requested room type");
+        }
+        int maxOccupancy = room.getMaxOccupancyOverride() == null
+                ? requestedRoomType.getMaxOccupancy()
+                : room.getMaxOccupancyOverride();
+        if (item.guestCount() > maxOccupancy) {
+            throw new BusinessValidationException("Guest count exceeds selected room occupancy");
+        }
+        if (requestedRoomType.getMaxAdults() != null
+                && item.guestCount() > requestedRoomType.getMaxAdults()) {
+            throw new BusinessValidationException("Guest count exceeds room type adult limit");
+        }
+    }
+
+    private void validateStaffGuests(StaffBookingRoomCreateItem item) {
+        if (item.guestCount() == null || item.guestCount() < 1) {
+            throw new BusinessValidationException("At least one guest is required per room");
+        }
+        if (item.guests() == null || item.guests().size() != item.guestCount()) {
+            throw new BusinessValidationException("Guest list must match the guest count for the room");
+        }
+    }
+
+    private BookingGuest buildStaffBookingGuest(
+            Booking booking,
+            BookingRoom bookingRoom,
+            StaffBookingGuestCreateItem guestItem
+    ) {
+        if (guestItem == null) {
+            throw new BusinessValidationException("Guest information is required");
+        }
+        String fullName = normalizeRequiredText(
+                guestItem.fullName(), "Guest full name", MAX_BOOKING_GUEST_NAME_LENGTH
+        );
+        String documentNumber = normalizeRequiredText(
+                guestItem.idDocumentNumber(), "Guest identity document number", MAX_BOOKING_GUEST_DOCUMENT_LENGTH
+        );
+        if (guestItem.idDocumentType() == null) {
+            throw new BusinessValidationException("Guest identity document type is required");
+        }
+        if (guestDocumentCryptoService == null) {
+            throw new BusinessValidationException("Guest identity document encryption is not configured");
+        }
+        GuestDocumentCryptoService.EncryptedDocument encryptedDocument =
+                guestDocumentCryptoService.encrypt(documentNumber);
+
+        return BookingGuest.builder()
+                .booking(booking)
+                .bookingRoom(bookingRoom)
+                .fullName(fullName)
+                .nationality(normalizeNationality(guestItem.nationality()))
+                .idDocumentType(guestItem.idDocumentType())
+                .idDocumentNumberEncrypted(encryptedDocument.ciphertext())
+                .idDocumentLookupHash(encryptedDocument.lookupHash())
+                .dateOfBirth(guestItem.dateOfBirth())
+                .build();
+    }
+
+    private String normalizeRequiredText(String value, String fieldName, int maxLength) {
+        String normalized = normalizeOptionalText(value);
+        if (normalized == null) {
+            throw new BusinessValidationException(fieldName + " is required");
+        }
+        if (normalized.length() > maxLength) {
+            throw new BusinessValidationException(fieldName + " must not exceed " + maxLength + " characters");
+        }
+        return normalized;
+    }
+
+    private String normalizeNationality(String nationality) {
+        String normalized = normalizeOptionalText(nationality);
+        return normalized == null ? null : normalized.toUpperCase(Locale.ROOT);
     }
 
     @Transactional(readOnly = true)

@@ -1,5 +1,8 @@
 package com.example.hotelmanagement.services;
 
+import com.example.hotelmanagement.dto.booking.BookingCheckInRequest;
+import com.example.hotelmanagement.dto.booking.BookingCheckInRoomItem;
+import com.example.hotelmanagement.dto.booking.StaffBookingGuestCreateItem;
 import com.example.hotelmanagement.dto.bookingguest.BookingGuestCreateRequest;
 import com.example.hotelmanagement.dto.bookingguest.BookingGuestIdentityDocumentResponse;
 import com.example.hotelmanagement.dto.bookingguest.BookingGuestResponse;
@@ -23,6 +26,7 @@ import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -95,7 +99,7 @@ public class BookingGuestService {
             @Valid BookingGuestCreateRequest request,
             Long staffUserId
     ) {
-        ensureStaffActor(staffUserId);
+        ensureStaffActor(staffUserId, "booking:assign_room");
         Booking booking = getGuestMutableBookingForUpdate(bookingPublicId);
         BookingRoom bookingRoom = resolveBookingRoom(booking.getPublicId(), request.bookingRoomId());
         validateDocumentPair(request);
@@ -119,6 +123,98 @@ public class BookingGuestService {
         }
 
         return mapResponse(bookingGuestRepository.saveAndFlush(guestBuilder.build()));
+    }
+
+    /**
+     * Replaces the temporary booking guests with the guests verified at the front desk.
+     * The operation is intentionally kept in the same transaction as check-in so a failed
+     * state transition cannot leave a partially updated guest list.
+     */
+    @PreAuthorize(PermissionExpressions.BOOKING_CHECK_IN)
+    public void replaceGuestsForCheckIn(
+            String bookingPublicId,
+            @Valid BookingCheckInRequest request,
+            Long staffUserId
+    ) {
+        ensureStaffActor(staffUserId, "booking:check_in");
+        Booking booking = bookingRepository.findForUpdateByPublicId(bookingPublicId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", bookingPublicId));
+        if (booking.getStatus() != BookingStatus.CONFIRMED) {
+            throw new BusinessValidationException("Only confirmed bookings can capture check-in guests");
+        }
+        if (request == null || request.rooms() == null || request.rooms().isEmpty()) {
+            throw new BusinessValidationException("Guest information is required for check-in");
+        }
+
+        Map<Long, BookingRoom> bookingRoomsById = booking.getBookingRooms().stream()
+                .collect(java.util.stream.Collectors.toMap(BookingRoom::getId, room -> room));
+        Set<Long> requestedRoomIds = new java.util.HashSet<>();
+        int totalGuests = 0;
+        List<BookingGuest> replacementGuests = new java.util.ArrayList<>();
+
+        for (BookingCheckInRoomItem roomItem : request.rooms()) {
+            if (roomItem == null || roomItem.bookingRoomId() == null) {
+                throw new BusinessValidationException("Booking room is required for check-in");
+            }
+            if (!requestedRoomIds.add(roomItem.bookingRoomId())) {
+                throw new BusinessValidationException("A booking room can only appear once in check-in data");
+            }
+            BookingRoom bookingRoom = bookingRoomsById.get(roomItem.bookingRoomId());
+            if (bookingRoom == null) {
+                throw new ResourceNotFoundException("Booking room", roomItem.bookingRoomId().toString());
+            }
+            if (roomItem.guestCount() == null || roomItem.guestCount() < 1
+                    || roomItem.guests() == null || roomItem.guests().size() != roomItem.guestCount()) {
+                throw new BusinessValidationException("Guest list must match the guest count for the room");
+            }
+
+            bookingRoom.setGuestCount(roomItem.guestCount());
+            totalGuests += roomItem.guestCount();
+            for (StaffBookingGuestCreateItem guestItem : roomItem.guests()) {
+                replacementGuests.add(buildCheckInGuest(booking, bookingRoom, guestItem));
+            }
+        }
+
+        if (requestedRoomIds.size() != bookingRoomsById.size()) {
+            throw new BusinessValidationException("Check-in data must include every booking room");
+        }
+
+        bookingGuestRepository.deleteAllByBookingId(booking.getId());
+        booking.getBookingGuests().clear();
+        booking.getBookingGuests().addAll(replacementGuests);
+        booking.setAdults(totalGuests);
+        booking.setChildren(0);
+        bookingGuestRepository.saveAllAndFlush(replacementGuests);
+    }
+
+    private BookingGuest buildCheckInGuest(
+            Booking booking,
+            BookingRoom bookingRoom,
+            StaffBookingGuestCreateItem guestItem
+    ) {
+        if (guestItem == null) {
+            throw new BusinessValidationException("Guest information is required");
+        }
+        String fullName = normalizeRequiredText(guestItem.fullName(), "Guest full name", MAX_FULL_NAME_LENGTH);
+        String documentNumber = normalizeRequiredText(
+                guestItem.idDocumentNumber(),
+                "Guest identity document number",
+                MAX_ID_DOCUMENT_NUMBER_LENGTH
+        );
+        if (guestItem.idDocumentType() == null) {
+            throw new BusinessValidationException("Guest identity document type is required");
+        }
+        GuestDocumentCryptoService.EncryptedDocument encryptedDocument = cryptoService.encrypt(documentNumber);
+        return BookingGuest.builder()
+                .booking(booking)
+                .bookingRoom(bookingRoom)
+                .fullName(fullName)
+                .nationality(normalizeNationality(guestItem.nationality()))
+                .idDocumentType(guestItem.idDocumentType())
+                .idDocumentNumberEncrypted(encryptedDocument.ciphertext())
+                .idDocumentLookupHash(encryptedDocument.lookupHash())
+                .dateOfBirth(guestItem.dateOfBirth())
+                .build();
     }
 
     @PreAuthorize(PermissionExpressions.GUEST_READ_ID)
@@ -194,11 +290,16 @@ public class BookingGuestService {
         }
     }
 
-    private void ensureStaffActor(Long staffUserId) {
+    private void ensureStaffActor(Long staffUserId, String requiredAuthority) {
         Long normalizedStaffUserId = validatePositiveId(staffUserId, "Staff user id");
         StaffProfile staff = staffProfileRepository.findByUser_Id(normalizedStaffUserId)
-                .orElseThrow(() -> new BusinessValidationException("Only staff can manage booking guests"));
-        if (staff.getId() == null) {
+                .orElse(null);
+        if (staff != null && staff.getId() != null) {
+            return;
+        }
+        if (SecurityContextHolder.getContext().getAuthentication() == null
+                || SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .noneMatch(authority -> requiredAuthority.equals(authority.getAuthority()))) {
             throw new BusinessValidationException("Only staff can manage booking guests");
         }
     }

@@ -87,7 +87,9 @@ public class BookingStateMachineService {
     public BookingResponse checkIn(String bookingPublicId, Long staffUserId) {
         Booking booking = getBookingForUpdate(bookingPublicId);
         StaffProfile staff = staffProfileRepository.findByUser_Id(staffUserId)
-                .orElseThrow(() -> new BusinessValidationException("Only staff can check in a booking"));
+                .orElse(null);
+        ensureAuthorizedStaffActor(staffUserId, staff, "check in", "booking:check_in");
+        ensureAllRoomsAssigned(booking);
 
         applyTransition(booking, BookingStatus.CHECKED_IN, ActorType.USER, staffUserId, StatusChangeSource.MANUAL, null);
         booking.setCheckedInBy(staff);
@@ -95,12 +97,42 @@ public class BookingStateMachineService {
         return mapResponse(bookingRepository.saveAndFlush(booking));
     }
 
+    /**
+     * Confirms a staff-created walk-in booking as the front-desk actor. This is separate from
+     * {@link #confirm(String)} because payment callbacks are system transitions, while a staff
+     * confirmation must be attributed to the authenticated employee.
+     */
+    @PreAuthorize(PermissionExpressions.BOOKING_CHECK_IN)
+    @AuditMutation(action = "BOOKING_CONFIRMED", entityType = "booking", actorUserIdArgumentIndex = 1)
+    public BookingResponse confirmAsStaff(String bookingPublicId, Long staffUserId) {
+        Booking booking = getBookingForUpdate(bookingPublicId);
+        StaffProfile staff = staffProfileRepository.findByUser_Id(staffUserId).orElse(null);
+        ensureAuthorizedStaffActor(staffUserId, staff, "confirm a booking", "booking:check_in");
+        if (booking.getStatus() != BookingStatus.PENDING) {
+            throw new BusinessValidationException("Only pending bookings can be confirmed");
+        }
+        ensureAllRoomsAssigned(booking);
+
+        applyTransition(
+                booking,
+                BookingStatus.CONFIRMED,
+                ActorType.USER,
+                staffUserId,
+                StatusChangeSource.MANUAL,
+                null
+        );
+        Booking confirmedBooking = bookingRepository.saveAndFlush(booking);
+        emailService.sendBookingConfirmedEmail(confirmedBooking);
+        return mapResponse(confirmedBooking);
+    }
+
     @PreAuthorize(PermissionExpressions.BOOKING_CHECK_OUT)
     @AuditMutation(action = "BOOKING_CHECKED_OUT", entityType = "booking", actorUserIdArgumentIndex = 1)
     public BookingResponse checkOut(String bookingPublicId, Long staffUserId) {
         Booking booking = getBookingForUpdate(bookingPublicId);
         StaffProfile staff = staffProfileRepository.findByUser_Id(staffUserId)
-                .orElseThrow(() -> new BusinessValidationException("Only staff can check out a booking"));
+                .orElse(null);
+        ensureAuthorizedStaffActor(staffUserId, staff, "check out", "booking:check_out");
 
         applyTransition(booking, BookingStatus.CHECKED_OUT, ActorType.USER, staffUserId, StatusChangeSource.MANUAL, null);
         booking.setCheckedOutBy(staff);
@@ -279,6 +311,32 @@ public class BookingStateMachineService {
     private Booking getBookingForUpdate(String publicId) {
         return bookingRepository.findForUpdateByPublicId(publicId)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking", publicId));
+    }
+
+    private void ensureAllRoomsAssigned(Booking booking) {
+        if (booking.getBookingRooms() == null || booking.getBookingRooms().isEmpty()
+                || booking.getBookingRooms().stream().anyMatch(bookingRoom -> bookingRoom.getRoom() == null)) {
+            throw new BusinessValidationException("All booking rooms must be assigned before check-in");
+        }
+    }
+
+    private void ensureAuthorizedStaffActor(
+            Long userId,
+            StaffProfile staff,
+            String action,
+            String requiredAuthority
+    ) {
+        if (staff != null) {
+            return;
+        }
+        if (userId == null || SecurityContextHolder.getContext().getAuthentication() == null) {
+            throw new BusinessValidationException("Only staff can " + action);
+        }
+        boolean hasRequiredPermission = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(authority -> requiredAuthority.equals(authority.getAuthority()));
+        if (!hasRequiredPermission) {
+            throw new BusinessValidationException("Only staff can " + action);
+        }
     }
 
     private BookingResponse mapResponse(Booking booking) {

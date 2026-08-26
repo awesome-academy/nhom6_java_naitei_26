@@ -20,7 +20,6 @@ import {
   UserRound,
   Users,
   WalletCards,
-  Wrench,
 } from "lucide-react"
 
 import {
@@ -42,7 +41,6 @@ const adminNavigation = [
   { href: "/manager", label: "Dashboard", icon: LayoutDashboard },
   { href: "/manager/rooms", label: "Phòng", icon: Hotel },
   { href: "/manager/room-types", label: "Loại phòng", icon: BedDouble },
-  { href: "/manager/maintenance", label: "Lịch bảo trì", icon: Wrench },
   { href: "/manager/pricing", label: "Quản lý giá", icon: BadgeDollarSign },
   { href: "/manager/cancellation-policies", label: "Chính sách hủy", icon: ShieldCheck },
   { href: "/manager/bookings", label: "Đặt phòng", icon: Calendar },
@@ -78,13 +76,12 @@ export function ManagerLayout({ children }: ManagerLayoutProps) {
     { href: "/manager/payments", label: "Thanh toán", icon: WalletCards, visible: user?.permissions.includes("payment:manage") },
     { href: "/manager/rooms", label: "Phòng", icon: Hotel, visible: user?.permissions.includes("room:read") },
     { href: "/manager/room-types", label: "Loại phòng", icon: BedDouble, visible: user?.permissions.includes("room:read") },
-    { href: "/manager/maintenance", label: "Lịch bảo trì", icon: Wrench, visible: user?.permissions.includes("maintenance:manage") },
     { href: "/manager/reviews", label: "Đánh giá", icon: MessageSquareText, visible: user?.permissions.includes("review:reply") },
     { href: "/manager/shifts", label: "Lịch ca", icon: CalendarClock, visible: user?.permissions.includes("shift:read_own") },
   ].filter((item) => item.visible), [user?.permissions])
   const navigation = isAdmin ? adminNavigation : staffNavigation
   const defaultPath = isAdmin ? "/manager" : staffNavigation[0]?.href ?? "/manager/login"
-  const hasAllowedStaffRoute = pathname === "/manager/profile" || staffNavigation.some(
+  const hasAllowedStaffRoute = pathname === "/manager/profile" || pathname === "/manager/maintenance" || staffNavigation.some(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
   )
   const initials = user?.fullName
