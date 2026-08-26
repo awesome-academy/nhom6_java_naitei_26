@@ -81,7 +81,7 @@ public class QueuedEmailService implements EmailService {
 
     @Override
     @Transactional
-    public void sendStaffInvitationEmail(String toEmail, String fullName, String token) {
+    public void sendStaffInvitationEmail(String toEmail, String fullName, String token, String temporaryPassword) {
         String invitationUrl = authProperties.frontendStaffInvitationUrl() + "?token=" + token;
         queueTemplate(
                 EmailTemplateCode.STAFF_INVITATION,
@@ -92,7 +92,8 @@ public class QueuedEmailService implements EmailService {
                         "invitationLink", invitationUrl,
                         "token", valueOrEmpty(token),
                         "email", valueOrEmpty(toEmail),
-                        "fullName", valueOrEmpty(fullName)
+                        "fullName", valueOrEmpty(fullName),
+                        "temporaryPassword", valueOrEmpty(temporaryPassword)
                 )
         );
     }

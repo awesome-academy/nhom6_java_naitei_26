@@ -69,10 +69,12 @@ sequenceDiagram
 Quy tắc thời gian:
 
 - Ca thường: `crossesMidnight=false` và `endTime > startTime`.
-- Ca qua đêm: `crossesMidnight=true` và `endTime <= startTime`.
+- Ca qua đêm: `crossesMidnight=true` và `endTime < startTime`.
 - `startTime == endTime` luôn không hợp lệ.
 - Xóa Shift chỉ vô hiệu hóa. Shift không active vẫn được đọc để giữ lịch sử nhưng không dùng cho assignment mới.
 - Khi sửa giờ Shift, các assignment cũ giữ nguyên `shift_start_at` và `shift_end_at`; assignment tạo sau mới dùng giờ mới.
+- `workDate` phải là hôm nay hoặc ngày tương lai theo timezone khách sạn; ngày quá khứ bị từ chối ở service và giao diện.
+- Trên giao diện Manager, nhấp chip ca active để sửa định nghĩa Shift. Kéo chip vào ô Staff/ngày vẫn là thao tác tạo assignment.
 
 ## 4. Flow phân công Staff
 
@@ -157,10 +159,16 @@ Backend kiểm tra trước ở service để trả lỗi rõ ràng. Hai trigger
 
 | HTTP status | Trường hợp |
 | --- | --- |
-| `400` | DTO sai định dạng, giờ ca không hợp lệ, Staff/Shift không active |
+| `400` | DTO sai định dạng, giờ ca không hợp lệ, `workDate` trong quá khứ, Staff/Shift không active |
 | `401` | Thiếu hoặc sai access token |
 | `403` | User không có `shift:manage` |
 | `404` | Không tìm thấy Shift, Staff hoặc assignment |
 | `409` | Trùng code, trùng Staff/Shift/ngày, hoặc overlap BR-015 |
 
 `DELETE` không xóa vật lý. Assignment bị hủy vẫn có thể đọc qua API để giữ lịch sử phân công.
+
+### Hiển thị giờ trên lịch Manager
+
+Chip “Ca đang hoạt động” hiển thị giờ hiện tại của bản ghi `shifts`. Thẻ assignment trong lịch hiển thị từ `shift_start_at` và `shift_end_at` đã snapshot tại thời điểm phân công, nên có thể khác giờ hiện tại sau khi Admin sửa Shift. Assignment mới tạo hoặc cập nhật sau lần sửa sẽ dùng giờ mới; assignment cũ không bị hồi tố.
+
+Giờ bắt đầu và kết thúc bằng nhau luôn bị từ chối cho cả ca thường và ca qua đêm (`400`). Phân công có `workDate` trong quá khứ cũng trả `400`; các ô ngày quá khứ trên lịch không cho tạo/kéo phân công mới.

@@ -8,6 +8,7 @@ import com.example.hotelmanagement.dto.staffprofile.StaffListResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffManagementListResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffPasswordUpdateRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileUpdateRequest;
+import com.example.hotelmanagement.dto.staffprofile.StaffInvitationResendRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffEmploymentStatusUpdateRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffOwnProfileResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffOwnProfileUpdateRequest;
@@ -140,8 +141,11 @@ public class StaffProfileController {
     @Operation(summary = "Resend Staff invitation")
     @PostMapping("/{employeeCode:[Ee][Mm][Pp]-[A-Za-z0-9_-]+}/invitation/resend")
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
-    public ResponseEntity<Void> resendStaffInvitation(@PathVariable String employeeCode) {
-        staffProfileService.resendStaffInvitation(employeeCode);
+    public ResponseEntity<Void> resendStaffInvitation(
+            @PathVariable String employeeCode,
+            @Valid @RequestBody StaffInvitationResendRequest request
+    ) {
+        staffProfileService.resendStaffInvitation(employeeCode, request);
         return ResponseEntity.accepted().build();
     }
 }

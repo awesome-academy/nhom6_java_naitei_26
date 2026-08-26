@@ -65,6 +65,7 @@ import {
   createShiftAssignment,
   getShiftAssignments,
   getShifts,
+  updateShift,
   updateShiftAssignment,
 } from "@/lib/api/shifts"
 import { getStaffProfiles } from "@/lib/api/staff"
@@ -77,6 +78,7 @@ import type {
   ShiftAssignment,
 } from "@/types/shift"
 import { cn } from "@/lib/utils"
+import { validateShiftTimes } from "./shift-validation"
 
 const STATUS_LABELS: Record<AssignmentStatus, string> = {
   SCHEDULED: "Đã xếp",
@@ -91,6 +93,8 @@ const STATUS_CLASSES: Record<AssignmentStatus, string> = {
   ABSENT: "border-red-200 bg-red-50 text-red-800 hover:bg-red-100",
   CANCELLED: "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200",
 }
+
+const HOTEL_TIME_ZONE = "Asia/Ho_Chi_Minh"
 
 const PRESETS: Record<string, CreateShiftRequest> = {
   MORNING: {
@@ -141,6 +145,33 @@ function getTimeLabel(value: string): string {
   return value.slice(0, 5)
 }
 
+function getAssignmentTimeLabel(value: string): string {
+  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(value)) {
+    const instant = Date.parse(value)
+    if (!Number.isNaN(instant)) {
+      return new Intl.DateTimeFormat("en-GB", {
+        timeZone: HOTEL_TIME_ZONE,
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      }).format(new Date(instant))
+    }
+  }
+  const match = value.match(/T(\d{2}:\d{2})/)
+  return match?.[1] ?? getTimeLabel(value)
+}
+
+function getHotelTodayString(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: HOTEL_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
 function getCellId(employeeCode: string, workDate: string): string {
   return `cell:${employeeCode}:${workDate}`
 }
@@ -170,6 +201,7 @@ export default function ShiftManagementPage() {
   )
   const [isSavingAssignment, setIsSavingAssignment] = useState(false)
   const [shiftDialogOpen, setShiftDialogOpen] = useState(false)
+  const [editingShift, setEditingShift] = useState<Shift | null>(null)
   const [shiftForm, setShiftForm] = useState<CreateShiftRequest>(PRESETS.MORNING)
   const [isSavingShift, setIsSavingShift] = useState(false)
   const [activeDrag, setActiveDrag] = useState<DragData | null>(null)
@@ -178,6 +210,7 @@ export default function ShiftManagementPage() {
   const canManage = user?.permissions.includes("shift:manage") ?? false
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
   const weekEnd = days[days.length - 1]
+  const hotelToday = getHotelTodayString()
 
   const loadCalendar = useCallback(async () => {
     if (!canManage) {
@@ -219,6 +252,10 @@ export default function ShiftManagementPage() {
   }, [assignments])
 
   function openCreateAssignment(date = format(new Date(), "yyyy-MM-dd"), employeeCode = "", shiftCode = "") {
+    if (date < hotelToday) {
+      toast.error("Không thể phân công Staff trong ngày quá khứ.")
+      return
+    }
     const selectedStaff = staff.find((item) => item.employeeCode === employeeCode)
     const selectedShift = shifts.find((item) => item.code === shiftCode)
     setEditingAssignment(null)
@@ -238,9 +275,32 @@ export default function ShiftManagementPage() {
     setAssignmentDialogOpen(true)
   }
 
+  function openCreateShift() {
+    setEditingShift(null)
+    setShiftForm({ ...PRESETS.MORNING })
+    setShiftDialogOpen(true)
+  }
+
+  function openEditShift(shift: Shift) {
+    setEditingShift(shift)
+    setShiftForm({
+      code: shift.code,
+      name: shift.name,
+      startTime: shift.startTime.slice(0, 5),
+      endTime: shift.endTime.slice(0, 5),
+      crossesMidnight: shift.crossesMidnight,
+      isActive: shift.isActive,
+    })
+    setShiftDialogOpen(true)
+  }
+
   async function handleSaveAssignment() {
     if (!assignmentForm.employeeCode || !assignmentForm.shiftCode || !assignmentForm.workDate) {
       toast.error("Vui lòng chọn Staff, ca và ngày làm việc.")
+      return
+    }
+    if (assignmentForm.workDate < hotelToday) {
+      toast.error("Không thể phân công Staff trong ngày quá khứ.")
       return
     }
     setIsSavingAssignment(true)
@@ -287,29 +347,42 @@ export default function ShiftManagementPage() {
     }
   }
 
-  async function handleCreateShift() {
+  async function handleSaveShift() {
     const start = shiftForm.startTime
     const end = shiftForm.endTime
-    if (!/^[A-Za-z0-9_]+$/.test(shiftForm.code) || !shiftForm.name.trim()) {
+    if (!editingShift && !/^[A-Za-z0-9_]+$/.test(shiftForm.code.trim())) {
       toast.error("Mã và tên ca là bắt buộc; mã chỉ gồm chữ, số và dấu gạch dưới.")
       return
     }
-    if (start === end || (shiftForm.crossesMidnight ? end > start : end <= start)) {
-      toast.error(
-        shiftForm.crossesMidnight
-          ? "Ca qua đêm phải có giờ kết thúc nhỏ hơn hoặc bằng giờ bắt đầu."
-          : "Ca thường phải có giờ kết thúc sau giờ bắt đầu."
-      )
+    if (!shiftForm.name.trim()) {
+      toast.error("Tên ca là bắt buộc.")
+      return
+    }
+    const timeError = validateShiftTimes(start, end, shiftForm.crossesMidnight)
+    if (timeError) {
+      toast.error(timeError)
       return
     }
     setIsSavingShift(true)
     try {
-      await createShift({ ...shiftForm, code: shiftForm.code.trim().toUpperCase(), name: shiftForm.name.trim() })
-      toast.success("Đã tạo ca mới.")
+      if (editingShift) {
+        await updateShift(editingShift.code, {
+          name: shiftForm.name.trim(),
+          startTime: start,
+          endTime: end,
+          crossesMidnight: shiftForm.crossesMidnight,
+          isActive: shiftForm.isActive,
+        })
+        toast.success("Đã cập nhật ca.")
+      } else {
+        await createShift({ ...shiftForm, code: shiftForm.code.trim().toUpperCase(), name: shiftForm.name.trim() })
+        toast.success("Đã tạo ca mới.")
+      }
       setShiftDialogOpen(false)
+      setEditingShift(null)
       await loadCalendar()
-    } catch (createError) {
-      toast.error(getErrorMessage(createError, "Không thể tạo ca."))
+    } catch (saveError) {
+      toast.error(getErrorMessage(saveError, "Không thể lưu ca."))
     } finally {
       setIsSavingShift(false)
     }
@@ -322,6 +395,10 @@ export default function ShiftManagementPage() {
     if (!dragData || typeof targetId !== "string" || !targetId.startsWith("cell:")) return
     const [employeeCode, workDate] = targetId.slice("cell:".length).split(":")
     if (!employeeCode || !workDate) return
+    if (workDate < hotelToday) {
+      toast.error("Không thể phân công Staff trong ngày quá khứ.")
+      return
+    }
 
     if (dragData.type === "shift") {
       openCreateAssignment(workDate, employeeCode, dragData.shiftCode)
@@ -382,7 +459,7 @@ export default function ShiftManagementPage() {
             <Button variant="outline" onClick={() => setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))}>
               Hôm nay
             </Button>
-            <Button variant="outline" onClick={() => setShiftDialogOpen(true)}>
+            <Button variant="outline" onClick={openCreateShift}>
               <Plus /> Tạo ca
             </Button>
             <Button onClick={() => openCreateAssignment(format(new Date(), "yyyy-MM-dd"))} disabled={staff.length === 0 || activeShifts.length === 0}>
@@ -426,8 +503,9 @@ export default function ShiftManagementPage() {
               {activeShifts.length === 0 ? (
                 <span className="text-sm text-[var(--muted-foreground)]">Chưa có ca hoạt động.</span>
               ) : activeShifts.map((shift) => (
-                <DraggableShift key={shift.code} shift={shift} onClick={() => openCreateAssignment(format(new Date(), "yyyy-MM-dd"), staff[0]?.employeeCode, shift.code)} />
+                <DraggableShift key={shift.code} shift={shift} onClick={() => openEditShift(shift)} />
               ))}
+              {activeShifts.length > 0 && <span className="basis-full text-xs text-[var(--muted-foreground)]">Nhấp vào chip để sửa ca; kéo chip vào ô Staff/ngày để phân công.</span>}
             </div>
 
             {isLoading ? (
@@ -467,6 +545,7 @@ export default function ShiftManagementPage() {
                               key={cellId}
                               id={cellId}
                               assignments={assignmentsByCell.get(cellId) ?? []}
+                              isPast={workDate < hotelToday}
                               onEmptyClick={() => openCreateAssignment(workDate, staffMember.employeeCode)}
                               onAssignmentClick={openEditAssignment}
                             />
@@ -494,6 +573,7 @@ export default function ShiftManagementPage() {
         editingAssignment={editingAssignment}
         form={assignmentForm}
         setForm={setAssignmentForm}
+        minWorkDate={hotelToday}
         staff={staff}
         shifts={shifts}
         isSaving={isSavingAssignment}
@@ -503,10 +583,11 @@ export default function ShiftManagementPage() {
       <CreateShiftDialog
         open={shiftDialogOpen}
         onOpenChange={setShiftDialogOpen}
+        editingShift={editingShift}
         form={shiftForm}
         setForm={setShiftForm}
         isSaving={isSavingShift}
-        onSave={() => void handleCreateShift()}
+        onSave={() => void handleSaveShift()}
       />
       <DragOverlay>{activeDrag?.type === "shift" ? <div className="rounded-md bg-[var(--accent)] px-3 py-2 text-sm text-white shadow-lg">{activeDrag.shiftCode}</div> : activeDrag?.assignment ? <div className="rounded-md bg-white px-3 py-2 text-sm shadow-lg">{activeDrag.assignment.shiftName}</div> : null}</DragOverlay>
     </DndContext>
@@ -519,18 +600,18 @@ function DraggableShift({ shift, onClick }: { shift: Shift; onClick: () => void 
     data: { type: "shift", shiftCode: shift.code } satisfies DragData,
   })
   return (
-    <button ref={setNodeRef} type="button" onClick={onClick} className={cn("flex items-center gap-2 rounded-md border bg-[var(--card)] px-3 py-2 text-left text-xs transition-shadow hover:shadow-sm", isDragging && "opacity-40")} {...listeners} {...attributes} title="Kéo vào ô Staff/ngày để phân công">
+    <button ref={setNodeRef} type="button" onClick={onClick} className={cn("flex items-center gap-2 rounded-md border bg-[var(--card)] px-3 py-2 text-left text-xs transition-shadow hover:shadow-sm", isDragging && "opacity-40")} {...listeners} {...attributes} title="Nhấp để sửa ca hoặc kéo vào ô Staff/ngày để phân công">
       <GripVertical className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
       <span><strong>{shift.name}</strong><span className="ml-1 text-[var(--muted-foreground)]">{getTimeLabel(shift.startTime)}–{getTimeLabel(shift.endTime)}{shift.crossesMidnight ? " (+1 ngày)" : ""}</span></span>
     </button>
   )
 }
 
-function CalendarCell({ id, assignments, onEmptyClick, onAssignmentClick }: { id: string; assignments: ShiftAssignment[]; onEmptyClick: () => void; onAssignmentClick: (assignment: ShiftAssignment) => void }) {
+function CalendarCell({ id, assignments, isPast, onEmptyClick, onAssignmentClick }: { id: string; assignments: ShiftAssignment[]; isPast: boolean; onEmptyClick: () => void; onAssignmentClick: (assignment: ShiftAssignment) => void }) {
   const { isOver, setNodeRef } = useDroppable({ id })
   return (
-    <td ref={setNodeRef} className={cn("border-b border-r p-1 align-top", isOver && "bg-blue-50")}>
-      <button type="button" onClick={onEmptyClick} className="mb-1 flex h-5 w-full items-center justify-center rounded text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--muted)]/60 hover:opacity-100 focus:opacity-100" aria-label="Tạo phân công trong ô này"><Plus className="h-3 w-3" /></button>
+    <td ref={setNodeRef} className={cn("border-b border-r p-1 align-top", isOver && "bg-blue-50", isPast && "bg-[var(--muted)]/20")}>
+      <button type="button" onClick={onEmptyClick} disabled={isPast} className="mb-1 flex h-5 w-full items-center justify-center rounded text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--muted)]/60 hover:opacity-100 focus:opacity-100 disabled:pointer-events-none" aria-label={isPast ? "Không thể tạo phân công trong ngày quá khứ" : "Tạo phân công trong ô này"}><Plus className="h-3 w-3" /></button>
       <div className="space-y-1">
         {assignments.map((assignment) => <DraggableAssignment key={assignment.publicId} assignment={assignment} onClick={() => onAssignmentClick(assignment)} />)}
       </div>
@@ -545,21 +626,21 @@ function DraggableAssignment({ assignment, onClick }: { assignment: ShiftAssignm
   })
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined
   return (
-    <button ref={setNodeRef} style={style} type="button" onClick={onClick} className={cn("w-full rounded border px-2 py-1 text-left text-xs shadow-sm transition-opacity", STATUS_CLASSES[assignment.status], isDragging && "opacity-40")} {...listeners} {...attributes} title="Kéo để đổi Staff hoặc ngày">
+    <button ref={setNodeRef} style={style} type="button" onClick={onClick} className={cn("w-full rounded border px-2 py-1 text-left text-xs shadow-sm transition-opacity", STATUS_CLASSES[assignment.status], isDragging && "opacity-40")} {...listeners} {...attributes} title="Giờ đã phân công (snapshot). Kéo để đổi Staff hoặc ngày">
       <span className="flex items-center justify-between gap-1"><span className="truncate font-semibold">{assignment.shiftName}</span><GripVertical className="h-3 w-3 shrink-0 opacity-60" /></span>
-      <span className="mt-0.5 block truncate">{getTimeLabel(assignment.shiftStartAt.slice(11))}–{getTimeLabel(assignment.shiftEndAt.slice(11))}</span>
+      <span className="mt-0.5 block truncate">{getAssignmentTimeLabel(assignment.shiftStartAt)}–{getAssignmentTimeLabel(assignment.shiftEndAt)}</span>
       <span className="sr-only">{STATUS_LABELS[assignment.status]}</span>
     </button>
   )
 }
 
-function AssignmentDialog({ open, onOpenChange, editingAssignment, form, setForm, staff, shifts, isSaving, onSave, onCancel }: { open: boolean; onOpenChange: (open: boolean) => void; editingAssignment: ShiftAssignment | null; form: AssignmentFormState; setForm: React.Dispatch<React.SetStateAction<AssignmentFormState>>; staff: StaffListItem[]; shifts: Shift[]; isSaving: boolean; onSave: () => void; onCancel: () => void }) {
+function AssignmentDialog({ open, onOpenChange, editingAssignment, form, setForm, minWorkDate, staff, shifts, isSaving, onSave, onCancel }: { open: boolean; onOpenChange: (open: boolean) => void; editingAssignment: ShiftAssignment | null; form: AssignmentFormState; setForm: React.Dispatch<React.SetStateAction<AssignmentFormState>>; minWorkDate: string; staff: StaffListItem[]; shifts: Shift[]; isSaving: boolean; onSave: () => void; onCancel: () => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader><DialogTitle>{editingAssignment ? "Chỉnh sửa phân công" : "Phân công Staff"}</DialogTitle><DialogDescription>Chỉ Staff active và ca active mới được chọn. Backend sẽ chặn ca trùng hoặc overlap.</DialogDescription></DialogHeader>
         <div className="grid gap-4 py-2">
-          <div className="grid gap-2"><Label htmlFor="assignment-date">Ngày làm việc</Label><Input id="assignment-date" type="date" value={form.workDate} onChange={(event) => setForm((current) => ({ ...current, workDate: event.target.value }))} /></div>
+          <div className="grid gap-2"><Label htmlFor="assignment-date">Ngày làm việc</Label><Input id="assignment-date" type="date" min={minWorkDate} value={form.workDate} onChange={(event) => setForm((current) => ({ ...current, workDate: event.target.value }))} /><p className="text-xs text-[var(--muted-foreground)]">Chỉ được phân công từ hôm nay trở đi.</p></div>
           <div className="grid gap-2"><Label>Staff active</Label><Select value={form.employeeCode} onValueChange={(value) => setForm((current) => ({ ...current, employeeCode: value }))}><SelectTrigger><SelectValue placeholder="Chọn Staff" /></SelectTrigger><SelectContent>{staff.map((member) => <SelectItem key={member.employeeCode} value={member.employeeCode}>{member.fullName} · {member.employeeCode}</SelectItem>)}</SelectContent></Select></div>
           <div className="grid gap-2"><Label>Ca active</Label><Select value={form.shiftCode} onValueChange={(value) => setForm((current) => ({ ...current, shiftCode: value }))}><SelectTrigger><SelectValue placeholder="Chọn ca" /></SelectTrigger><SelectContent>{shifts.filter((shift) => shift.isActive).map((shift) => <SelectItem key={shift.code} value={shift.code}>{shift.name} · {getTimeLabel(shift.startTime)}–{getTimeLabel(shift.endTime)}</SelectItem>)}</SelectContent></Select></div>
           {editingAssignment && <div className="grid gap-2"><Label>Trạng thái</Label><Select value={form.status} onValueChange={(value: AssignmentStatus) => setForm((current) => ({ ...current, status: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(Object.keys(STATUS_LABELS) as AssignmentStatus[]).map((status) => <SelectItem key={status} value={status}>{STATUS_LABELS[status]}</SelectItem>)}</SelectContent></Select></div>}
@@ -575,19 +656,20 @@ function AssignmentDialog({ open, onOpenChange, editingAssignment, form, setForm
   )
 }
 
-function CreateShiftDialog({ open, onOpenChange, form, setForm, isSaving, onSave }: { open: boolean; onOpenChange: (open: boolean) => void; form: CreateShiftRequest; setForm: React.Dispatch<React.SetStateAction<CreateShiftRequest>>; isSaving: boolean; onSave: () => void }) {
+function CreateShiftDialog({ open, onOpenChange, editingShift, form, setForm, isSaving, onSave }: { open: boolean; onOpenChange: (open: boolean) => void; editingShift: Shift | null; form: CreateShiftRequest; setForm: React.Dispatch<React.SetStateAction<CreateShiftRequest>>; isSaving: boolean; onSave: () => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Tạo ca mới</DialogTitle><DialogDescription>Preset giúp tạo nhanh ca sáng, chiều hoặc ca đêm. Backend vẫn kiểm tra lại giờ ca.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{editingShift ? "Chỉnh sửa ca" : "Tạo ca mới"}</DialogTitle><DialogDescription>Preset giúp tạo nhanh ca sáng, chiều hoặc ca đêm. Backend vẫn kiểm tra lại giờ ca.</DialogDescription></DialogHeader>
         <div className="grid gap-4 py-2">
-          <div className="flex flex-wrap gap-2">{Object.entries(PRESETS).map(([key, preset]) => <Button key={key} type="button" variant={form.code === preset.code ? "default" : "outline"} size="sm" onClick={() => setForm({ ...preset })}>{key}</Button>)}</div>
-          <div className="grid gap-2"><Label htmlFor="shift-code">Mã ca</Label><Input id="shift-code" value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value.toUpperCase() }))} placeholder="MORNING" /></div>
+          {!editingShift && <div className="flex flex-wrap gap-2">{Object.entries(PRESETS).map(([key, preset]) => <Button key={key} type="button" variant={form.code === preset.code ? "default" : "outline"} size="sm" onClick={() => setForm({ ...preset })}>{key}</Button>)}</div>}
+          <div className="grid gap-2"><Label htmlFor="shift-code">Mã ca</Label><Input id="shift-code" value={form.code} disabled={Boolean(editingShift)} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value.toUpperCase() }))} placeholder="MORNING" /></div>
           <div className="grid gap-2"><Label htmlFor="shift-name">Tên ca</Label><Input id="shift-name" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Ca sáng" /></div>
           <div className="grid grid-cols-2 gap-3"><div className="grid gap-2"><Label htmlFor="shift-start">Bắt đầu</Label><Input id="shift-start" type="time" value={form.startTime} onChange={(event) => setForm((current) => ({ ...current, startTime: event.target.value }))} /></div><div className="grid gap-2"><Label htmlFor="shift-end">Kết thúc</Label><Input id="shift-end" type="time" value={form.endTime} onChange={(event) => setForm((current) => ({ ...current, endTime: event.target.value }))} /></div></div>
           <label className="flex items-center gap-2 text-sm"><Checkbox checked={form.crossesMidnight} onCheckedChange={(checked) => setForm((current) => ({ ...current, crossesMidnight: checked === true }))} /> Ca qua đêm (kết thúc vào ngày kế tiếp)</label>
+          {editingShift && <label className="flex items-center gap-2 text-sm"><Checkbox checked={form.isActive} onCheckedChange={(checked) => setForm((current) => ({ ...current, isActive: checked === true }))} /> Ca đang hoạt động</label>}
         </div>
-        <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>Đóng</Button><Button type="button" onClick={onSave} disabled={isSaving}>{isSaving && <Loader2 className="animate-spin" />} Tạo ca</Button></DialogFooter>
+        <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>Đóng</Button><Button type="button" onClick={onSave} disabled={isSaving}>{isSaving && <Loader2 className="animate-spin" />} {editingShift ? "Lưu thay đổi" : "Tạo ca"}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   )

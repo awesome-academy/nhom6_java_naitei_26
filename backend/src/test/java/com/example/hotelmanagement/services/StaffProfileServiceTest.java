@@ -2,6 +2,7 @@ package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.staffprofile.StaffHireRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffInvitationAcceptRequest;
+import com.example.hotelmanagement.dto.staffprofile.StaffInvitationResendRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffManagementListResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffPasswordUpdateRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileResponse;
@@ -20,7 +21,6 @@ import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.RoleRepository;
 import com.example.hotelmanagement.repositories.StaffProfileRepository;
 import com.example.hotelmanagement.repositories.UserRepository;
-import com.example.hotelmanagement.repositories.UserRoleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -58,8 +58,6 @@ class StaffProfileServiceTest {
     @Mock
     private UserRepository userRepository;
     @Mock
-    private UserRoleRepository userRoleRepository;
-    @Mock
     private RoleRepository roleRepository;
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -77,7 +75,6 @@ class StaffProfileServiceTest {
         staffProfileService = new StaffProfileService(
                 staffProfileRepository,
                 userRepository,
-                userRoleRepository,
                 roleRepository,
                 passwordEncoder,
                 authTokenService,
@@ -90,7 +87,7 @@ class StaffProfileServiceTest {
     @Test
     void hireStaffCreatesNewUserWhenEmailNotFound() {
         when(staffProfileRepository.findByEmployeeCodeIgnoreCase(anyString())).thenReturn(Optional.empty());
-        when(userRepository.existsByEmailIgnoreCaseAndDeletedAtIsNull("newstaff@example.com"))
+        when(userRepository.existsByEmailIgnoreCase("newstaff@example.com"))
                 .thenReturn(false);
         when(passwordEncoder.encode(org.mockito.ArgumentMatchers.anyString())).thenReturn("hashed");
         when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> {
@@ -119,12 +116,12 @@ class StaffProfileServiceTest {
         verify(staffProfileRepository).saveAndFlush(profileCaptor.capture());
         assertThat(profileCaptor.getValue().getUser().getId()).isEqualTo(10L);
         assertThat(profileCaptor.getValue().getEmploymentStatus()).isEqualTo(EmploymentStatus.ACTIVE);
-        verify(emailService).sendStaffInvitationEmail("newstaff@example.com", "New Staff", "raw-token");
+        verify(emailService).sendStaffInvitationEmail("newstaff@example.com", "New Staff", "raw-token", "temporary-password-123");
     }
 
     @Test
     void hireStaffRejectsWhenUserAlreadyHasProfile() {
-        when(userRepository.existsByEmailIgnoreCaseAndDeletedAtIsNull("staff@example.com"))
+        when(userRepository.existsByEmailIgnoreCase("staff@example.com"))
                 .thenReturn(true);
 
         StaffHireRequest request = new StaffHireRequest(
@@ -137,21 +134,19 @@ class StaffProfileServiceTest {
     }
 
     @Test
-    void acceptStaffInvitationActivatesAccountAndReplacesTemporaryPassword() {
+    void acceptStaffInvitationActivatesAccountWithoutReplacingTemporaryPassword() {
         User user = createUser(10L, "invited@example.com");
         user.setStatus(UserStatus.PENDING_VERIFICATION);
         user.setEmailVerifiedAt(null);
         AuthToken token = AuthToken.builder().user(user).tokenType(AuthTokenType.STAFF_INVITATION).build();
         when(authTokenService.consumeToken("invitation-token", AuthTokenType.STAFF_INVITATION)).thenReturn(token);
-        when(passwordEncoder.encode("permanent-password-123")).thenReturn("permanent-hash");
+        user.setPasswordHash("temporary-hash");
 
-        staffProfileService.acceptStaffInvitation(new StaffInvitationAcceptRequest(
-                "invitation-token", "permanent-password-123"
-        ));
+        staffProfileService.acceptStaffInvitation(new StaffInvitationAcceptRequest("invitation-token"));
 
         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
         assertThat(user.getEmailVerifiedAt()).isEqualTo(java.time.OffsetDateTime.now(FIXED_CLOCK));
-        assertThat(user.getPasswordHash()).isEqualTo("permanent-hash");
+        assertThat(user.getPasswordHash()).isEqualTo("temporary-hash");
         verify(userRepository).saveAndFlush(user);
     }
 
@@ -168,6 +163,29 @@ class StaffProfileServiceTest {
 
         assertThat(user.getPasswordHash()).isEqualTo("new-hash");
         verify(refreshTokenService).revokeAllForUser(user);
+    }
+
+    @Test
+    void resendStaffInvitationReplacesTemporaryPasswordAndSendsIt() {
+        User user = createUser(11L, "pending@example.com");
+        user.setStatus(UserStatus.PENDING_VERIFICATION);
+        user.setEmailVerifiedAt(null);
+        StaffProfile profile = StaffProfile.builder()
+                .user(user).employeeCode("EMP-0002").hiredAt(LocalDate.of(2026, 1, 1))
+                .employmentStatus(EmploymentStatus.ACTIVE).build();
+        when(staffProfileRepository.findByEmployeeCodeIgnoreCase("EMP-0002")).thenReturn(Optional.of(profile));
+        when(passwordEncoder.encode("new-temporary-password")).thenReturn("new-hash");
+        when(authTokenService.createToken(user, AuthTokenType.STAFF_INVITATION, null))
+                .thenReturn(new AuthTokenService.IssuedAuthToken("new-token", null));
+
+        staffProfileService.resendStaffInvitation(
+                "EMP-0002", new StaffInvitationResendRequest("new-temporary-password")
+        );
+
+        assertThat(user.getPasswordHash()).isEqualTo("new-hash");
+        verify(emailService).sendStaffInvitationEmail(
+                "pending@example.com", "Staff", "new-token", "new-temporary-password"
+        );
     }
 
     @Test

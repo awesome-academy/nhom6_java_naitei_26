@@ -85,9 +85,64 @@ class ShiftServiceTest {
                 false,
                 true
         );
-        when(shiftRepository.existsByCodeIgnoreCase("NIGHT")).thenReturn(false);
+        assertThrows(BusinessValidationException.class, () -> shiftService.createShift(request));
+        verify(shiftRepository, never()).save(any(Shift.class));
+    }
+
+    @Test
+    void createShiftRejectsEqualTimesBeforeDuplicateLookup() {
+        ShiftCreateRequest request = new ShiftCreateRequest(
+                "equal", "Equal", LocalTime.of(8, 0), LocalTime.of(8, 0), false, true
+        );
 
         assertThrows(BusinessValidationException.class, () -> shiftService.createShift(request));
+        verify(shiftRepository, never()).existsByCodeIgnoreCase(any());
+        verify(shiftRepository, never()).save(any(Shift.class));
+    }
+
+    @Test
+    void createOvernightShiftRequiresEndBeforeStart() {
+        ShiftCreateRequest request = new ShiftCreateRequest(
+                "overnight", "Overnight", LocalTime.of(22, 0), LocalTime.of(22, 1), true, true
+        );
+
+        assertThrows(BusinessValidationException.class, () -> shiftService.createShift(request));
+        verify(shiftRepository, never()).existsByCodeIgnoreCase(any());
+    }
+
+    @Test
+    void createShiftAcceptsValidOvernightHours() {
+        ShiftCreateRequest request = new ShiftCreateRequest(
+                "overnight", "Overnight", LocalTime.of(22, 0), LocalTime.of(6, 0), true, true
+        );
+        when(shiftRepository.existsByCodeIgnoreCase("OVERNIGHT")).thenReturn(false);
+        when(shiftRepository.save(any(Shift.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ShiftResponse response = shiftService.createShift(request);
+
+        assertTrue(response.crossesMidnight());
+        assertEquals(LocalTime.of(22, 0), response.startTime());
+        assertEquals(LocalTime.of(6, 0), response.endTime());
+    }
+
+    @Test
+    void updateShiftRejectsEqualTimesBeforeSaving() {
+        Shift shift = createShift("MORNING", LocalTime.of(6, 0), LocalTime.of(14, 0), false);
+        when(shiftRepository.findByCodeIgnoreCase("MORNING")).thenReturn(Optional.of(shift));
+
+        assertThrows(
+                BusinessValidationException.class,
+                () -> shiftService.updateShift(
+                        "morning",
+                        new ShiftUpdateRequest(
+                                "Morning",
+                                LocalTime.of(8, 0),
+                                LocalTime.of(8, 0),
+                                false,
+                                true
+                        )
+                )
+        );
         verify(shiftRepository, never()).save(any(Shift.class));
     }
 
