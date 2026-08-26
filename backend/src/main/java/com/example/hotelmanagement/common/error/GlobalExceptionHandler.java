@@ -63,7 +63,7 @@ public class GlobalExceptionHandler {
         HttpStatus status = HttpStatus.CONFLICT;
         log.warn("Duplicate resource request method={} path={}",
             request.getMethod(), sanitizeForLog(request.getRequestURI()));
-        return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, Map.of()));
+        return ResponseEntity.status(status).body(toError(status, exception.getMessage(), request, exception.getFieldErrors()));
     }
 
     @ExceptionHandler(ShiftOverlapException.class)

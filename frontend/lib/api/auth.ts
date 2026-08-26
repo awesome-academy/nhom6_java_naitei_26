@@ -66,7 +66,7 @@ export async function resetPassword(
   return apiClient.post<AuthMessageResponse>("/api/auth/password-reset/confirm", data)
 }
 
-export async function acceptStaffInvitation(data: { token: string; newPassword: string }): Promise<AuthMessageResponse> {
+export async function acceptStaffInvitation(data: { token: string }): Promise<AuthMessageResponse> {
   return apiClient.post<AuthMessageResponse>("/api/auth/staff-invitation/accept", data)
 }
 

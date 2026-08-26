@@ -46,12 +46,11 @@ public class ShiftService {
 
     public ShiftResponse createShift(@Valid ShiftCreateRequest request) {
         String normalizedCode = normalizeCode(request.code());
+        boolean crossesMidnight = getValueOrDefault(request.crossesMidnight(), false);
+        validateShiftTimes(request.startTime(), request.endTime(), crossesMidnight);
         if (shiftRepository.existsByCodeIgnoreCase(normalizedCode)) {
             throw new DuplicateResourceException("Shift", "code", normalizedCode);
         }
-
-        boolean crossesMidnight = getValueOrDefault(request.crossesMidnight(), false);
-        validateShiftTimes(request.startTime(), request.endTime(), crossesMidnight);
 
         Shift shift = Shift.builder()
                 .code(normalizedCode)
@@ -98,7 +97,7 @@ public class ShiftService {
         }
         if (crossesMidnight && endTime.isAfter(startTime)) {
             throw new BusinessValidationException(
-                    "A shift crossing midnight must end at or before its start time"
+                    "A shift crossing midnight must end before its start time"
             );
         }
         if (!crossesMidnight && !endTime.isAfter(startTime)) {

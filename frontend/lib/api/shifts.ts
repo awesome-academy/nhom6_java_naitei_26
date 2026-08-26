@@ -4,6 +4,7 @@ import type {
   CreateShiftRequest,
   Shift,
   ShiftAssignment,
+  UpdateShiftRequest,
   UpdateShiftAssignmentRequest,
 } from "@/types/shift"
 
@@ -13,6 +14,10 @@ export function getShifts(): Promise<Shift[]> {
 
 export function createShift(request: CreateShiftRequest): Promise<Shift> {
   return apiClient.post<Shift>("/api/shifts", request)
+}
+
+export function updateShift(code: string, request: UpdateShiftRequest): Promise<Shift> {
+  return apiClient.put<Shift>(`/api/shifts/${encodeURIComponent(code)}`, request)
 }
 
 export function getShiftAssignments(from: string, to: string): Promise<ShiftAssignment[]> {
