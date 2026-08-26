@@ -107,7 +107,10 @@ app:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${MINIO_ACCESS_KEY:${MINIO_ROOT_USER:}}
     secret-key: ${MINIO_SECRET_KEY:${MINIO_ROOT_PASSWORD:}}
+    initialize-on-startup: ${MINIO_INITIALIZE_ON_STARTUP:true}
     room-images-bucket: ${MINIO_ROOM_IMAGES_BUCKET:room-images}
+    room-type-images-bucket: ${MINIO_ROOM_TYPE_IMAGES_BUCKET:room-type-images}
+    avatars-bucket: ${MINIO_AVATARS_BUCKET:avatars}
     upload-url-ttl: ${MINIO_UPLOAD_URL_TTL:1h}
     download-url-ttl: ${MINIO_DOWNLOAD_URL_TTL:15m}
     max-image-size-bytes: ${ROOM_IMAGE_MAX_SIZE_BYTES:10485760}

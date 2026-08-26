@@ -27,6 +27,7 @@ import com.example.hotelmanagement.repositories.UserRepository;
 import com.example.hotelmanagement.repositories.UserRoleRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -61,7 +62,33 @@ public class StaffProfileService {
     private final EmailService emailService;
     private final RefreshTokenService refreshTokenService;
     private final Clock clock;
+    private final AvatarUrlResolver avatarUrlResolver;
     private final SecureRandom secureRandom = new SecureRandom();
+
+    @Autowired
+    public StaffProfileService(
+            StaffProfileRepository staffProfileRepository,
+            UserRepository userRepository,
+            UserRoleRepository userRoleRepository,
+            RoleRepository roleRepository,
+            PasswordEncoder passwordEncoder,
+            AuthTokenService authTokenService,
+            EmailService emailService,
+            RefreshTokenService refreshTokenService,
+            Clock clock,
+            AvatarUrlResolver avatarUrlResolver
+    ) {
+        this.staffProfileRepository = staffProfileRepository;
+        this.userRepository = userRepository;
+        this.userRoleRepository = userRoleRepository;
+        this.roleRepository = roleRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.authTokenService = authTokenService;
+        this.emailService = emailService;
+        this.refreshTokenService = refreshTokenService;
+        this.clock = clock;
+        this.avatarUrlResolver = avatarUrlResolver;
+    }
 
     public StaffProfileService(
             StaffProfileRepository staffProfileRepository,
@@ -74,15 +101,18 @@ public class StaffProfileService {
             RefreshTokenService refreshTokenService,
             Clock clock
     ) {
-        this.staffProfileRepository = staffProfileRepository;
-        this.userRepository = userRepository;
-        this.userRoleRepository = userRoleRepository;
-        this.roleRepository = roleRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.authTokenService = authTokenService;
-        this.emailService = emailService;
-        this.refreshTokenService = refreshTokenService;
-        this.clock = clock;
+        this(
+                staffProfileRepository,
+                userRepository,
+                userRoleRepository,
+                roleRepository,
+                passwordEncoder,
+                authTokenService,
+                emailService,
+                refreshTokenService,
+                clock,
+                null
+        );
     }
 
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
@@ -397,7 +427,7 @@ public class StaffProfileService {
                 user.getFullName(),
                 user.getEmail(),
                 user.getPhone(),
-                user.getAvatarUrl(),
+                avatarUrlResolver == null ? user.getAvatarUrl() : avatarUrlResolver.resolve(user),
                 profile.getPosition(),
                 profile.getDepartment(),
                 profile.getHiredAt(),
