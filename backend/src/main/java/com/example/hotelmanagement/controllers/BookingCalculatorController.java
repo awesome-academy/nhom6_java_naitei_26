@@ -28,7 +28,7 @@ public class BookingCalculatorController {
 
     @Operation(summary = "Calculate Price")
     @PostMapping(value = "/calculate-price", consumes = MediaType.APPLICATION_JSON_VALUE)
-    @PreAuthorize(PermissionExpressions.BOOKING_CREATE)
+    @PreAuthorize(PermissionExpressions.BOOKING_PRICE_CALCULATE)
     public ResponseEntity<BookingPriceCalculationResponse> calculatePrice(
             @Valid @RequestBody BookingPriceCalculationRequest request
     ) {

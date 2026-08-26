@@ -93,7 +93,6 @@ type SearchState = {
   checkOutDate: string
   rooms: number
   adults: number
-  children: number
 }
 
 type ContactState = {
@@ -134,6 +133,7 @@ type GalleryItem = {
 type CheapestBookingOffer = {
   roomType: RoomType
   option: RoomTypeBookingOption
+  calculation: PriceCalculation
   unitPrice: number
 }
 
@@ -160,7 +160,6 @@ const initialSearch: SearchState = {
   checkOutDate: format(addDays(today, 2), "yyyy-MM-dd"),
   rooms: 1,
   adults: 2,
-  children: 0,
 }
 
 const bedTypeLabel: Record<string, string> = {
@@ -254,12 +253,73 @@ function getApiErrorMessage(error: unknown, fallback: string) {
 }
 
 function getBookingOptionUnitPrice(roomType: RoomType, option: RoomTypeBookingOption) {
-  return Number(roomType.basePrice) * (1 + Number(option.priceAdjustmentPercent) / 100)
+  return roundMoney(Number(roomType.basePrice) * (1 + Number(option.priceAdjustmentPercent) / 100))
 }
 
-function sortBookingOptionsByPrice(roomType: RoomType) {
+function roundMoney(value: number) {
+  return Number(value.toFixed(2))
+}
+
+function getBookingPriceKey(roomTypeCode: string, optionKey: string) {
+  return `${roomTypeCode}::${optionKey}`
+}
+
+function getBookingOptionCalculation(
+  bookingPrices: Record<string, PriceCalculation>,
+  roomType: RoomType,
+  option: RoomTypeBookingOption
+) {
+  return bookingPrices[getBookingPriceKey(roomType.code, option.optionKey)]
+}
+
+function getEffectiveNightlyPrice(calculation: PriceCalculation) {
+  return roundMoney(Number(calculation.roomsTotal) / Math.max(1, calculation.nights))
+}
+
+function hasMeaningfulDiscount(priceDifference: number, currency: string) {
+  const minimumVisibleDifference = currency === "VND" ? 1 : 0.01
+  return priceDifference <= -minimumVisibleDifference
+}
+
+async function calculateRoomTypePrices(roomTypes: RoomType[], search: SearchState) {
+  const entries = await Promise.all(
+    roomTypes
+      .filter((roomType) => roomType.isActive)
+      .flatMap((roomType) =>
+        roomType.bookingOptions
+          .filter((option) => option.paymentOption === "ONLINE")
+          .map(async (option) => {
+            const calculation = await calculateBookingPrice({
+              roomTypeCode: roomType.code,
+              paymentOption: option.paymentOption,
+              cancellationPolicyCode: option.cancellationPolicy.code,
+              checkInDate: search.checkInDate,
+              checkOutDate: search.checkOutDate,
+              adults: 1,
+              children: 0,
+            })
+            return [getBookingPriceKey(roomType.code, option.optionKey), calculation] as const
+          })
+      )
+  )
+
+  return Object.fromEntries(entries)
+}
+
+function sortBookingOptionsByPrice(
+  roomType: RoomType,
+  bookingPrices: Record<string, PriceCalculation>
+) {
   return roomType.bookingOptions.filter((option) => option.paymentOption === "ONLINE").sort((left, right) => {
-    const priceDiff = getBookingOptionUnitPrice(roomType, left) - getBookingOptionUnitPrice(roomType, right)
+    const leftCalculation = getBookingOptionCalculation(bookingPrices, roomType, left)
+    const rightCalculation = getBookingOptionCalculation(bookingPrices, roomType, right)
+    const leftPrice = leftCalculation
+      ? getEffectiveNightlyPrice(leftCalculation)
+      : getBookingOptionUnitPrice(roomType, left)
+    const rightPrice = rightCalculation
+      ? getEffectiveNightlyPrice(rightCalculation)
+      : getBookingOptionUnitPrice(roomType, right)
+    const priceDiff = leftPrice - rightPrice
     if (priceDiff !== 0) return priceDiff
     return left.optionKey.localeCompare(right.optionKey)
   })
@@ -277,24 +337,26 @@ function getSelectionCount(
 }
 
 function roomTypeMatchesGuestSearch(roomType: RoomType, search: SearchState) {
-  const requestedGuests = search.adults + search.children
   return (
-    roomType.maxOccupancy >= requestedGuests &&
-    roomType.maxAdults >= search.adults &&
-    roomType.maxChildren >= search.children
+    roomType.maxOccupancy >= search.adults &&
+    roomType.maxAdults >= search.adults
   )
 }
 
 function getSelectedEstimateTotal(
   selections: SelectedBookingOption[],
   roomTypeByCode: Map<string, RoomType>,
-  nights: number
+  nights: number,
+  bookingPrices: Record<string, PriceCalculation>
 ) {
   return selections.reduce((sum, selection) => {
     const roomType = roomTypeByCode.get(selection.roomTypeCode)
     const option = roomType?.bookingOptions.find((candidate) => candidate.optionKey === selection.optionKey)
     if (!roomType || !option) return sum
-    return sum + getBookingOptionUnitPrice(roomType, option) * Math.max(1, nights)
+    const calculation = getBookingOptionCalculation(bookingPrices, roomType, option)
+    return sum + (calculation
+      ? Number(calculation.roomsTotal)
+      : getBookingOptionUnitPrice(roomType, option) * Math.max(1, nights))
   }, 0)
 }
 
@@ -349,6 +411,7 @@ function buildCheckoutSummaryLines(
 export default function BookingPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth()
   const [search, setSearch] = useState<SearchState>(initialSearch)
+  const [appliedSearch, setAppliedSearch] = useState<SearchState>(initialSearch)
   const [contact, setContact] = useState<ContactState>({
     contactName: "",
     contactEmail: "",
@@ -365,21 +428,21 @@ export default function BookingPage() {
   const [loadingCatalog, setLoadingCatalog] = useState(false)
   const [searching, setSearching] = useState(false)
   const [calculating, setCalculating] = useState(false)
-  const [error, setError] = useState("")
+  const [bookingPrices, setBookingPrices] = useState<Record<string, PriceCalculation>>({})
 
   const permissions = user?.permissions ?? []
   const accessMessage = isAuthenticated ? getAccessMessage(permissions) : null
-  const nights = useMemo(() => getNights(search), [search])
+  const nights = useMemo(() => getNights(appliedSearch), [appliedSearch])
 
   const roomTypeOptions = useMemo<RoomTypeOption[]>(() => {
     return roomTypes
       .filter((roomType) => roomType.isActive)
-      .filter((roomType) => roomTypeMatchesGuestSearch(roomType, search))
+      .filter((roomType) => roomTypeMatchesGuestSearch(roomType, appliedSearch))
       .map((roomType) => {
         return { roomType, availableCount: availableRoomsByType[roomType.code] ?? 0 }
       })
       .sort((left, right) => left.roomType.sortOrder - right.roomType.sortOrder)
-  }, [availableRoomsByType, roomTypes, search])
+  }, [appliedSearch, availableRoomsByType, roomTypes])
 
   const galleryImages = useMemo<GalleryItem[]>(() => {
     return roomTypes
@@ -401,8 +464,8 @@ export default function BookingPage() {
     [roomTypes]
   )
   const selectedEstimateTotal = useMemo(
-    () => getSelectedEstimateTotal(selectedOptions, roomTypeByCode, nights),
-    [nights, roomTypeByCode, selectedOptions]
+    () => getSelectedEstimateTotal(selectedOptions, roomTypeByCode, nights, bookingPrices),
+    [bookingPrices, nights, roomTypeByCode, selectedOptions]
   )
   const selectedCurrency = selectedOptions
     .map((selection) => roomTypeByCode.get(selection.roomTypeCode)?.currency)
@@ -422,12 +485,20 @@ export default function BookingPage() {
     const offers = roomTypeOptions
       .filter((option) => option.availableCount > 0)
       .flatMap(({ roomType }) =>
-        roomType.bookingOptions.filter((bookingOption) => bookingOption.paymentOption === "ONLINE").map((bookingOption) => ({
-          roomType,
-          option: bookingOption,
-          unitPrice: getBookingOptionUnitPrice(roomType, bookingOption),
-        }))
+        roomType.bookingOptions
+          .filter((bookingOption) => bookingOption.paymentOption === "ONLINE")
+          .map((bookingOption) => {
+            const calculation = getBookingOptionCalculation(bookingPrices, roomType, bookingOption)
+            if (!calculation) return null
+            return {
+              roomType,
+              option: bookingOption,
+              calculation,
+              unitPrice: getEffectiveNightlyPrice(calculation),
+            }
+          })
       )
+      .filter((offer): offer is CheapestBookingOffer => offer !== null)
       .sort((left, right) => {
         const priceDiff = left.unitPrice - right.unitPrice
         if (priceDiff !== 0) return priceDiff
@@ -435,10 +506,9 @@ export default function BookingPage() {
       })
 
     return offers[0] ?? null
-  }, [roomTypeOptions])
+  }, [bookingPrices, roomTypeOptions])
 
   const notifyError = useCallback((message: string) => {
-    setError(message)
     toast.error(message)
   }, [])
 
@@ -457,16 +527,17 @@ export default function BookingPage() {
 
     async function loadCatalog() {
       setLoadingCatalog(true)
-      setError("")
 
       try {
         const [roomTypeData, availability] = await Promise.all([
           getBookingRoomTypes(),
-          getAvailability(search.checkInDate, search.checkOutDate),
+          getAvailability(initialSearch.checkInDate, initialSearch.checkOutDate),
         ])
+        const calculatedPrices = await calculateRoomTypePrices(roomTypeData, initialSearch)
         if (ignore) return
         setRoomTypes(roomTypeData)
         setAvailableRoomsByType(mapAvailabilityByRoomTypeCode(availability, roomTypeData))
+        setBookingPrices(calculatedPrices)
       } catch (loadError) {
         if (!ignore) {
           notifyError(getApiErrorMessage(loadError, "Không thể tải dữ liệu khách sạn"))
@@ -482,34 +553,30 @@ export default function BookingPage() {
       ignore = true
       window.clearTimeout(contactTimer)
     }
-  }, [accessMessage, authLoading, isAuthenticated, notifyError, search.checkInDate, search.checkOutDate, user])
-
-  function resetSelection(nextSearch: SearchState) {
-    setSearch(nextSearch)
-    setSelectedOptions([])
-    setQuote(null)
-    setCheckoutOpen(false)
-  }
+  }, [accessMessage, authLoading, isAuthenticated, notifyError, user])
 
   async function runSearch() {
-    setError("")
-
-    if (nights < 1) {
+    const selectedNights = getNights(search)
+    if (selectedNights < 1) {
       notifyError("Ngày trả phòng phải sau ngày nhận phòng.")
       return
     }
 
     setSearching(true)
-    setSelectedOptions([])
-    setQuote(null)
-    setCheckoutOpen(false)
 
     try {
-      const availability = await getAvailability(search.checkInDate, search.checkOutDate)
+      const [availability, calculatedPrices] = await Promise.all([
+        getAvailability(search.checkInDate, search.checkOutDate),
+        calculateRoomTypePrices(roomTypes, search),
+      ])
       setAvailableRoomsByType(mapAvailabilityByRoomTypeCode(availability, roomTypes))
+      setBookingPrices(calculatedPrices)
+      setAppliedSearch(search)
+      setSelectedOptions([])
+      setQuote(null)
+      setCheckoutOpen(false)
       document.getElementById("choose-room")?.scrollIntoView({ behavior: "smooth", block: "start" })
     } catch (searchError) {
-      setAvailableRoomsByType({})
       notifyError(getApiErrorMessage(searchError, "Không thể kiểm tra phòng còn trống"))
     } finally {
       setSearching(false)
@@ -553,7 +620,6 @@ export default function BookingPage() {
   }
 
   async function calculateSelectedRooms() {
-    setError("")
     setCalculating(true)
 
     const plannedOptions = selectedOptions
@@ -570,8 +636,8 @@ export default function BookingPage() {
             roomTypeCode: selection.roomTypeCode,
             paymentOption: selection.paymentOption,
             cancellationPolicyCode: selection.cancellationPolicyCode,
-            checkInDate: search.checkInDate,
-            checkOutDate: search.checkOutDate,
+            checkInDate: appliedSearch.checkInDate,
+            checkOutDate: appliedSearch.checkOutDate,
             adults: 1,
             children: 0,
           })
@@ -610,8 +676,8 @@ export default function BookingPage() {
       roomTypeCode: selection.roomTypeCode,
       paymentOption: selection.paymentOption,
       cancellationPolicyCode: selection.cancellationPolicyCode,
-      checkInDate: search.checkInDate,
-      checkOutDate: search.checkOutDate,
+      checkInDate: appliedSearch.checkInDate,
+      checkOutDate: appliedSearch.checkOutDate,
       adults: 1,
       children: 0,
     }))
@@ -692,16 +758,9 @@ export default function BookingPage() {
       <SiteHeader />
 
       <main className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-8 lg:px-8">
-        {error && (
-          <Alert variant="destructive">
-            <AlertTitle>Không thể tiếp tục</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
         <HotelHeader />
         <HotelGallery images={galleryImages} loading={loadingCatalog} />
-        <HotelDetails roomTypes={roomTypes} cheapestOffer={cheapestBookingOffer} search={search} />
+        <HotelDetails roomTypes={roomTypes} cheapestOffer={cheapestBookingOffer} search={appliedSearch} />
 
         <section id="choose-room" className="scroll-mt-28">
           <div className="flex flex-col gap-2">
@@ -711,11 +770,11 @@ export default function BookingPage() {
             search={search}
             loading={searching || loadingCatalog}
             minNightPrice={cheapestBookingOffer?.unitPrice ?? 0}
-            onChange={resetSelection}
+            onChange={setSearch}
             onSearch={runSearch}
           />
           <p className="mb-4 text-muted-foreground">
-            Bộ lọc khách giúp tìm room type có sức chứa tối thiểu phù hợp. Thông tin booking sẽ được xác nhận sau khi bạn chọn phương thức thanh toán.
+            Chọn ngày và số người, sau đó bấm Tìm để cập nhật phòng còn trống. Thông tin booking sẽ được xác nhận sau khi bạn chọn phương thức thanh toán.
           </p>
 
           <RoomTypeList
@@ -723,6 +782,7 @@ export default function BookingPage() {
             loading={loadingCatalog || searching}
             selectedOptions={selectedOptions}
             cheapestOptionKey={cheapestBookingOffer?.option.optionKey}
+            bookingPrices={bookingPrices}
             nights={nights}
             onAddOption={addSelectedOption}
             onRemoveOption={removeSelectedOption}
@@ -734,8 +794,7 @@ export default function BookingPage() {
         <BottomCheckoutBar
           selectedCount={selectedCount}
           nights={nights}
-          adults={search.adults}
-          childrenCount={search.children}
+          adults={appliedSearch.adults}
           estimatedTotal={selectedEstimateTotal}
           currency={selectedCurrency}
           calculating={calculating}
@@ -746,7 +805,7 @@ export default function BookingPage() {
       <CheckoutDialog
         open={checkoutOpen}
         onOpenChange={setCheckoutOpen}
-        search={search}
+        search={appliedSearch}
         contact={contact}
         quote={quote}
         policyLines={selectedPolicyLines}
@@ -980,7 +1039,9 @@ function BestPriceCard({
   const roomType = offer?.roomType ?? null
   const bookingOption = offer?.option ?? null
   const unitPrice = offer?.unitPrice ?? 0
-  const estimate = unitPrice * search.rooms * getNights(search)
+  const estimate = offer
+    ? Number(offer.calculation.totalAmount) * search.rooms
+    : unitPrice * search.rooms * getNights(search)
 
   return (
     <Card className="h-fit overflow-hidden shadow-xl lg:sticky lg:top-36">
@@ -990,11 +1051,12 @@ function BestPriceCard({
       <CardContent className="flex flex-col gap-4 p-6">
         <div>
           <div className="text-3xl font-bold text-primary">{money(unitPrice, roomType?.currency ?? "VND")}</div>
+          <div className="text-sm text-muted-foreground">Giá phòng trung bình mỗi đêm theo ngày đã chọn</div>
           <div className="text-sm text-muted-foreground">
             Tổng giá: <span className="font-semibold text-foreground">{money(estimate, roomType?.currency ?? "VND")}</span>
           </div>
           <div className="text-sm text-muted-foreground">
-            {search.rooms} phòng × {getNights(search)} đêm bao gồm thuế & phí sau khi tính giá
+            {search.rooms} phòng × {getNights(search)} đêm, đã gồm VAT & phí
           </div>
         </div>
         <div className="font-semibold">{roomType?.name ?? "Chọn phòng"}</div>
@@ -1134,7 +1196,7 @@ function GuestPicker({
         <button className="flex h-12 w-full items-center gap-3 rounded-lg px-4 hover:bg-muted">
           <Users />
           <span className="text-base font-semibold">
-            Sức chứa từ {search.adults + search.children} khách
+            Sức chứa từ {search.adults} người lớn
           </span>
         </button>
       </PopoverTrigger>
@@ -1146,13 +1208,6 @@ function GuestPicker({
             value={search.adults}
             min={1}
             onChange={(adults) => onChange({ ...search, adults })}
-          />
-          <CounterRow
-            label="Trẻ em tối thiểu"
-            description="0-17 tuổi"
-            value={search.children}
-            min={0}
-            onChange={(children) => onChange({ ...search, children })}
           />
           <Button className="ml-auto px-8">Xong</Button>
         </div>
@@ -1208,6 +1263,7 @@ function RoomTypeList({
   loading,
   selectedOptions,
   cheapestOptionKey,
+  bookingPrices,
   nights,
   onAddOption,
   onRemoveOption,
@@ -1216,6 +1272,7 @@ function RoomTypeList({
   loading: boolean
   selectedOptions: SelectedBookingOption[]
   cheapestOptionKey?: string
+  bookingPrices: Record<string, PriceCalculation>
   nights: number
   onAddOption: (roomType: RoomType, option: RoomTypeBookingOption) => void
   onRemoveOption: (roomType: RoomType, option: RoomTypeBookingOption) => void
@@ -1237,7 +1294,7 @@ function RoomTypeList({
         const selectedInRoomType = getSelectionCount(selectedOptions, roomType.code)
         const primaryImage = roomType.images.find((image) => image.isPrimary) ?? roomType.images[0]
         const canAddMore = selectedInRoomType < availableCount
-        const sortedBookingOptions = sortBookingOptionsByPrice(roomType)
+        const sortedBookingOptions = sortBookingOptionsByPrice(roomType, bookingPrices)
 
         return (
           <Card key={roomType.code} className={cn("overflow-hidden", selectedInRoomType > 0 && "border-green-500")}>
@@ -1288,6 +1345,7 @@ function RoomTypeList({
                         selectedCount={getSelectionCount(selectedOptions, roomType.code, bookingOption.optionKey)}
                         isCheapestToday={bookingOption.optionKey === cheapestOptionKey}
                         canAddMore={canAddMore}
+                        calculation={getBookingOptionCalculation(bookingPrices, roomType, bookingOption)}
                         nights={nights}
                         onAdd={() => onAddOption(roomType, bookingOption)}
                         onRemove={() => onRemoveOption(roomType, bookingOption)}
@@ -1325,6 +1383,7 @@ function RoomChoiceCard({
   selectedCount,
   isCheapestToday,
   canAddMore,
+  calculation,
   nights,
   onAdd,
   onRemove,
@@ -1334,15 +1393,25 @@ function RoomChoiceCard({
   selectedCount: number
   isCheapestToday: boolean
   canAddMore: boolean
+  calculation?: PriceCalculation
   nights: number
   onAdd: () => void
   onRemove: () => void
 }) {
-  const unitPrice = getBookingOptionUnitPrice(roomType, option)
-  const basePrice = Number(roomType.basePrice)
-  const priceDifference = unitPrice - basePrice
+  const unitPrice = calculation
+    ? getEffectiveNightlyPrice(calculation)
+    : getBookingOptionUnitPrice(roomType, option)
+  const baseOptionPrice = getBookingOptionUnitPrice(roomType, option)
+  const priceDifference = roundMoney(unitPrice - baseOptionPrice)
+  const hasDiscount = hasMeaningfulDiscount(priceDifference, roomType.currency)
   const displayRoomCount = Math.max(1, selectedCount)
-  const totalPrice = unitPrice * displayRoomCount * Math.max(1, nights)
+  const totalPrice = calculation
+    ? Number(calculation.totalAmount) * displayRoomCount
+    : unitPrice * displayRoomCount * Math.max(1, nights)
+  const dailyPrices = calculation?.dailyRates.map((dailyRate) => Number(dailyRate.price)) ?? []
+  const minDailyPrice = dailyPrices.length > 0 ? Math.min(...dailyPrices) : unitPrice
+  const maxDailyPrice = dailyPrices.length > 0 ? Math.max(...dailyPrices) : unitPrice
+  const hasVariableDailyPrices = minDailyPrice !== maxDailyPrice
   const paymentLabel = "Thanh toán trước trực tuyến"
 
   return (
@@ -1368,7 +1437,7 @@ function RoomChoiceCard({
 
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          {priceDifference < 0 && (
+          {hasDiscount && (
             <>
               <Badge className="rounded-md border-0 bg-rose-600 px-2 py-1 text-sm font-bold text-white">
                 {money(priceDifference, roomType.currency)}
@@ -1383,9 +1452,10 @@ function RoomChoiceCard({
           <div className="text-3xl font-semibold leading-none text-[var(--accent)]">
             {money(unitPrice, roomType.currency)}
           </div>
-          {priceDifference < 0 && (
+          <span className="text-sm text-muted-foreground">/đêm trung bình</span>
+          {hasDiscount && (
             <div className="relative text-lg leading-none text-muted-foreground">
-              <span>{money(basePrice, roomType.currency)}</span>
+              <span>{money(baseOptionPrice, roomType.currency)}</span>
               <span className="absolute left-0 top-1/2 h-0.5 w-full -translate-y-1/2 rotate-[-8deg] bg-rose-600" />
             </div>
           )}
@@ -1398,8 +1468,13 @@ function RoomChoiceCard({
             </span>
           </div>
           <div>
-            {displayRoomCount} phòng x {Math.max(1, nights)} đêm bao gồm thuế & phí
+            {displayRoomCount} phòng x {Math.max(1, nights)} đêm đã gồm VAT & phí
           </div>
+          {calculation && hasVariableDailyPrices && (
+            <div>
+              Giá theo ngày: {money(minDailyPrice, roomType.currency)} – {money(maxDailyPrice, roomType.currency)}/đêm
+            </div>
+          )}
         </div>
         {selectedCount > 0 ? (
           <div className="grid h-11 grid-cols-[44px_1fr_44px] overflow-hidden rounded-md border border-green-200 bg-green-50">
@@ -1441,7 +1516,6 @@ function BottomCheckoutBar({
   selectedCount,
   nights,
   adults,
-  childrenCount,
   estimatedTotal,
   currency,
   calculating,
@@ -1450,7 +1524,6 @@ function BottomCheckoutBar({
   selectedCount: number
   nights: number
   adults: number
-  childrenCount: number
   estimatedTotal: number
   currency: string
   calculating: boolean
@@ -1465,7 +1538,7 @@ function BottomCheckoutBar({
               {selectedCount} phòng đã chọn
             </Badge>
             <span className="text-sm text-muted-foreground">
-              {nights} đêm · lọc sức chứa từ {adults + childrenCount} khách
+              {nights} đêm · lọc sức chứa từ {adults} người lớn
             </span>
           </div>
           <div className="text-sm text-muted-foreground">

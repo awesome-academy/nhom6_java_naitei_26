@@ -8,12 +8,13 @@ FE-3.2 gồm:
 
 - Danh sách phòng và bộ lọc theo loại phòng, tầng, view, trạng thái housekeeping.
 - Tìm kiếm theo số phòng hoặc tên loại phòng và phân trang phía client, 10 dòng/trang.
-- Sơ đồ tầng dạng grid, dùng cùng kết quả lọc với bảng.
-- Side panel chi tiết khi bấm một phòng từ bảng hoặc sơ đồ.
+- Sơ đồ tầng dạng grid, dùng cùng kết quả lọc với bảng và hiển thị housekeeping, vận hành, booking.
+- Side panel chi tiết phòng khi bấm một hàng trong bảng; panel housekeeping riêng khi bấm tile sơ đồ tầng.
+- Cập nhật housekeeping theo chu trình hợp lệ ngay trong sơ đồ tầng.
 - Modal tạo/sửa `roomTypeCode`, `viewType`, `floor`, `priceOverride`.
 - Loading skeleton, empty state, error/retry, toast mutation và ẩn/hiện action theo permission.
 
-Task không thêm thao tác đổi housekeeping, đổi operational status, soft-delete hay upload ảnh phòng. Các API tương ứng đã có ở backend nhưng thuộc flow quản trị khác; side panel FE-3.2 chỉ hiển thị các trạng thái và ảnh hiện có.
+Task không thêm thao tác đổi operational status, soft-delete hay upload ảnh phòng. Housekeeping được cập nhật riêng trong sơ đồ tầng bằng permission `room:housekeeping:update`; các trường metadata phòng vẫn chỉ sửa từ danh sách với `room:update`.
 
 ## 2. Route, API và permission
 
@@ -23,6 +24,8 @@ Task không thêm thao tác đổi housekeeping, đổi operational status, soft
 | Tải loại phòng để hiển thị giá và option form | `GET /api/room-types` | `room:read` |
 | Tạo phòng | `POST /api/rooms` | `room:create` |
 | Sửa phòng | `PUT /api/rooms/{roomNumber}` | `room:update` |
+| Tải trạng thái booking theo ngày | `GET /api/rooms/occupancy` | `room:occupancy:read` |
+| Cập nhật housekeeping | `PATCH /api/rooms/{roomNumber}/housekeeping-status` | `room:housekeeping:update` |
 
 Người dùng chưa đăng nhập được chuyển tới `/login?redirect=%2Fadmin%2Frooms`. Người dùng đã đăng nhập nhưng thiếu `room:read` thấy trang “Không có quyền truy cập”. Nút tạo chỉ hiện với `room:create`; nút sửa trong bảng và side panel chỉ hiện với `room:update`. Backend vẫn là lớp authorization cuối cùng.
 
@@ -31,14 +34,15 @@ Người dùng chưa đăng nhập được chuyển tới `/login?redirect=%2Fa
 1. Sau khi Auth Context xác nhận phiên đăng nhập, frontend gọi song song `GET /api/rooms` và `GET /api/room-types`.
 2. Trong lúc chờ, trang hiển thị skeleton. Nếu một request lỗi, trang hiển thị message và nút “Thử lại”.
 3. Frontend tạo bốn thẻ thống kê: tổng phòng, `CLEAN`, `DIRTY`, `CLEANING`.
-4. Bộ lọc được áp dụng phía client trên dữ liệu đã tải:
+4. Frontend tải thêm occupancy theo ngày hiện tại để ghép vào tile; phòng không có bản ghi occupancy được hiển thị là chưa có booking hiệu lực.
+5. Bộ lọc được áp dụng phía client trên dữ liệu đã tải:
    - Loại phòng: so khớp `roomTypeCode`.
    - Tầng: so khớp số tầng; có option riêng cho phòng chưa gán tầng.
    - View: `SEA`, `CITY`, `GARDEN`, `POOL`, `MOUNTAIN`, `NONE`.
-   - Housekeeping: `CLEAN`, `DIRTY`, `CLEANING`, `INSPECTED`.
-5. Các điều kiện kết hợp bằng `AND`. Tìm kiếm không phân biệt hoa thường trên `roomNumber` và `roomTypeName`.
-6. Khi thay đổi hoặc xóa bộ lọc, phân trang bảng trở về trang 1.
-7. Bảng và sơ đồ tầng dùng cùng `filteredRooms`, do đó kết quả giữa hai tab luôn nhất quán.
+   - Housekeeping: `CLEAN`, `DIRTY`, `CLEANING`.
+6. Các điều kiện kết hợp bằng `AND`. Tìm kiếm không phân biệt hoa thường trên `roomNumber` và `roomTypeName`.
+7. Khi thay đổi hoặc xóa bộ lọc, phân trang bảng trở về trang 1.
+8. Bảng và sơ đồ tầng dùng cùng `filteredRooms`, do đó kết quả giữa hai tab luôn nhất quán.
 
 FE-3.2 không thêm API pagination/filter mới vì endpoint hiện có trả toàn bộ phòng chưa soft-delete và tập dữ liệu quản trị được xử lý trên client.
 
@@ -58,16 +62,17 @@ Bấm vào hàng mở side panel chi tiết. Bấm action sửa không mở pane
 
 ## 5. Sơ đồ tầng và quy ước màu
 
-Frontend nhóm phòng theo `floor`, sắp tầng tăng dần và đặt nhóm “Chưa gán tầng” ở cuối. Trong mỗi tầng, phòng được hiển thị bằng tile chứa số phòng, loại phòng và trạng thái housekeeping.
+Frontend nhóm phòng theo `floor`, sắp tầng tăng dần và đặt nhóm “Chưa gán tầng” ở cuối. Trong mỗi tầng, phòng được hiển thị bằng tile chứa số phòng, loại phòng, housekeeping, operational status và booking status (`Đang giữ`, `Đã đặt`, `Đang ở` hoặc `Trống`).
 
 | Housekeeping status | Màu tile | Ý nghĩa |
 | --- | --- | --- |
 | `CLEAN` | Xanh lá | Phòng sạch |
 | `DIRTY` | Đỏ | Phòng bẩn, cần dọn |
 | `CLEANING` | Cam | Housekeeping đang dọn |
-| `INSPECTED` | Xám trung tính | Trạng thái có trong schema nhưng không thuộc chu trình cập nhật BE-3.2 |
 
-Nếu `operationalStatus` khác `ACTIVE`, tile vẫn giữ màu housekeeping để không phá vỡ quy ước màu và hiển thị thêm biểu tượng bảo trì. Click tile mở side panel của đúng phòng.
+Nếu `operationalStatus` khác `ACTIVE`, tile vẫn giữ màu housekeeping để không phá vỡ quy ước màu và hiển thị thêm biểu tượng bảo trì. Click tile mở panel housekeeping riêng, không mở form sửa metadata phòng.
+
+Panel chỉ cho phép chuyển một bước kế tiếp: `CLEAN → DIRTY → CLEANING → CLEAN`. Admin/Staff có `room:housekeeping:update` mới thấy nút cập nhật; lỗi giữ nguyên tile và panel.
 
 ## 6. Side panel chi tiết
 
@@ -80,7 +85,7 @@ Panel trượt từ bên phải và hiển thị:
 - Tiện nghi hiệu lực backend trả về từ hợp `room_type_amenities ∪ room_amenities`.
 - Nút “Chỉnh sửa phòng” nếu người dùng có `room:update`.
 
-Sau khi lưu edit và refetch thành công, dữ liệu danh sách được lấy lại từ server. Nếu panel đang mở cho một phòng, frontend đồng bộ panel theo `roomNumber`; nếu phòng không còn trong response thì đóng panel.
+Panel danh sách vẫn dành cho xem chi tiết và sửa metadata phòng theo permission `room:update`. Panel sơ đồ tầng chỉ dành cho housekeeping, hiển thị booking status và không có nút “Chỉnh sửa phòng”. Sau khi cập nhật housekeeping thành công, tile và panel đồng bộ response mới; lỗi không làm mất dữ liệu đang xem.
 
 ## 7. Flow tạo phòng
 
@@ -146,8 +151,8 @@ Request mẫu:
 - Kiểm tra `npm run lint` không sinh lỗi mới.
 - Kiểm tra `npm run build` để xác nhận TypeScript và production bundle.
 - Kiểm tra thủ công các trạng thái loading/error/empty; bốn bộ lọc; phân trang; chuyển tab bảng/sơ đồ.
-- Kiểm tra màu tile cho `CLEAN`, `DIRTY`, `CLEANING` và fallback `INSPECTED`.
-- Kiểm tra click row/tile mở đúng panel; permission-based create/edit.
+- Kiểm tra màu tile cho `CLEAN`, `DIRTY`, `CLEANING` và trạng thái booking.
+- Kiểm tra click row/tile mở đúng panel; permission-based create/edit/housekeeping.
 - Kiểm tra create/edit gửi đúng contract, refetch và hiển thị lỗi `400/401/403/404/409`.
 - Kiểm tra giá để trống gửi `null`, giá `0` chỉ được gửi khi nhập rõ ràng, và giá tùy chỉnh hợp lệ được chuyển sang number.
 - Kiểm tra side panel ưu tiên ảnh phòng, fallback sang ảnh Room Type rồi mới dùng placeholder.

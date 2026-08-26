@@ -1,6 +1,7 @@
 // Staff-facing booking types
 
 import type { InvoiceResponse } from "@/types/invoice";
+import type { PaymentMethod, PaymentStatus as GatewayPaymentStatus } from "@/types/payment";
 
 export type BookingStatus =
   | "PENDING"
@@ -18,12 +19,7 @@ export type BookingRoomStatus =
   | "RELEASED"
   | "MOVED_OUT";
 
-export type PaymentStatus =
-  | "PENDING"
-  | "COMPLETED"
-  | "FAILED"
-  | "REFUNDED"
-  | "PARTIALLY_REFUNDED";
+export type PaymentStatus = GatewayPaymentStatus;
 
 export type BookingPaymentStatus =
   | "UNPAID"
@@ -136,12 +132,32 @@ export interface BookingRoomDetail {
 
 export interface BookingGuestResponse {
   id: number;
+  bookingRoomId: number | null;
+  roomNumber: string | null;
   fullName: string;
   nationality: string | null;
   idDocumentType: string | null;
   hasIdDocument: boolean;
   dateOfBirth: string | null;
   createdAt: string;
+}
+
+export type BookingCheckInGuest = {
+  fullName: string;
+  nationality?: string;
+  idDocumentType: "NATIONAL_ID" | "PASSPORT" | "DRIVER_LICENSE";
+  idDocumentNumber: string;
+  dateOfBirth?: string;
+};
+
+export interface BookingCheckInRoom {
+  bookingRoomId: number;
+  guestCount: number;
+  guests: BookingCheckInGuest[];
+}
+
+export interface BookingCheckInRequest {
+  rooms: BookingCheckInRoom[];
 }
 
 export interface FolioChargeResponse {
@@ -167,7 +183,7 @@ export interface FolioChargeResponse {
 export interface PaymentResponse {
   paymentCode: string;
   bookingPublicId: string;
-  method: string;
+  method: PaymentMethod | "CASH" | "BANK_TRANSFER";
   amount: number;
   currency: string;
   status: PaymentStatus;
@@ -175,6 +191,7 @@ export interface PaymentResponse {
   paymentUrl: string | null;
   deeplink: string | null;
   qrCodeValue: string | null;
+  checkoutFields: { name: string; value: string }[];
   expiresAt: string | null;
   createdAt: string;
 }
@@ -246,6 +263,7 @@ export interface BookingConfirmResponse {
   bookingCode: string;
   status: BookingStatus;
   confirmedAt: string;
+  checkedInAt: string | null;
 }
 
 // Room for assignment modal
@@ -253,10 +271,9 @@ export interface HousekeepingStatus {
   CLEAN: "CLEAN";
   DIRTY: "DIRTY";
   CLEANING: "CLEANING";
-  INSPECTED: "INSPECTED";
 }
 
-export type HousekeepingStatusType = "CLEAN" | "DIRTY" | "CLEANING" | "INSPECTED";
+export type HousekeepingStatusType = "CLEAN" | "DIRTY" | "CLEANING";
 
 export type RoomView = "SEA" | "CITY" | "GARDEN" | "POOL" | "MOUNTAIN" | "NONE";
 

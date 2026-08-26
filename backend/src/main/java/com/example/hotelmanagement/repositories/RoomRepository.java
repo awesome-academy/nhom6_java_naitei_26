@@ -48,6 +48,24 @@ public interface RoomRepository extends JpaRepository<Room, Long>, JpaSpecificat
 
     boolean existsByRoomNumberIgnoreCaseAndDeletedAtIsNull(String roomNumber);
 
+    @EntityGraph(attributePaths = "roomType")
+    @Query("""
+            SELECT room
+            FROM Room room
+            WHERE room.deletedAt IS NULL
+            ORDER BY room.roomNumber ASC
+            """)
+    List<Room> findAllForBookingMap();
+
+    @Query("""
+            SELECT room.roomNumber
+            FROM Room room
+            WHERE room.deletedAt IS NULL
+              AND room.isActive = true
+            ORDER BY room.roomNumber ASC
+            """)
+    List<String> findActiveRoomNumbers();
+
     long countByDeletedAtIsNullAndIsActiveTrue();
 
     @Query("""

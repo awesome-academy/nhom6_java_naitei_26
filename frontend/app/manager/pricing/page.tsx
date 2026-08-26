@@ -136,7 +136,7 @@ export default function AdminPricingPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Quản lý giá</h1>
@@ -223,5 +223,5 @@ function SummaryCard({ label, value }: { label: string; value: number }) {
 }
 
 function PageSkeleton({ tableOnly = false }: { tableOnly?: boolean }) {
-  return <div className="space-y-4">{!tableOnly && <Skeleton className="h-16 w-full" />}<Skeleton className="h-24 w-full" /><Skeleton className="h-96 w-full" /></div>
+  return <div className="flex flex-col gap-4">{!tableOnly && <Skeleton className="h-16 w-full" />}<Skeleton className="h-24 w-full" /><Skeleton className="h-96 w-full" /></div>
 }

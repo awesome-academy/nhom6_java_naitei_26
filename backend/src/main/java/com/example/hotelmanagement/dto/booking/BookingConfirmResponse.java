@@ -11,5 +11,6 @@ public record BookingConfirmResponse(
         String publicId,
         String bookingCode,
         BookingStatus status,
-        OffsetDateTime confirmedAt
+        OffsetDateTime confirmedAt,
+        OffsetDateTime checkedInAt
 ) {}

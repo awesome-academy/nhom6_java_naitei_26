@@ -70,7 +70,8 @@ Hiển thị đầy đủ thông tin trong các tabs:
 - Endpoint: `POST /api/bookings/{publicId}/confirm`
 - Điều kiện: booking PENDING
 - Hành động: Chuyển PENDING → CONFIRMED
-- Đây là luồng xác nhận thủ công cho thu tiền mặt ngoài hệ thống; không tự tạo payment record.
+- Nếu booking chưa thanh toán, đây là luồng xác nhận thu tiền mặt: backend tự tạo payment `CASH`
+  đã xác minh trong payment ledger rồi mới chuyển booking sang `CONFIRMED`.
 - Ghi `booking_status_history.source = MANUAL`. Thanh toán online chỉ tự xác nhận khi payment
   `SUCCEEDED`, có `verified_at` hợp lệ và tổng tiền đã nhận đủ `total_amount`.
 
@@ -78,12 +79,12 @@ Hiển thị đầy đủ thông tin trong các tabs:
 - Modal chọn phòng kiểu "chọn ghế rạp chiếu phim"
 - **Filters:**
   - Tầng: dropdown các tầng có phòng
-  - Trạng thái HK: CLEAN, DIRTY, CLEANING, INSPECTED
+  - Trạng thái HK: CLEAN, DIRTY, CLEANING
   - Loại phòng: filter theo loại phòng của booking_room
   - View: SEA, CITY, GARDEN, POOL, MOUNTAIN, NONE
 - **Grid view:**
   - Mỗi phòng là 1 "ghế" có màu theo trạng thái HK
-  - Màu: CLEAN=xanh, DIRTY=đỏ, CLEANING=cam, INSPECTED=xanh lá
+  - Màu: CLEAN=xanh, DIRTY=đỏ, CLEANING=cam
   - Click chọn phòng
   - Hiển thị số phòng, loại phòng, view type
 - **Endpoint:** `POST /api/bookings/{publicId}/rooms/{bookingRoomId}/assign`
@@ -93,6 +94,9 @@ Hiển thị đầy đủ thông tin trong các tabs:
 - Endpoint: `POST /api/bookings/{publicId}/check-in`
 - Điều kiện: booking CONFIRMED, tất cả rooms đã được gán
 - Hành động: Chuyển CONFIRMED → CHECKED_IN
+- Staff/Admin check-in qua `/api/admin/bookings/{publicId}/check-in` có thể gửi danh sách guest theo từng `bookingRoomId`.
+- Booking Staff tạo tại quầy đã có guest hợp lệ từ bước tạo; nút xác nhận sẽ tự thu tiền mặt nếu cần, sau đó chuyển tiếp `PENDING → CONFIRMED → CHECKED_IN`.
+- Booking online thay thế guest placeholder bằng danh sách khách thực tế trước khi check-in; `checked_in_at`, `checked_in_by`, `booking_status_history` và trạng thái `booking_rooms` phải được cập nhật trong cùng transaction.
 
 #### 3.4. Check-out
 - Endpoint: `POST /api/bookings/{publicId}/check-out`
@@ -106,9 +110,14 @@ Hiển thị đầy đủ thông tin trong các tabs:
 - Điều kiện: booking PENDING hoặc CONFIRMED
 
 #### 3.6. Tạo booking mới
-- Endpoint: `POST /api/bookings` (đã có)
-- Form tương tự như customer booking wizard
-- Dùng cho walk-in: Staff nhập thông tin thay khách
+- Endpoint: `POST /api/admin/bookings`
+- Permission: `booking:create_staff`
+- Form tương tự customer booking wizard nhưng Staff/Admin chọn trực tiếp số phòng trên booking map.
+- Booking map: `GET /api/admin/rooms/booking-map?checkInDate=&checkOutDate=` với permission `room:booking_map:read`.
+- Phòng chỉ được chọn khi `CLEAN`, `ACTIVE`, không overlap booking hoặc room status block.
+- Booking tạo từ Staff/Admin dùng source `STAFF_MANUAL`, trạng thái ban đầu `PENDING` và giữ phòng theo hold hiện tại.
+- Flow tạo booking gồm 2 bước: chọn phòng trước, sau đó nhập contact và danh sách khách theo từng phòng. Booking Staff/Admin mặc định dùng `NON_REFUND`; `contactPhone` bắt buộc; khách chính và khách phụ đều phải có họ tên, loại giấy tờ và số giấy tờ, còn quốc tịch/ngày sinh là tùy chọn. `guestCount` hiện được tính là số người lớn vì chưa hỗ trợ trẻ em.
+- Chi tiết contract được mô tả tại `docs/flows/be_5_4_staff_booking_room_timeline.md` và giao diện tại `docs/flows/fe_5_4_staff_booking_room_selection.md`.
 
 ---
 
@@ -121,9 +130,10 @@ Hiển thị đầy đủ thông tin trong các tabs:
 4. `POST /api/bookings/{publicId}/check-out` - Check-out
 5. `POST /api/bookings/{publicId}/cancel` - Hủy
 6. `POST /api/bookings/{publicId}/rooms/{id}/assign` - Gán phòng
-7. `POST /api/bookings` - Tạo booking
-8. `RoomService.getRooms()` - Lấy phòng với filters
-9. `RoomRepository.findAvailableRooms()` - Tìm phòng trống
+7. `POST /api/bookings` - Tạo booking customer
+8. `POST /api/admin/bookings` - Tạo booking Staff/Admin với phòng cụ thể
+9. `RoomService.getRooms()` - Lấy phòng với filters
+10. `RoomRepository.findAvailableRooms()` - Tìm phòng trống
 
 ### Cần tạo/thêm 🔧
 
@@ -247,7 +257,6 @@ frontend/
     - CLEAN: bg-green-100, border-green-500
     - DIRTY: bg-red-100, border-red-500
     - CLEANING: bg-orange-100, border-orange-500
-    - INSPECTED: bg-blue-100, border-blue-500
   - Hover: hiện tooltip với thông tin phòng
   - Selected: border-primary, ring
   - Occupied: grayed out, cursor-not-allowed
@@ -275,7 +284,6 @@ frontend/
 | CLEAN | green-50 | green-500 | green-800 |
 | DIRTY | red-50 | red-500 | red-800 |
 | CLEANING | orange-50 | orange-500 | orange-800 |
-| INSPECTED | blue-50 | blue-500 | blue-800 |
 | Selected | primary-100 | primary-500 | primary-900 |
 | Disabled | gray-100 | gray-300 | gray-400 |
 

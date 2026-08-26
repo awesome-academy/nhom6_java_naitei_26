@@ -8,6 +8,7 @@ import com.example.hotelmanagement.entity.enums.PaymentStatus;
 import com.example.hotelmanagement.entity.enums.UserStatus;
 import com.example.hotelmanagement.services.MockWalletPaymentService;
 import com.example.hotelmanagement.services.PaymentService;
+import com.example.hotelmanagement.services.BookingStaffService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -49,6 +50,8 @@ class PaymentAuthorizationTest {
     private PaymentService paymentService;
     @MockBean
     private MockWalletPaymentService mockWalletPaymentService;
+    @MockBean
+    private BookingStaffService bookingStaffService;
 
     @Test
     void endpointRequiresAuthentication() throws Exception {
@@ -99,6 +102,79 @@ class PaymentAuthorizationTest {
                 eq("payment-attempt-001"),
                 eq(42L)
         );
+    }
+
+    @Test
+    void staffBookingPermissionCanCreateStaffPayment() throws Exception {
+        var authentication = UsernamePasswordAuthenticationToken.authenticated(
+                principal(42L),
+                null,
+                List.of(new SimpleGrantedAuthority("booking:create_staff"))
+        );
+        when(paymentService.createStaffPayment(
+                eq(BOOKING_PUBLIC_ID),
+                any(),
+                eq("payment-attempt-001"),
+                eq(42L)
+        )).thenReturn(response());
+
+        mockMvc.perform(post(
+                        "/api/admin/bookings/{bookingPublicId}/payments",
+                        BOOKING_PUBLIC_ID
+                )
+                        .with(authentication(authentication))
+                        .header("Idempotency-Key", "payment-attempt-001")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"method\":\"INTERNET_BANKING\"}"))
+                .andExpect(status().isCreated());
+
+        verify(paymentService).createStaffPayment(
+                eq(BOOKING_PUBLIC_ID),
+                any(),
+                eq("payment-attempt-001"),
+                eq(42L)
+        );
+    }
+
+    @Test
+    void customerBookingPermissionCannotCreateStaffPayment() throws Exception {
+        var authentication = UsernamePasswordAuthenticationToken.authenticated(
+                principal(42L),
+                null,
+                List.of(new SimpleGrantedAuthority("booking:create"))
+        );
+
+        mockMvc.perform(post(
+                        "/api/admin/bookings/{bookingPublicId}/payments",
+                        BOOKING_PUBLIC_ID
+                )
+                        .with(authentication(authentication))
+                        .header("Idempotency-Key", "payment-attempt-001")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"method\":\"INTERNET_BANKING\"}"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    void customerBookingPermissionCannotCheckInThroughStaffEndpoint() throws Exception {
+        var authentication = UsernamePasswordAuthenticationToken.authenticated(
+                principal(42L),
+                null,
+                List.of(new SimpleGrantedAuthority("booking:create"))
+        );
+
+        mockMvc.perform(post(
+                        "/api/admin/bookings/{bookingPublicId}/check-in",
+                        BOOKING_PUBLIC_ID
+                )
+                        .with(authentication(authentication))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(bookingStaffService);
     }
 
     @Test

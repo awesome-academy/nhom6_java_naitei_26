@@ -50,11 +50,29 @@ public class MockWalletPaymentService {
             @Valid MockWalletResultRequest request,
             Long userId
     ) {
-        PaymentStatusResponse currentPayment = paymentService.getPayment(
-                bookingPublicId,
-                paymentCode,
-                userId
-        );
+        return submitResult(bookingPublicId, paymentCode, request, userId, false);
+    }
+
+    @PreAuthorize(PermissionExpressions.STAFF_BOOKING_PAYMENT)
+    public PaymentStatusResponse submitStaffResult(
+            String bookingPublicId,
+            String paymentCode,
+            @Valid MockWalletResultRequest request,
+            Long userId
+    ) {
+        return submitResult(bookingPublicId, paymentCode, request, userId, true);
+    }
+
+    private PaymentStatusResponse submitResult(
+            String bookingPublicId,
+            String paymentCode,
+            MockWalletResultRequest request,
+            Long userId,
+            boolean staffBooking
+    ) {
+        PaymentStatusResponse currentPayment = staffBooking
+                ? paymentService.getStaffPayment(bookingPublicId, paymentCode, userId)
+                : paymentService.getPayment(bookingPublicId, paymentCode, userId);
         validatePaymentCanBeSimulated(currentPayment);
 
         boolean succeeded = request.result() == MockWalletResult.SUCCEEDED;
@@ -74,7 +92,9 @@ public class MockWalletPaymentService {
                 buildRawPayload(currentPayment, request.result()),
                 INTERNAL_LOOPBACK_IP
         );
-        return paymentService.getPayment(bookingPublicId, paymentCode, userId);
+        return staffBooking
+                ? paymentService.getStaffPayment(bookingPublicId, paymentCode, userId)
+                : paymentService.getPayment(bookingPublicId, paymentCode, userId);
     }
 
     private void validatePaymentCanBeSimulated(PaymentStatusResponse payment) {

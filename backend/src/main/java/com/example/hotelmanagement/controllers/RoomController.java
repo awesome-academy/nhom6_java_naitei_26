@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.room.HousekeepingStatusUpdateRequest;
 import com.example.hotelmanagement.dto.room.RoomCreateRequest;
+import com.example.hotelmanagement.dto.room.RoomOccupancyResponse;
 import com.example.hotelmanagement.dto.room.RoomOperationalStatusResponse;
 import com.example.hotelmanagement.dto.room.RoomOperationalStatusUpdateRequest;
 import com.example.hotelmanagement.dto.room.RoomResponse;
@@ -17,6 +18,7 @@ import com.example.hotelmanagement.entity.enums.RoomView;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import com.example.hotelmanagement.security.UserPrincipal;
 import com.example.hotelmanagement.services.RoomImageService;
+import com.example.hotelmanagement.services.RoomOccupancyService;
 import com.example.hotelmanagement.services.RoomService;
 import com.example.hotelmanagement.services.RoomStatusBlockService;
 import jakarta.validation.Valid;
@@ -34,8 +36,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.format.annotation.DateTimeFormat;
 
 import java.net.URI;
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -46,15 +50,18 @@ public class RoomController {
     private final RoomService roomService;
     private final RoomImageService roomImageService;
     private final RoomStatusBlockService roomStatusBlockService;
+    private final RoomOccupancyService roomOccupancyService;
 
     public RoomController(
             RoomService roomService,
             RoomImageService roomImageService,
-            RoomStatusBlockService roomStatusBlockService
+            RoomStatusBlockService roomStatusBlockService,
+            RoomOccupancyService roomOccupancyService
     ) {
         this.roomService = roomService;
         this.roomImageService = roomImageService;
         this.roomStatusBlockService = roomStatusBlockService;
+        this.roomOccupancyService = roomOccupancyService;
     }
 
     @Operation(summary = "Get Rooms")
@@ -67,6 +74,15 @@ public class RoomController {
             @RequestParam(required = false) List<String> amenityCodes
     ) {
         return ResponseEntity.ok(roomService.getRooms(roomTypeCode, viewType, floor, amenityCodes));
+    }
+
+    @Operation(summary = "Get Room Occupancy")
+    @GetMapping("/occupancy")
+    @PreAuthorize(PermissionExpressions.ROOM_OCCUPANCY_READ)
+    public ResponseEntity<List<RoomOccupancyResponse>> getRoomOccupancy(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
+    ) {
+        return ResponseEntity.ok(roomOccupancyService.getOccupancy(date));
     }
 
     @Operation(summary = "Get Room")
@@ -107,7 +123,7 @@ public class RoomController {
 
     @Operation(summary = "Update Housekeeping Status")
     @PatchMapping(value = "/{roomNumber}/housekeeping-status", consumes = MediaType.APPLICATION_JSON_VALUE)
-    @PreAuthorize(PermissionExpressions.ROOM_UPDATE)
+    @PreAuthorize(PermissionExpressions.HOUSEKEEPING_UPDATE)
     public ResponseEntity<RoomResponse> updateHousekeepingStatus(
             @PathVariable String roomNumber,
             @Valid @RequestBody HousekeepingStatusUpdateRequest request

@@ -214,6 +214,8 @@ Role vẫn là bảng riêng thay vì enum trong `users` để quyền được 
 
 `maintenance:manage` là quyền riêng để tạo, gia hạn và xóa `room_status_blocks`. STAFF chỉ có `room:read` đối với Room/RoomType, nhưng có thể vận hành lịch bảo trì bằng quyền này; không dùng `room:update` cho maintenance để Staff không thể sửa master data của phòng.
 
+Staff/Admin tạo booking trực tiếp dùng permission `booking:create_staff` và xem booking map nội bộ dùng `room:booking_map:read`. Booking map chỉ là dữ liệu tra cứu; khi ghi `booking_rooms`, service vẫn khóa phòng và kiểm tra lại overlap booking, room status block, housekeeping `CLEAN` và operational status `ACTIVE` trong cùng transaction.
+
 ### 3.3. `customer_profiles`
 
 | Cột                                    | Kiểu       | Ràng buộc                                   | Giải thích                                                |
@@ -448,7 +450,7 @@ Tiện nghi hiệu lực của một phòng = hợp của hai bảng. Cách này
 | `view_type`                                                     | room_view               | NOT NULL default`NONE`                                       | Dòng 53, 67 lọc theo view. Enum`SEA / CITY / GARDEN / POOL / MOUNTAIN / NONE` — giá trị có kiểm soát để "Sea view" và "sea-view" không thành hai nhóm. Không tách bảng riêng (P10) |
 | `floor`                                                         | SMALLINT                | NULL                                                           |                                                                                                                                                                                                        |
 | `operational_status`                                            | room_operational_status | NOT NULL default`ACTIVE`                                     | `ACTIVE / MAINTENANCE / OUT_OF_SERVICE / RENOVATION`. Dòng 117-118. **Đây không phải availability** (QĐ-1) — chỉ là trạng thái dài hạn                                            |
-| `housekeeping_status`                                           | housekeeping_status     | NOT NULL default`CLEAN`                                      | `CLEAN / DIRTY / CLEANING / INSPECTED`. Sau check-out phòng chuyển DIRTY; lễ tân không nên gán phòng DIRTY cho khách mới                                                                   |
+| `housekeeping_status`                                           | housekeeping_status     | NOT NULL default`CLEAN`                                      | `CLEAN / DIRTY / CLEANING`. Sau check-out phòng chuyển DIRTY; lễ tân không nên gán phòng DIRTY cho khách mới                                                                   |
 | `price_override`                                                | NUMERIC(14,2)           | NULL, CHECK`>= 0`                                            | Phòng góc cùng loại nhưng giá khác. NULL = dùng`room_types.base_price`. Master/config data                                                                                                   |
 | `max_occupancy_override`                                        | SMALLINT                | NULL, CHECK`>= 1`                                            |                                                                                                                                                                                                        |
 | `description`                                                   | TEXT                    | NULL                                                           | Dòng 109                                                                                                                                                                                              |
@@ -908,6 +910,8 @@ Index: `(booking_id)`, `(booking_room_id)`, `(id_document_lookup_hash)`.
 
 **Business timeline** của booking (`PENDING → CONFIRMED → CHECKED_IN → CHECKED_OUT`). Khác `audit_logs`: bảng này ghi *chuyển trạng thái nghiệp vụ* để trả lời khách hàng và vận hành; `audit_logs` ghi *mọi thao tác sửa dữ liệu* để điều tra kỹ thuật.
 
+Khi Staff tạo booking trực tiếp tại quầy, danh sách `booking_guests` được ghi ngay trong bước tạo booking. Thao tác xác nhận tại quầy là một luồng check-in: nếu booking chưa thanh toán thì ghi nhận tiền mặt trước, sau đó thực hiện lần lượt `PENDING → CONFIRMED → CHECKED_IN`. Với booking online đã `CONFIRMED`, Staff nhập lại danh sách khách thực tế theo từng `booking_room` trước khi chuyển `CONFIRMED → CHECKED_IN`. Mọi guest được check-in phải có loại và số giấy tờ; số giấy tờ chỉ lưu dạng mã hóa.
+
 | Cột            | Kiểu                | Ràng buộc                              | Giải thích                                                                                                                                       |
 | --------------- | -------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`          | BIGINT               | PK                                       |                                                                                                                                                    |
@@ -1009,7 +1013,9 @@ không vô hiệu hóa trigger trên session ứng dụng.
   khả dụng, kiểm tra overlap lần cuối, tính lại giá và tạo `PENDING` cùng `booking_rooms = RESERVED`
   với `hold_expires_at` 15 phút. Nếu conflict thì không tạo payment.
 - Nguồn `WEBSITE` không được dùng `PAY_AT_HOTEL`; staff/admin xác nhận thủ công là ngoại lệ thu tiền
-  mặt ngoài payment ledger, ghi `booking_status_history.source = MANUAL` và không tự tạo payment.
+  mặt. Với booking nguồn `STAFF_MANUAL`, thao tác xác nhận khi chưa thanh toán tạo một payment
+  `CASH` đã xác minh (`SUCCEEDED`, có `paid_at` và `verified_at`) trong payment ledger, sau đó mới
+  chuyển booking sang `CONFIRMED`.
 - `PENDING → CONFIRMED` tự động chỉ xảy ra khi payment có `SUCCEEDED`, `verified_at` hợp lệ và tổng
   tiền đã nhận đạt `total_amount`.
 

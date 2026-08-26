@@ -2,7 +2,14 @@ import type { Amenity, RoomTypeImage } from "@/types/room-type"
 
 export type RoomView = "SEA" | "CITY" | "GARDEN" | "POOL" | "MOUNTAIN" | "NONE"
 
-export type HousekeepingStatus = "CLEAN" | "DIRTY" | "CLEANING" | "INSPECTED"
+export type HousekeepingStatus = "CLEAN" | "DIRTY" | "CLEANING"
+
+export type RoomBookingStatus = "HELD" | "RESERVED" | "OCCUPIED"
+
+export interface RoomOccupancy {
+  roomNumber: string
+  bookingStatus: RoomBookingStatus | null
+}
 
 export type RoomOperationalStatus =
   | "ACTIVE"

@@ -60,12 +60,6 @@ const HK_STATUS_CONFIG: Record<
     borderColor: "border-orange-500",
     textColor: "text-orange-800",
   },
-  INSPECTED: {
-    label: "Đã kiểm tra",
-    bgColor: "bg-blue-50",
-    borderColor: "border-blue-500",
-    textColor: "text-blue-800",
-  },
 };
 
 const VIEW_LABELS: Record<RoomView, string> = {
@@ -230,7 +224,6 @@ export function RoomAssignmentModal({
                 <SelectItem value="CLEAN">Sạch</SelectItem>
                 <SelectItem value="DIRTY">Bẩn</SelectItem>
                 <SelectItem value="CLEANING">Đang dọn</SelectItem>
-                <SelectItem value="INSPECTED">Đã kiểm tra</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -266,10 +259,6 @@ export function RoomAssignmentModal({
             <div className="flex items-center gap-1">
               <div className="w-4 h-4 rounded border-2 border-orange-500 bg-orange-50" />
               <span className="text-xs text-muted-foreground">Đang dọn</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded border-2 border-blue-500 bg-blue-50" />
-              <span className="text-xs text-muted-foreground">Đã kiểm tra</span>
             </div>
           </div>
         </div>

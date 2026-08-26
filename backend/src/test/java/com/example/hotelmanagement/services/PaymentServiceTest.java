@@ -5,6 +5,7 @@ import com.example.hotelmanagement.dto.payment.PaymentCreateRequest;
 import com.example.hotelmanagement.dto.payment.PaymentGatewayCheckout;
 import com.example.hotelmanagement.dto.payment.PaymentResponse;
 import com.example.hotelmanagement.entity.Booking;
+import com.example.hotelmanagement.entity.BookingSource;
 import com.example.hotelmanagement.entity.CustomerProfile;
 import com.example.hotelmanagement.entity.Payment;
 import com.example.hotelmanagement.entity.User;
@@ -15,6 +16,7 @@ import com.example.hotelmanagement.entity.enums.UserStatus;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.repositories.BookingRepository;
 import com.example.hotelmanagement.repositories.PaymentRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +24,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -88,6 +93,11 @@ class PaymentServiceTest {
                 paymentProperties,
                 FIXED_CLOCK
         );
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -254,6 +264,46 @@ class PaymentServiceTest {
     }
 
     @Test
+    void createStaffPaymentAllowsStaffManualBookingAndReturnsCheckout() {
+        Booking booking = createStaffPayableBooking();
+        when(bookingRepository.findForUpdateByPublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(booking));
+        when(paymentRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+        when(paymentRepository.findFirstByBooking_IdAndStatusInOrderByCreatedAtDesc(eq(10L), any()))
+                .thenReturn(Optional.empty());
+        when(paymentRepository.existsByPaymentCode(anyString())).thenReturn(false);
+        when(paymentRepository.saveAndFlush(any(Payment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(paymentGatewayRegistry.getGateway("MOCK_WALLET", PaymentMethod.E_WALLET))
+                .thenReturn(paymentGatewayService);
+        when(paymentGatewayService.getProviderCode()).thenReturn("MOCK_WALLET");
+        when(paymentGatewayService.createCheckout(any(Payment.class)))
+                .thenReturn(new PaymentGatewayCheckout(
+                        "MOCK_WALLET",
+                        "http://localhost:3000/payment/mock-wallet/PAY-2026-001",
+                        null,
+                        "MOCK_WALLET|PAY-2026-001|1250000.00|VND",
+                        List.of()
+                ));
+        SecurityContextHolder.getContext().setAuthentication(
+                UsernamePasswordAuthenticationToken.authenticated(
+                        "staff@example.com",
+                        null,
+                        List.of(new SimpleGrantedAuthority("booking:create_staff"))
+                )
+        );
+
+        PaymentResponse response = paymentService.createStaffPayment(
+                BOOKING_PUBLIC_ID,
+                new PaymentCreateRequest(PaymentMethod.E_WALLET),
+                IDEMPOTENCY_KEY,
+                USER_ID
+        );
+
+        assertThat(response.status()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(response.qrCodeValue()).startsWith("MOCK_WALLET|");
+    }
+
+    @Test
     void createPaymentExpiresOldAttemptAndAllowsRetryWithinBookingHold() {
         Booking booking = createPayableBooking();
         Payment expiredAttempt = paymentForBooking(booking, PaymentStatus.PENDING);
@@ -341,6 +391,22 @@ class PaymentServiceTest {
                 .publicId(BOOKING_PUBLIC_ID)
                 .bookingCode("BK-2026-000001")
                 .customerProfile(createCustomerProfile())
+                .status(BookingStatus.PENDING)
+                .totalAmount(money("1250000.00"))
+                .paidAmount(BigDecimal.ZERO)
+                .currency("VND")
+                .holdExpiresAt(OffsetDateTime.now(FIXED_CLOCK).plusMinutes(15))
+                .createdBy(USER_ID)
+                .build();
+        booking.setId(10L);
+        return booking;
+    }
+
+    private Booking createStaffPayableBooking() {
+        Booking booking = Booking.builder()
+                .publicId(BOOKING_PUBLIC_ID)
+                .bookingCode("BK-2026-000001")
+                .source(BookingSource.builder().code("STAFF_MANUAL").build())
                 .status(BookingStatus.PENDING)
                 .totalAmount(money("1250000.00"))
                 .paidAmount(BigDecimal.ZERO)

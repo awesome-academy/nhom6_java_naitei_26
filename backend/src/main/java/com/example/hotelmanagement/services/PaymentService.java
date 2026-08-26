@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -55,6 +56,7 @@ public class PaymentService {
             EnumSet.of(PaymentStatus.FAILED, PaymentStatus.CANCELLED, PaymentStatus.EXPIRED)
     );
     private static final String CUSTOMER_CANCELLED_CODE = "CUSTOMER_CANCELLED";
+    private static final String STAFF_CASH_CONFIRMATION_CODE = "STAFF_CASH_CONFIRMATION";
     private static final String PAYMENT_EXPIRED_CODE = "PAYMENT_LINK_EXPIRED";
 
     private final BookingRepository bookingRepository;
@@ -86,11 +88,59 @@ public class PaymentService {
             String idempotencyKey,
             Long userId
     ) {
+        return createPaymentInternal(bookingPublicId, request, idempotencyKey, userId, false, false);
+    }
+
+    /**
+     * Creates an online payment for a booking created from the staff portal. Staff bookings do
+     * not have a CustomerProfile, so they need a separate permission-protected entry point while
+     * sharing the same payment ledger and gateway integrations as customer bookings.
+     */
+    @PreAuthorize(PermissionExpressions.STAFF_BOOKING_PAYMENT)
+    @Transactional(noRollbackFor = PaymentGatewayException.class)
+    public PaymentResponse createStaffPayment(
+            String bookingPublicId,
+            @Valid PaymentCreateRequest request,
+            String idempotencyKey,
+            Long userId
+    ) {
+        return createPaymentInternal(bookingPublicId, request, idempotencyKey, userId, true, false);
+    }
+
+    /**
+     * Creates the cash ledger entry used when staff confirms an unpaid staff-assisted booking.
+     * Any still-pending online attempt is cancelled first so the cash confirmation remains
+     * idempotent and cannot create two active payment attempts for the same booking.
+     */
+    @PreAuthorize(PermissionExpressions.STAFF_BOOKING_PAYMENT)
+    public PaymentResponse createStaffCashPayment(
+            String bookingPublicId,
+            String idempotencyKey,
+            Long userId
+    ) {
+        return createPaymentInternal(
+                bookingPublicId,
+                new PaymentCreateRequest(PaymentMethod.CASH),
+                idempotencyKey,
+                userId,
+                true,
+                true
+        );
+    }
+
+    private PaymentResponse createPaymentInternal(
+            String bookingPublicId,
+            PaymentCreateRequest request,
+            String idempotencyKey,
+            Long userId,
+            boolean staffBooking,
+            boolean replaceActivePayment
+    ) {
         String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
         Booking booking = bookingRepository.findForUpdateByPublicId(bookingPublicId)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking", bookingPublicId));
 
-        validateBookingOwner(booking, userId);
+        validateBookingAccess(booking, userId, staffBooking);
         Optional<Payment> existingPayment = paymentRepository.findByIdempotencyKey(normalizedIdempotencyKey);
         if (existingPayment.isPresent()) {
             return returnIdempotentPayment(existingPayment.get(), booking, request.method());
@@ -104,6 +154,11 @@ public class PaymentService {
         if (activePayment.isPresent()) {
             Payment payment = activePayment.get();
             if (expireIfNeeded(payment)) {
+                paymentRepository.saveAndFlush(payment);
+            } else if (replaceActivePayment) {
+                payment.setStatus(PaymentStatus.CANCELLED);
+                payment.setFailureCode(STAFF_CASH_CONFIRMATION_CODE);
+                payment.setFailureMessage("Replaced by staff cash confirmation");
                 paymentRepository.saveAndFlush(payment);
             } else {
                 throw new BusinessValidationException("A payment is already pending for this booking");
@@ -143,7 +198,21 @@ public class PaymentService {
             String paymentCode,
             Long userId
     ) {
-        Payment payment = getOwnedPaymentForUpdate(bookingPublicId, paymentCode, userId);
+        Payment payment = getOwnedPaymentForUpdate(bookingPublicId, paymentCode, userId, false);
+        return getPaymentStatus(payment);
+    }
+
+    @PreAuthorize(PermissionExpressions.STAFF_BOOKING_PAYMENT)
+    public PaymentStatusResponse getStaffPayment(
+            String bookingPublicId,
+            String paymentCode,
+            Long userId
+    ) {
+        Payment payment = getOwnedPaymentForUpdate(bookingPublicId, paymentCode, userId, true);
+        return getPaymentStatus(payment);
+    }
+
+    private PaymentStatusResponse getPaymentStatus(Payment payment) {
         if (expireIfNeeded(payment)) {
             paymentRepository.saveAndFlush(payment);
         }
@@ -156,7 +225,21 @@ public class PaymentService {
             String paymentCode,
             Long userId
     ) {
-        Payment payment = getOwnedPaymentForUpdate(bookingPublicId, paymentCode, userId);
+        Payment payment = getOwnedPaymentForUpdate(bookingPublicId, paymentCode, userId, false);
+        return cancelPaymentInternal(payment);
+    }
+
+    @PreAuthorize(PermissionExpressions.STAFF_BOOKING_PAYMENT)
+    public PaymentStatusResponse cancelStaffPayment(
+            String bookingPublicId,
+            String paymentCode,
+            Long userId
+    ) {
+        Payment payment = getOwnedPaymentForUpdate(bookingPublicId, paymentCode, userId, true);
+        return cancelPaymentInternal(payment);
+    }
+
+    private PaymentStatusResponse cancelPaymentInternal(Payment payment) {
         if (expireIfNeeded(payment)) {
             paymentRepository.saveAndFlush(payment);
             return mapStatusResponse(payment);
@@ -201,23 +284,35 @@ public class PaymentService {
     private Payment getOwnedPaymentForUpdate(
             String bookingPublicId,
             String paymentCode,
-            Long userId
+            Long userId,
+            boolean staffBooking
     ) {
         Payment payment = paymentRepository.findForUpdateByPaymentCode(paymentCode)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment", paymentCode));
         if (!payment.getBooking().getPublicId().equals(bookingPublicId)) {
             throw new ResourceNotFoundException("Payment", paymentCode);
         }
-        validateBookingOwner(payment.getBooking(), userId);
+        validateBookingAccess(payment.getBooking(), userId, staffBooking);
         return payment;
     }
 
-    private void validateBookingOwner(Booking booking, Long userId) {
-        if (booking.getCustomerProfile() == null
-                || booking.getCustomerProfile().getUser() == null
-                || !Objects.equals(userId, booking.getCustomerProfile().getUser().getId())) {
+    private void validateBookingAccess(Booking booking, Long userId, boolean staffBooking) {
+        boolean customerOwner = booking.getCustomerProfile() != null
+                && booking.getCustomerProfile().getUser() != null
+                && Objects.equals(userId, booking.getCustomerProfile().getUser().getId());
+        boolean authorizedStaffBooking = staffBooking
+                && booking.getSource() != null
+                && "STAFF_MANUAL".equalsIgnoreCase(booking.getSource().getCode())
+                && hasStaffBookingPermission();
+        if (!customerOwner && !authorizedStaffBooking) {
             throw new AccessDeniedException("You cannot access payments for this booking");
         }
+    }
+
+    private boolean hasStaffBookingPermission() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "booking:create_staff".equals(authority.getAuthority()));
     }
 
     private void validateBookingIsPayable(Booking booking) {
