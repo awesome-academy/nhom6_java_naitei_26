@@ -325,8 +325,8 @@
 #### BE-4.2 | RateOverride CRUD | Priority: Normal | 21/08 | Est: 3h
 
 - `RateOverrideService` + `RateOverrideController`
-- Fields: `room_type_id`/`room_id`, date range, price, weekdays, priority
-- Validate: đúng 1 trong 2 room identifiers khác null
+- Fields: `room_type_id`, date range, price, weekdays, priority
+- Rate override chỉ áp dụng cho toàn bộ phòng thuộc một RoomType; không hỗ trợ `room_id`
 - List overrides đang active
 
 #### BE-4.3 | CancellationPolicy + Rules | Priority: Urgent | 21/08 | Est: 4h

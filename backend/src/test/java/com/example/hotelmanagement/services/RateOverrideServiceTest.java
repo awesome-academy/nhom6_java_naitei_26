@@ -5,13 +5,11 @@ import com.example.hotelmanagement.dto.pricing.RateOverrideResponse;
 import com.example.hotelmanagement.dto.pricing.RateOverrideUpdateRequest;
 import com.example.hotelmanagement.dto.pricing.RoomTypeRateOverrideCreateRequest;
 import com.example.hotelmanagement.entity.RateOverride;
-import com.example.hotelmanagement.entity.Room;
 import com.example.hotelmanagement.entity.RoomType;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.RateOverrideConflictException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.RateOverrideRepository;
-import com.example.hotelmanagement.repositories.RoomRepository;
 import com.example.hotelmanagement.repositories.RoomTypeRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,7 +27,6 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -43,7 +40,6 @@ class RateOverrideServiceTest {
 
     private static final Long RATE_OVERRIDE_ID = 1L;
     private static final Long ROOM_TYPE_ID = 20L;
-    private static final Long ROOM_ID = 10L;
     private static final LocalDate START_DATE = LocalDate.of(2026, 8, 21);
     private static final LocalDate END_DATE = LocalDate.of(2026, 8, 25);
 
@@ -53,9 +49,6 @@ class RateOverrideServiceTest {
     @Mock
     private RoomTypeRepository roomTypeRepository;
 
-    @Mock
-    private RoomRepository roomRepository;
-
     private RateOverrideService rateOverrideService;
 
     @BeforeEach
@@ -63,7 +56,6 @@ class RateOverrideServiceTest {
         rateOverrideService = new RateOverrideService(
                 rateOverrideRepository,
                 roomTypeRepository,
-                roomRepository,
                 new RateOverrideWeekdayCodec(new ObjectMapper())
         );
     }
@@ -71,7 +63,7 @@ class RateOverrideServiceTest {
     @Test
     void getActiveRateOverridesMapsSortedWeekdays() {
         RoomType roomType = createRoomType();
-        RateOverride rateOverride = createRateOverride(roomType, null, "[7, 6]", 5);
+        RateOverride rateOverride = createRateOverride(roomType, "[7, 6]", 5);
         when(rateOverrideRepository.findAllByIsActiveTrueOrderByStartDateAscPriorityDescIdAsc())
                 .thenReturn(List.of(rateOverride));
 
@@ -81,17 +73,16 @@ class RateOverrideServiceTest {
         assertEquals(List.of(6, 7), responses.getFirst().weekdays());
         assertEquals("DLX", responses.getFirst().roomTypeCode());
         assertEquals("Deluxe", responses.getFirst().roomTypeName());
-        assertNull(responses.getFirst().roomNumber());
     }
 
     @Test
     void createRateOverrideTargetsRoomTypeAndNormalizesWeekdays() {
         RoomType roomType = createRoomType();
-        RateOverrideCreateRequest request = createRequest(ROOM_TYPE_ID, null, Set.of(7, 6), 5);
+        RateOverrideCreateRequest request = createRequest(ROOM_TYPE_ID, Set.of(7, 6), 5);
         when(roomTypeRepository.findByIdAndDeletedAtIsNull(ROOM_TYPE_ID))
                 .thenReturn(Optional.of(roomType));
         when(rateOverrideRepository.findActiveConflicts(
-                null, ROOM_TYPE_ID, START_DATE, END_DATE, 5, null
+                ROOM_TYPE_ID, START_DATE, END_DATE, 5, null
         )).thenReturn(List.of());
         when(rateOverrideRepository.save(any(RateOverride.class)))
                 .thenAnswer(invocation -> {
@@ -108,27 +99,8 @@ class RateOverrideServiceTest {
         assertEquals("Weekend summer", saved.getName());
         assertEquals("[6,7]", saved.getWeekdays());
         assertEquals(roomType, saved.getRoomType());
-        assertNull(saved.getRoom());
         assertTrue(saved.getIsActive());
         assertEquals(List.of(6, 7), response.weekdays());
-    }
-
-    @Test
-    void createRateOverrideTargetsRoom() {
-        Room room = createRoom();
-        RateOverrideCreateRequest request = createRequest(null, ROOM_ID, null, 3);
-        when(roomRepository.findByIdAndDeletedAtIsNull(ROOM_ID)).thenReturn(Optional.of(room));
-        when(rateOverrideRepository.findActiveConflicts(
-                ROOM_ID, null, START_DATE, END_DATE, 3, null
-        )).thenReturn(List.of());
-        when(rateOverrideRepository.save(any(RateOverride.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-
-        RateOverrideResponse response = rateOverrideService.createRateOverride(request);
-
-        assertEquals("A101", response.roomNumber());
-        assertNull(response.roomTypeCode());
-        assertNull(response.weekdays());
     }
 
     @Test
@@ -145,7 +117,7 @@ class RateOverrideServiceTest {
         when(roomTypeRepository.findByCodeIgnoreCaseAndDeletedAtIsNull("DLX"))
                 .thenReturn(Optional.of(roomType));
         when(rateOverrideRepository.findActiveConflicts(
-                null, ROOM_TYPE_ID, START_DATE, END_DATE, 7, null
+                ROOM_TYPE_ID, START_DATE, END_DATE, 7, null
         )).thenReturn(List.of());
         when(rateOverrideRepository.save(any(RateOverride.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -163,27 +135,20 @@ class RateOverrideServiceTest {
     }
 
     @Test
-    void createRateOverrideRejectsBothOrNeitherTarget() {
-        RateOverrideCreateRequest bothTargets = createRequest(ROOM_TYPE_ID, ROOM_ID, null, 1);
-        RateOverrideCreateRequest noTarget = createRequest(null, null, null, 1);
-
-        assertThrows(
-                BusinessValidationException.class,
-                () -> rateOverrideService.createRateOverride(bothTargets)
-        );
+    void createRateOverrideRejectsMissingRoomType() {
+        RateOverrideCreateRequest noTarget = createRequest(null, null, 1);
         assertThrows(
                 BusinessValidationException.class,
                 () -> rateOverrideService.createRateOverride(noTarget)
         );
 
-        verifyNoInteractions(roomTypeRepository, roomRepository, rateOverrideRepository);
+        verifyNoInteractions(roomTypeRepository, rateOverrideRepository);
     }
 
     @Test
     void createRateOverrideRejectsInvalidDateRange() {
         RateOverrideCreateRequest request = new RateOverrideCreateRequest(
                 ROOM_TYPE_ID,
-                null,
                 "Invalid dates",
                 END_DATE,
                 START_DATE,
@@ -197,24 +162,24 @@ class RateOverrideServiceTest {
                 () -> rateOverrideService.createRateOverride(request)
         );
 
-        verifyNoInteractions(roomTypeRepository, roomRepository, rateOverrideRepository);
+        verifyNoInteractions(roomTypeRepository, rateOverrideRepository);
     }
 
     @Test
     void createRateOverrideRejectsEmptyWeekdays() {
-        RateOverrideCreateRequest request = createRequest(ROOM_TYPE_ID, null, Set.of(), 1);
+        RateOverrideCreateRequest request = createRequest(ROOM_TYPE_ID, Set.of(), 1);
 
         assertThrows(
                 BusinessValidationException.class,
                 () -> rateOverrideService.createRateOverride(request)
         );
 
-        verifyNoInteractions(roomTypeRepository, roomRepository, rateOverrideRepository);
+        verifyNoInteractions(roomTypeRepository, rateOverrideRepository);
     }
 
     @Test
     void createRateOverrideRejectsMissingTarget() {
-        RateOverrideCreateRequest request = createRequest(ROOM_TYPE_ID, null, null, 1);
+        RateOverrideCreateRequest request = createRequest(ROOM_TYPE_ID, null, 1);
         when(roomTypeRepository.findByIdAndDeletedAtIsNull(ROOM_TYPE_ID))
                 .thenReturn(Optional.empty());
 
@@ -229,12 +194,12 @@ class RateOverrideServiceTest {
     @Test
     void createRateOverrideRejectsActualWeekdayConflict() {
         RoomType roomType = createRoomType();
-        RateOverride existing = createRateOverride(roomType, null, "[6,7]", 5);
-        RateOverrideCreateRequest request = createRequest(ROOM_TYPE_ID, null, Set.of(6), 5);
+        RateOverride existing = createRateOverride(roomType, "[6,7]", 5);
+        RateOverrideCreateRequest request = createRequest(ROOM_TYPE_ID, Set.of(6), 5);
         when(roomTypeRepository.findByIdAndDeletedAtIsNull(ROOM_TYPE_ID))
                 .thenReturn(Optional.of(roomType));
         when(rateOverrideRepository.findActiveConflicts(
-                null, ROOM_TYPE_ID, START_DATE, END_DATE, 5, null
+                ROOM_TYPE_ID, START_DATE, END_DATE, 5, null
         )).thenReturn(List.of(existing));
 
         RateOverrideConflictException exception = assertThrows(
@@ -249,12 +214,12 @@ class RateOverrideServiceTest {
     @Test
     void createRateOverrideAllowsDisjointWeekdaysAtSamePriority() {
         RoomType roomType = createRoomType();
-        RateOverride existing = createRateOverride(roomType, null, "[7]", 5);
-        RateOverrideCreateRequest request = createRequest(ROOM_TYPE_ID, null, Set.of(6), 5);
+        RateOverride existing = createRateOverride(roomType, "[7]", 5);
+        RateOverrideCreateRequest request = createRequest(ROOM_TYPE_ID, Set.of(6), 5);
         when(roomTypeRepository.findByIdAndDeletedAtIsNull(ROOM_TYPE_ID))
                 .thenReturn(Optional.of(roomType));
         when(rateOverrideRepository.findActiveConflicts(
-                null, ROOM_TYPE_ID, START_DATE, END_DATE, 5, null
+                ROOM_TYPE_ID, START_DATE, END_DATE, 5, null
         )).thenReturn(List.of(existing));
         when(rateOverrideRepository.save(any(RateOverride.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -268,10 +233,9 @@ class RateOverrideServiceTest {
     @Test
     void updateRateOverrideExcludesCurrentRecordFromConflictSearch() {
         RoomType roomType = createRoomType();
-        RateOverride existing = createRateOverride(roomType, null, null, 2);
+        RateOverride existing = createRateOverride(roomType, null, 2);
         RateOverrideUpdateRequest request = new RateOverrideUpdateRequest(
                 ROOM_TYPE_ID,
-                null,
                 "Updated holiday",
                 START_DATE,
                 END_DATE,
@@ -284,7 +248,7 @@ class RateOverrideServiceTest {
         when(roomTypeRepository.findByIdAndDeletedAtIsNull(ROOM_TYPE_ID))
                 .thenReturn(Optional.of(roomType));
         when(rateOverrideRepository.findActiveConflicts(
-                null, ROOM_TYPE_ID, START_DATE, END_DATE, 8, RATE_OVERRIDE_ID
+                ROOM_TYPE_ID, START_DATE, END_DATE, 8, RATE_OVERRIDE_ID
         )).thenReturn(List.of());
         when(rateOverrideRepository.save(existing)).thenReturn(existing);
 
@@ -300,7 +264,7 @@ class RateOverrideServiceTest {
 
     @Test
     void deleteRateOverrideDeactivatesInsteadOfDeleting() {
-        RateOverride existing = createRateOverride(createRoomType(), null, null, 2);
+        RateOverride existing = createRateOverride(createRoomType(), null, 2);
         when(rateOverrideRepository.findByIdAndIsActiveTrue(RATE_OVERRIDE_ID))
                 .thenReturn(Optional.of(existing));
 
@@ -313,13 +277,11 @@ class RateOverrideServiceTest {
 
     private RateOverrideCreateRequest createRequest(
             Long roomTypeId,
-            Long roomId,
             Set<Integer> weekdays,
             int priority
     ) {
         return new RateOverrideCreateRequest(
                 roomTypeId,
-                roomId,
                 " Weekend summer ",
                 START_DATE,
                 END_DATE,
@@ -331,13 +293,11 @@ class RateOverrideServiceTest {
 
     private RateOverride createRateOverride(
             RoomType roomType,
-            Room room,
             String weekdays,
             int priority
     ) {
         RateOverride rateOverride = RateOverride.builder()
                 .roomType(roomType)
-                .room(room)
                 .name("Existing rate")
                 .startDate(START_DATE)
                 .endDate(END_DATE)
@@ -365,16 +325,6 @@ class RateOverrideServiceTest {
                 .build();
         roomType.setId(ROOM_TYPE_ID);
         return roomType;
-    }
-
-    private Room createRoom() {
-        Room room = Room.builder()
-                .roomNumber("A101")
-                .roomType(createRoomType())
-                .isActive(true)
-                .build();
-        room.setId(ROOM_ID);
-        return room;
     }
 
     private BigDecimal money(String value) {

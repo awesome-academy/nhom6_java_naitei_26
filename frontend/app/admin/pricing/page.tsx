@@ -89,9 +89,7 @@ export default function AdminPricingPage() {
   const filteredOverrides = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("vi")
     return overrides.filter((override) => {
-      const target = override.roomTypeCode
-        ? `${override.roomTypeCode} ${override.roomTypeName ?? ""}`
-        : `${override.roomNumber ?? ""}`
+      const target = `${override.roomTypeCode} ${override.roomTypeName}`
       const matchesSearch = !query || `${override.name} ${target}`.toLocaleLowerCase("vi").includes(query)
       const matchesTarget = roomTypeFilter === ALL_TARGETS || override.roomTypeCode === roomTypeFilter
       return matchesSearch && matchesTarget
@@ -153,8 +151,8 @@ export default function AdminPricingPage() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <SummaryCard label="Rule đang hoạt động" value={overrides.length} />
-        <SummaryCard label="Rule theo loại phòng" value={overrides.filter((item) => item.roomTypeCode).length} />
-        <SummaryCard label="Rule riêng theo phòng" value={overrides.filter((item) => item.roomNumber).length} />
+        <SummaryCard label="Loại phòng có rule" value={new Set(overrides.map((item) => item.roomTypeCode)).size} />
+        <SummaryCard label="Priority cao nhất" value={overrides.length ? Math.max(...overrides.map((item) => item.priority)) : 0} />
       </div>
 
       <Card>
@@ -166,7 +164,7 @@ export default function AdminPricingPage() {
           <Select value={roomTypeFilter} onValueChange={setRoomTypeFilter}>
             <SelectTrigger><SelectValue placeholder="Loại phòng" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL_TARGETS}>Tất cả đối tượng</SelectItem>
+              <SelectItem value={ALL_TARGETS}>Tất cả loại phòng</SelectItem>
               {roomTypes.map((roomType) => (
                 <SelectItem key={roomType.code} value={roomType.code}>{roomType.code} · {roomType.name}</SelectItem>
               ))}
@@ -197,9 +195,7 @@ export default function AdminPricingPage() {
               emptyMessage="Không có rate override phù hợp."
               columns={[
                 { key: "name", header: "Rule", render: (row) => <div><p className="font-medium">{row.name}</p><p className="text-xs text-[var(--muted-foreground)]">#{row.id}</p></div> },
-                { key: "target", header: "Đối tượng", render: (row) => row.roomTypeCode
-                  ? <div><p className="font-medium">{row.roomTypeName}</p><Badge variant="outline">{row.roomTypeCode}</Badge></div>
-                  : <div><p className="font-medium">Phòng {row.roomNumber}</p><Badge variant="secondary">Rule riêng</Badge></div> },
+                { key: "target", header: "Loại phòng", render: (row) => <div><p className="font-medium">{row.roomTypeName}</p><Badge variant="outline">{row.roomTypeCode}</Badge></div> },
                 { key: "dates", header: "Khoảng ngày", render: (row) => <div><p>{format(parseISO(row.startDate), "dd/MM/yyyy", { locale: vi })}</p><p className="text-xs text-[var(--muted-foreground)]">đến {format(parseISO(row.endDate), "dd/MM/yyyy", { locale: vi })} (không gồm)</p></div> },
                 { key: "weekdays", header: "Ngày áp dụng", render: (row) => formatWeekdays(row.weekdays) },
                 { key: "price", header: "Giá", render: (row) => <span className="font-semibold">{formatMoney(row.price)}</span> },

@@ -9,7 +9,6 @@ public record RateOverrideResponse(
         Long id,
         String roomTypeCode,
         String roomTypeName,
-        String roomNumber,
         String name,
         LocalDate startDate,
         LocalDate endDate,

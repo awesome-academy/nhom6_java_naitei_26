@@ -66,7 +66,7 @@ export function PricingCalendar({
         <div className="flex flex-wrap items-center gap-4 px-4 text-xs text-[var(--muted-foreground)]">
           <span className="flex items-center gap-2"><i className="h-3 w-3 rounded bg-blue-100 ring-1 ring-blue-300" /> Giá override</span>
           <span className="flex items-center gap-2"><i className="h-3 w-3 rounded bg-[var(--muted)]" /> Giá cơ bản</span>
-          <span>Rule riêng theo phòng không được tính trong lịch này.</span>
+          <span>Giá được áp dụng theo loại phòng.</span>
         </div>
 
         {roomTypes.length === 0 ? (
