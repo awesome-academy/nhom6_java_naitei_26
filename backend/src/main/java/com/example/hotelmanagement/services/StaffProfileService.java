@@ -2,6 +2,7 @@ package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.staffprofile.StaffHireRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffInvitationAcceptRequest;
+import com.example.hotelmanagement.dto.staffprofile.StaffInvitationResendRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffManagementListResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffPasswordUpdateRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileResponse;
@@ -28,7 +29,10 @@ import com.example.hotelmanagement.repositories.UserRoleRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -47,6 +51,8 @@ import java.util.Locale;
 @Transactional
 public class StaffProfileService {
 
+    private static final Logger log = LoggerFactory.getLogger(StaffProfileService.class);
+
     private static final String STAFF_ROLE_CODE = "STAFF";
     private static final String EMPLOYEE_CODE_PREFIX = "EMP-";
     private static final String EMPLOYEE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -55,7 +61,6 @@ public class StaffProfileService {
 
     private final StaffProfileRepository staffProfileRepository;
     private final UserRepository userRepository;
-    private final UserRoleRepository userRoleRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthTokenService authTokenService;
@@ -69,7 +74,6 @@ public class StaffProfileService {
     public StaffProfileService(
             StaffProfileRepository staffProfileRepository,
             UserRepository userRepository,
-            UserRoleRepository userRoleRepository,
             RoleRepository roleRepository,
             PasswordEncoder passwordEncoder,
             AuthTokenService authTokenService,
@@ -80,7 +84,6 @@ public class StaffProfileService {
     ) {
         this.staffProfileRepository = staffProfileRepository;
         this.userRepository = userRepository;
-        this.userRoleRepository = userRoleRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.authTokenService = authTokenService;
@@ -93,7 +96,6 @@ public class StaffProfileService {
     public StaffProfileService(
             StaffProfileRepository staffProfileRepository,
             UserRepository userRepository,
-            UserRoleRepository userRoleRepository,
             RoleRepository roleRepository,
             PasswordEncoder passwordEncoder,
             AuthTokenService authTokenService,
@@ -104,7 +106,59 @@ public class StaffProfileService {
         this(
                 staffProfileRepository,
                 userRepository,
-                userRoleRepository,
+                roleRepository,
+                passwordEncoder,
+                authTokenService,
+                emailService,
+                refreshTokenService,
+                clock,
+                null
+        );
+    }
+
+    public StaffProfileService(
+            StaffProfileRepository staffProfileRepository,
+            UserRepository userRepository,
+            UserRoleRepository ignoredUserRoleRepository,
+            RoleRepository roleRepository,
+            PasswordEncoder passwordEncoder,
+            AuthTokenService authTokenService,
+            EmailService emailService,
+            RefreshTokenService refreshTokenService,
+            Clock clock,
+            AvatarUrlResolver avatarUrlResolver
+    ) {
+        this(
+                staffProfileRepository,
+                userRepository,
+                roleRepository,
+                passwordEncoder,
+                authTokenService,
+                emailService,
+                refreshTokenService,
+                clock,
+                avatarUrlResolver
+        );
+    }
+
+    /**
+     * Kept for source compatibility with integrations that constructed the service directly.
+     * UserRole persistence is now handled by User cascade in the primary constructor.
+     */
+    public StaffProfileService(
+            StaffProfileRepository staffProfileRepository,
+            UserRepository userRepository,
+            UserRoleRepository ignoredUserRoleRepository,
+            RoleRepository roleRepository,
+            PasswordEncoder passwordEncoder,
+            AuthTokenService authTokenService,
+            EmailService emailService,
+            RefreshTokenService refreshTokenService,
+            Clock clock
+    ) {
+        this(
+                staffProfileRepository,
+                userRepository,
                 roleRepository,
                 passwordEncoder,
                 authTokenService,
@@ -118,28 +172,38 @@ public class StaffProfileService {
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
     public StaffProfileResponse hireStaff(@Valid StaffHireRequest request) {
         String normalizedEmail = normalizeEmail(request.email());
-        if (userRepository.existsByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)) {
-            throw new DuplicateResourceException("User", "email", normalizedEmail);
+        if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
+            throw duplicateField("email", "Email đã tồn tại");
         }
+        String normalizedPhone = normalizeOptionalText(request.phone());
+        if (normalizedPhone != null && userRepository.existsByPhone(normalizedPhone)) {
+            throw duplicateField("phone", "Số điện thoại đã tồn tại");
+        }
+        Role staffRole = roleRepository.findByCode(STAFF_ROLE_CODE)
+                .orElseThrow(() -> new AuthException(HttpStatus.INTERNAL_SERVER_ERROR, "Role STAFF chưa được seed"));
         String employeeCode = generateEmployeeCode();
-        User user = createStaffUser(request);
-        replaceUserRole(user, STAFF_ROLE_CODE);
+        try {
+            User user = createStaffUser(request, staffRole);
+            StaffProfile profile = StaffProfile.builder()
+                    .user(user)
+                    .employeeCode(employeeCode)
+                    .position(normalizeOptionalText(request.position()))
+                    .department(normalizeOptionalText(request.department()))
+                    .hiredAt(request.hiredAt() != null ? request.hiredAt() : LocalDate.now(clock))
+                    .employmentStatus(EmploymentStatus.ACTIVE)
+                    .baseSalary(request.baseSalary())
+                    .build();
 
-        StaffProfile profile = StaffProfile.builder()
-                .user(user)
-                .employeeCode(employeeCode)
-                .position(normalizeOptionalText(request.position()))
-                .department(normalizeOptionalText(request.department()))
-                .hiredAt(request.hiredAt() != null ? request.hiredAt() : LocalDate.now(clock))
-                .employmentStatus(EmploymentStatus.ACTIVE)
-                .baseSalary(request.baseSalary())
-                .build();
-
-        StaffProfileResponse response = mapResponse(staffProfileRepository.saveAndFlush(profile));
-        AuthTokenService.IssuedAuthToken token =
-                authTokenService.createToken(user, AuthTokenType.STAFF_INVITATION, null);
-        emailService.sendStaffInvitationEmail(user.getEmail(), user.getFullName(), token.value());
-        return response;
+            StaffProfileResponse response = mapResponse(staffProfileRepository.saveAndFlush(profile));
+            AuthTokenService.IssuedAuthToken token =
+                    authTokenService.createToken(user, AuthTokenType.STAFF_INVITATION, null);
+            emailService.sendStaffInvitationEmail(
+                    user.getEmail(), user.getFullName(), token.value(), request.temporaryPassword()
+            );
+            return response;
+        } catch (DataIntegrityViolationException exception) {
+            throw mapStaffConstraintViolation(exception);
+        }
     }
 
     @Transactional
@@ -149,7 +213,6 @@ public class StaffProfileService {
         if (user.getStatus() != UserStatus.PENDING_VERIFICATION || user.getEmailVerifiedAt() != null) {
             throw new BusinessValidationException("Lời mời Staff không còn hiệu lực");
         }
-        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         user.setEmailVerifiedAt(OffsetDateTime.now(clock));
         user.setStatus(UserStatus.ACTIVE);
         user.setFailedLoginCount(0);
@@ -169,15 +232,19 @@ public class StaffProfileService {
     }
 
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
-    public void resendStaffInvitation(String employeeCode) {
+    public void resendStaffInvitation(String employeeCode, @Valid StaffInvitationResendRequest request) {
         StaffProfile profile = getExistingProfile(employeeCode);
         User user = profile.getUser();
         if (user.getStatus() != UserStatus.PENDING_VERIFICATION) {
             throw new BusinessValidationException("Chỉ Staff đang chờ xác thực mới nhận được lời mời mới");
         }
+        user.setPasswordHash(passwordEncoder.encode(request.temporaryPassword()));
+        userRepository.saveAndFlush(user);
         AuthTokenService.IssuedAuthToken token =
                 authTokenService.createToken(user, AuthTokenType.STAFF_INVITATION, null);
-        emailService.sendStaffInvitationEmail(user.getEmail(), user.getFullName(), token.value());
+        emailService.sendStaffInvitationEmail(
+                user.getEmail(), user.getFullName(), token.value(), request.temporaryPassword()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -272,7 +339,7 @@ public class StaffProfileService {
         return mapResponse(staffProfileRepository.saveAndFlush(profile));
     }
 
-    private User createStaffUser(StaffHireRequest request) {
+    private User createStaffUser(StaffHireRequest request, Role staffRole) {
         User user = User.builder()
                 .publicId(java.util.UUID.randomUUID().toString())
                 .email(normalizeEmail(request.email()))
@@ -282,6 +349,11 @@ public class StaffProfileService {
                 .status(UserStatus.PENDING_VERIFICATION)
                 .failedLoginCount(0)
                 .build();
+        user.getUserRoles().add(UserRole.builder()
+                .user(user)
+                .role(staffRole)
+                .assignedAt(OffsetDateTime.now(clock))
+                .build());
         return userRepository.saveAndFlush(user);
     }
 
@@ -300,19 +372,28 @@ public class StaffProfileService {
         throw new AuthException(HttpStatus.INTERNAL_SERVER_ERROR, "Không thể tạo mã nhân viên duy nhất");
     }
 
-    private void replaceUserRole(User user, String roleCode) {
-        Role role = roleRepository.findByCode(roleCode)
-                .orElseThrow(() -> new AuthException(HttpStatus.INTERNAL_SERVER_ERROR, "Role " + roleCode + " chưa được seed"));
-        userRoleRepository.deleteByUser_Id(user.getId());
-        userRoleRepository.flush();
-        user.getUserRoles().clear();
-        UserRole userRole = UserRole.builder()
-                .user(user)
-                .role(role)
-                .assignedAt(OffsetDateTime.now(clock))
-                .build();
-        user.getUserRoles().add(userRole);
-        userRoleRepository.saveAndFlush(userRole);
+    private DuplicateResourceException mapStaffConstraintViolation(DataIntegrityViolationException exception) {
+        String detail = rootCauseMessage(exception).toLowerCase(Locale.ROOT);
+        log.warn("Staff creation rejected by database constraint path={}", "staff-profiles");
+        if (detail.contains("uk_users_email") || detail.contains("users.email")) {
+            return duplicateField("email", "Email đã tồn tại");
+        }
+        if (detail.contains("uk_users_phone") || detail.contains("users.phone")) {
+            return duplicateField("phone", "Số điện thoại đã tồn tại");
+        }
+        return new DuplicateResourceException("Dữ liệu Staff đã tồn tại", java.util.Map.of());
+    }
+
+    private DuplicateResourceException duplicateField(String field, String message) {
+        return new DuplicateResourceException(message, java.util.Map.of(field, message));
+    }
+
+    private String rootCauseMessage(Throwable exception) {
+        Throwable current = exception;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current.getMessage() == null ? "" : current.getMessage();
     }
 
     private void terminateStaff(StaffProfile profile) {

@@ -35,6 +35,14 @@ export interface CreateShiftRequest {
   isActive: boolean
 }
 
+export interface UpdateShiftRequest {
+  name: string
+  startTime: string
+  endTime: string
+  crossesMidnight: boolean
+  isActive: boolean
+}
+
 export interface CreateShiftAssignmentRequest {
   employeeCode: string
   shiftCode: string

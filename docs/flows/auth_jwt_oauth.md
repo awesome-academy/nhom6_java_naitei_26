@@ -152,7 +152,7 @@ Rẽ nhánh quan trọng:
 
 ### Admin tạo Staff qua invitation
 
-Admin không nâng Customer thành Staff. `POST /api/staff-profiles` luôn tạo User mới với role duy nhất `STAFF`, tạo StaffProfile độc lập và để User ở `PENDING_VERIFICATION`. Backend gửi token `STAFF_INVITATION` dùng một lần; Staff mở link, xác thực email và đặt mật khẩu chính thức, sau đó User chuyển sang `ACTIVE`. Mật khẩu tạm do Admin nhập chỉ lưu dưới dạng hash và không gửi trong email.
+Admin không nâng Customer thành Staff. `POST /api/staff-profiles` luôn tạo User mới với role duy nhất `STAFF`, tạo StaffProfile độc lập và để User ở `PENDING_VERIFICATION`. Backend gửi token `STAFF_INVITATION` dùng một lần cùng mật khẩu tạm do Admin nhập; Staff mở link để xác thực email, sau đó User chuyển sang `ACTIVE` và đăng nhập trực tiếp bằng mật khẩu trong email.
 
 Admin có thể reset mật khẩu Staff qua `PATCH /api/staff-profiles/{employeeCode}/password`; backend không yêu cầu mật khẩu cũ và thu hồi toàn bộ refresh token hiện tại của Staff.
 
@@ -757,3 +757,6 @@ const accessToken = response.accessToken;
 | Email verify | Cần verify riêng | Google đã verify |
 | Password | User tạo | Không có |
 | Trust | Trust app | Trust Google |
+### Thay đổi Staff invitation (V40)
+
+Theo flow hiện tại, Admin nhập mật khẩu tạm khi tạo Staff. Mật khẩu được lưu trong `users.password_hash` và được snapshot vào nội dung email queue `STAFF_INVITATION` để worker gửi/retry; không log hoặc trả qua API. Link invitation chỉ xác thực email và kích hoạt User, không đổi mật khẩu. Sau khi kích hoạt, Staff đăng nhập trực tiếp tại `/manager/login` bằng email và mật khẩu trong email. Gửi lại invitation bắt buộc Admin nhập mật khẩu tạm mới; token cũ bị vô hiệu hóa.

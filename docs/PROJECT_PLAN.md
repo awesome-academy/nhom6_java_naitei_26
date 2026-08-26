@@ -242,7 +242,7 @@
 - Cập nhật `housekeeping_status`:
   - CLEAN → DIRTY (sau checkout)
   - DIRTY → CLEANING → CLEAN
-- `RoomImageService`: ảnh phòng vật lý là legacy/out-of-scope trong local stack; bucket `room-images` không được provision
+- `RoomImageService`: upload/sort ảnh → MinIO bucket `room-images`
 - Endpoints:
   - "Danh sách phòng theo loại"
   - "Lọc theo view, tầng, tiện nghi"
@@ -276,7 +276,7 @@
     - Form với beds config
     - Amenities multi-select
     - Giá, mô tả
-  - Upload ảnh loại phòng (MinIO bucket `room-type-images`)
+  - Upload ảnh loại phòng (MinIO)
   - Soft delete với confirm dialog
 
 #### FE-3.2 | Admin — Rooms Management + Floor Map | Priority: Urgent | 20/08 | Est: 5h
@@ -325,8 +325,8 @@
 #### BE-4.2 | RateOverride CRUD | Priority: Normal | 21/08 | Est: 3h
 
 - `RateOverrideService` + `RateOverrideController`
-- Fields: `room_type_id`, date range, price, weekdays, priority
-- Rate override chỉ áp dụng cho toàn bộ phòng thuộc một RoomType; không hỗ trợ `room_id`
+- Fields: `room_type_id`/`room_id`, date range, price, weekdays, priority
+- Validate: đúng 1 trong 2 room identifiers khác null
 - List overrides đang active
 
 #### BE-4.3 | CancellationPolicy + Rules | Priority: Urgent | 21/08 | Est: 4h
@@ -936,15 +936,14 @@
 
 ## MinIO Integration Points
 
+- Room images
 - Room type images
 - Invoice PDFs
 - User avatars
 
-Physical room images are not provisioned by the standard local stack because customers
-book by Room Type. The legacy `RoomImageService` remains out of scope for this flow.
-
 **Bucket naming:**
 
+- `room-images`
 - `room-type-images`
 - `invoices`
 - `avatars`

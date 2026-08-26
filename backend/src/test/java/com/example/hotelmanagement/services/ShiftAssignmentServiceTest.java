@@ -46,7 +46,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ShiftAssignmentServiceTest {
 
-    private static final LocalDate WORK_DATE = LocalDate.of(2026, 8, 19);
+    private static final LocalDate WORK_DATE = LocalDate.of(2026, 8, 20);
     private static final Long ACTOR_USER_ID = 99L;
 
     @Mock
@@ -84,8 +84,8 @@ class ShiftAssignmentServiceTest {
         );
 
         assertNotNull(response.publicId());
-        assertEquals(OffsetDateTime.parse("2026-08-19T06:00:00+07:00"), response.shiftStartAt());
-        assertEquals(OffsetDateTime.parse("2026-08-19T14:00:00+07:00"), response.shiftEndAt());
+        assertEquals(OffsetDateTime.parse("2026-08-20T06:00:00+07:00"), response.shiftStartAt());
+        assertEquals(OffsetDateTime.parse("2026-08-20T14:00:00+07:00"), response.shiftEndAt());
         assertEquals("Front desk", response.note());
         assertEquals(AssignmentStatus.SCHEDULED, response.status());
     }
@@ -100,8 +100,42 @@ class ShiftAssignmentServiceTest {
                 ACTOR_USER_ID
         );
 
-        assertEquals(OffsetDateTime.parse("2026-08-19T22:00:00+07:00"), response.shiftStartAt());
-        assertEquals(OffsetDateTime.parse("2026-08-20T06:00:00+07:00"), response.shiftEndAt());
+        assertEquals(OffsetDateTime.parse("2026-08-20T22:00:00+07:00"), response.shiftStartAt());
+        assertEquals(OffsetDateTime.parse("2026-08-21T06:00:00+07:00"), response.shiftEndAt());
+    }
+
+    @Test
+    void createShiftAssignmentRejectsPastWorkDate() {
+        assertThrows(
+                BusinessValidationException.class,
+                () -> shiftAssignmentService.createShiftAssignment(
+                        new ShiftAssignmentCreateRequest("NV001", "MORNING", WORK_DATE.minusDays(1), null),
+                        ACTOR_USER_ID
+                )
+        );
+        verify(staffProfileRepository, never()).findByEmployeeCodeIgnoreCase(any());
+        verify(shiftAssignmentRepository, never()).saveAndFlush(any(ShiftAssignment.class));
+    }
+
+    @Test
+    void updateShiftAssignmentRejectsPastWorkDate() {
+        UUID publicId = UUID.randomUUID();
+        ShiftAssignment assignment = createAssignment(publicId);
+        when(shiftAssignmentRepository.findByPublicId(publicId.toString()))
+                .thenReturn(Optional.of(assignment));
+
+        assertThrows(
+                BusinessValidationException.class,
+                () -> shiftAssignmentService.updateShiftAssignment(
+                        publicId,
+                        new ShiftAssignmentUpdateRequest(
+                                "NV001", "MORNING", WORK_DATE.minusDays(1), AssignmentStatus.SCHEDULED, null
+                        ),
+                        ACTOR_USER_ID
+                )
+        );
+        verify(staffProfileRepository, never()).findByEmployeeCodeIgnoreCase(any());
+        verify(shiftAssignmentRepository, never()).saveAndFlush(any(ShiftAssignment.class));
     }
 
     @Test
@@ -137,12 +171,12 @@ class ShiftAssignmentServiceTest {
                 ACTOR_USER_ID
         );
 
-        assertEquals(OffsetDateTime.parse("2026-08-19T14:00:00+07:00"), response.shiftStartAt());
+        assertEquals(OffsetDateTime.parse("2026-08-20T14:00:00+07:00"), response.shiftStartAt());
         verify(shiftAssignmentRepository).existsOverlappingAssignment(
                 eq(10L),
                 anySet(),
-                eq(OffsetDateTime.parse("2026-08-19T14:00:00+07:00")),
-                eq(OffsetDateTime.parse("2026-08-19T22:00:00+07:00"))
+                eq(OffsetDateTime.parse("2026-08-20T14:00:00+07:00")),
+                eq(OffsetDateTime.parse("2026-08-20T22:00:00+07:00"))
         );
     }
 
@@ -170,8 +204,8 @@ class ShiftAssignmentServiceTest {
                 101L
         );
 
-        assertEquals(OffsetDateTime.parse("2026-08-20T22:00:00+07:00"), response.shiftStartAt());
-        assertEquals(OffsetDateTime.parse("2026-08-21T06:00:00+07:00"), response.shiftEndAt());
+        assertEquals(OffsetDateTime.parse("2026-08-21T22:00:00+07:00"), response.shiftStartAt());
+        assertEquals(OffsetDateTime.parse("2026-08-22T06:00:00+07:00"), response.shiftEndAt());
         assertEquals(101L, assignment.getAssignedBy());
     }
 
@@ -282,6 +316,8 @@ class ShiftAssignmentServiceTest {
     void completeOwnShiftAfterEndChangesStatus() {
         UUID publicId = UUID.randomUUID();
         ShiftAssignment assignment = createAssignment(publicId);
+        assignment.setShiftStartAt(OffsetDateTime.parse("2026-08-19T06:00:00+07:00"));
+        assignment.setShiftEndAt(OffsetDateTime.parse("2026-08-19T14:00:00+07:00"));
         when(shiftAssignmentRepository.findByPublicId(publicId.toString()))
                 .thenReturn(Optional.of(assignment));
         when(shiftAssignmentRepository.saveAndFlush(assignment)).thenReturn(assignment);
@@ -381,8 +417,8 @@ class ShiftAssignmentServiceTest {
                 .staffProfile(staffProfile)
                 .shift(morning)
                 .workDate(WORK_DATE)
-                .shiftStartAt(OffsetDateTime.parse("2026-08-19T06:00:00+07:00"))
-                .shiftEndAt(OffsetDateTime.parse("2026-08-19T14:00:00+07:00"))
+                .shiftStartAt(OffsetDateTime.parse("2026-08-20T06:00:00+07:00"))
+                .shiftEndAt(OffsetDateTime.parse("2026-08-20T14:00:00+07:00"))
                 .status(AssignmentStatus.SCHEDULED)
                 .assignedBy(ACTOR_USER_ID)
                 .build();

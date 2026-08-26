@@ -100,6 +100,23 @@ class QueuedEmailServiceTest {
     }
 
     @Test
+    void sendStaffInvitationEmailSnapshotsTemporaryPassword() {
+        EmailTemplate template = template(
+                "STAFF_INVITATION", "Staff invite", "{{email}} {{temporaryPassword}} {{invitationLink}}",
+                "{{email}} {{temporaryPassword}} {{invitationLink}}"
+        );
+        when(emailTemplateRepository.findByCodeAndIsActiveTrue("STAFF_INVITATION"))
+                .thenReturn(Optional.of(template));
+
+        service.sendStaffInvitationEmail("Staff@Example.com", "New Staff", "raw-token", "temporary-password-123");
+
+        ArgumentCaptor<EmailMessage> captor = ArgumentCaptor.forClass(EmailMessage.class);
+        verify(emailMessageRepository).save(captor.capture());
+        assertThat(captor.getValue().getBodyText())
+                .contains("Staff@Example.com", "temporary-password-123", "raw-token");
+    }
+
+    @Test
     void claimDueMessagesRecoversStaleRowsAndMarksBatchSending() {
         EmailMessage first = queuedMessage(1L, 0);
         EmailMessage second = queuedMessage(2L, 0);

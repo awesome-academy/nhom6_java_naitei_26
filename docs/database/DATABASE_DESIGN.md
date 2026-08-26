@@ -247,7 +247,7 @@ Staff/Admin tạo booking trực tiếp dùng permission `booking:create_staff` 
 | `employment_status` | employment_status | NOT NULL default`ACTIVE`           | `ACTIVE / ON_LEAVE / TERMINATED`                                                    |
 | `base_salary`       | NUMERIC(14,2)     | NULL                                 | Nhạy cảm: chỉ Admin đọc, cần view riêng hoặc column-level grant               |
 
-Vòng đời Staff: invitation tạo User role `STAFF` ở `PENDING_VERIFICATION`; Staff phải mở link, xác thực email và đặt mật khẩu mới trước khi đăng nhập. Sau đó `ACTIVE ↔ ON_LEAVE`; chỉ `ACTIVE` và User `ACTIVE` đã xác thực được phân ca mới. `ACTIVE` hoặc `ON_LEAVE` có thể chuyển sang `TERMINATED`; đây là trạng thái cuối, User chuyển sang `DEACTIVATED` và StaffProfile không bị xóa hay khôi phục. Admin có thể reset mật khẩu trực tiếp mà không cần mật khẩu cũ.
+Vòng đời Staff: invitation tạo User role `STAFF` ở `PENDING_VERIFICATION`; Staff mở link để xác thực email và kích hoạt tài khoản, sau đó đăng nhập bằng mật khẩu tạm trong email. `ACTIVE ↔ ON_LEAVE`; chỉ `ACTIVE` và User `ACTIVE` đã xác thực được phân ca mới. `ACTIVE` hoặc `ON_LEAVE` có thể chuyển sang `TERMINATED`; đây là trạng thái cuối, User chuyển sang `DEACTIVATED` và StaffProfile không bị xóa hay khôi phục. Admin có thể reset mật khẩu trực tiếp mà không cần mật khẩu cũ.
 
 ### 3.5. `user_social_accounts`
 
@@ -358,7 +358,8 @@ Index: `(work_date, shift_id)` cho xem lịch trực ngày nào.
 `start_time` và `end_time` là `TIME` không có timezone, nên logic tính datetime thực tế ở application layer hoặc trigger. Giờ timezone của khách sạn nên lấy từ `hotel_settings` nếu có, thay vì hard-code.
 
 - **Ca thường** (Morning 06:00–14:00): `end_time > start_time`, `shift_end_at` cùng ngày với `work_date`.
-- **Ca đêm** (Night 22:00–06:00): `crosses_midnight = true` và `end_time <= start_time`, nên `shift_end_at` cộng thêm 1 ngày so với `work_date` → `shift_end_at` rơi vào ngày hôm sau, đúng 8 tiếng.
+- **Ca đêm** (Night 22:00–06:00): `crosses_midnight = true` và `end_time < start_time`, nên `shift_end_at` cộng thêm 1 ngày so với `work_date` → `shift_end_at` rơi vào ngày hôm sau, đúng 8 tiếng.
+- API phân công chỉ nhận `work_date` là hôm nay hoặc tương lai theo timezone khách sạn; service từ chối ngày quá khứ trước khi kiểm tra Staff/Shift.
 
 **MySQL trigger / application logic:**
 
@@ -2057,3 +2058,6 @@ Tôi thêm `bookings.room_tax_percent_snapshot` để dòng ROOM trên hóa đơ
 
 **C-4. Giờ nhận phòng chuẩn — cần cho phép tính hoàn tiền.**
 Rule hủy tính theo "số giờ trước check-in" (5.3), nên cần biết giờ nhận phòng chuẩn. Query 9.6 tạm dùng `14:00 Asia/Ho_Chi_Minh`. Spec không nêu con số này. Nên đưa vào một bảng cấu hình khách sạn (`hotel_settings`) cùng với mức no-show chung nếu C-1 dẫn tới việc lập bảng đó — tôi **không** thêm bảng này vào schema vì nằm ngoài phạm vi sửa consistency/snapshot lần này.
+### Staff invitation credential policy (V40)
+
+Admin nhập mật khẩu tạm khi tạo hoặc gửi lại invitation Staff. Password được hash trong `users.password_hash`; email `STAFF_INVITATION` chứa email đăng nhập, mật khẩu tạm và link kích hoạt. Link chỉ dùng để chuyển User từ `PENDING_VERIFICATION` sang `ACTIVE`; Staff đăng nhập trực tiếp bằng mật khẩu đã nhận và không bị bắt buộc đổi ở lần đầu. Do email queue lưu snapshot để retry, plaintext password tồn tại trong `email_messages.body_html/body_text`; ứng dụng không log hoặc trả nội dung này qua API. Resend luôn yêu cầu mật khẩu mới và vô hiệu token cũ.
