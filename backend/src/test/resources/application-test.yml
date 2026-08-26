@@ -51,3 +51,5 @@ app:
 hotel:
   jobs:
     hold-expiry-enabled: false
+    no-show-enabled: false
+    expired-token-cleanup-enabled: false
