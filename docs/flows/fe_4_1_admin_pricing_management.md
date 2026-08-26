@@ -14,7 +14,7 @@ FE-4.1 gồm:
 - Side panel giải thích rule tạo nên giá của ô calendar.
 - Loading, empty, error/retry state và kiểm soát truy cập bằng `pricing:manage`.
 
-Task không triển khai edit/delete override. Rule cũ theo phòng cụ thể vẫn xuất hiện trong bảng nhưng không tham gia calendar cấp Room Type.
+Task không triển khai edit/delete override. Mọi rule đều áp dụng ở cấp Room Type.
 
 ## 2. Route, API và permission
 
@@ -37,7 +37,6 @@ Frontend không cần biết BIGINT của Room Type hoặc Room. Response dùng 
   "id": 88,
   "roomTypeCode": "DLX",
   "roomTypeName": "Deluxe",
-  "roomNumber": null,
   "name": "Cuối tuần mùa hè",
   "startDate": "2026-08-01",
   "endDate": "2026-09-01",
@@ -50,15 +49,15 @@ Frontend không cần biết BIGINT của Room Type hoặc Room. Response dùng 
 }
 ```
 
-`id` là định danh của chính Rate Override và được giữ để định danh resource. Target Room Type dùng `roomTypeCode`/`roomTypeName`; target phòng dùng `roomNumber`. Response không trả `roomTypeId` hoặc `roomId`.
+`id` là định danh của chính Rate Override và được giữ để định danh resource. Target luôn là Room Type, dùng `roomTypeCode`/`roomTypeName`. Response không trả `roomId` hoặc `roomNumber`.
 
 ## 4. Flow tải danh sách
 
 1. Sau khi Auth Context hoàn tất, frontend tải song song active override và Room Type.
 2. Trong lúc tải, trang hiển thị skeleton. Lỗi API hiển thị error state và nút “Thử lại”.
-3. Ba thẻ tổng quan đếm tổng rule, rule theo Room Type và rule riêng theo phòng.
-4. Tab “Danh sách” tìm không phân biệt hoa thường theo tên rule, code/tên Room Type hoặc số phòng.
-5. Bộ lọc Room Type chọn chính xác theo `roomTypeCode`; rule riêng theo phòng chỉ xuất hiện khi chọn “Tất cả đối tượng”.
+3. Ba thẻ tổng quan đếm tổng rule, số Room Type có rule và priority cao nhất.
+4. Tab “Danh sách” tìm không phân biệt hoa thường theo tên rule hoặc code/tên Room Type.
+5. Bộ lọc Room Type chọn chính xác theo `roomTypeCode`.
 6. Kết quả được phân trang client-side 10 dòng và trở về trang 1 khi search/filter thay đổi.
 7. Click một dòng mở side panel đọc chi tiết rule.
 
@@ -144,7 +143,7 @@ Click ô override mở panel tên rule, target, khoảng ngày, weekdays, priori
 rate override hiệu lực → room.priceOverride → roomType.basePrice
 ```
 
-Rule target một phòng cụ thể không tham gia calendar này; giao diện hiển thị chú thích rõ để tránh hiểu nhầm.
+Rate Override luôn áp dụng cho toàn bộ phòng thuộc Room Type đã chọn.
 
 ## 8. Xử lý lỗi
 

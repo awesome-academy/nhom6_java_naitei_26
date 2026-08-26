@@ -594,8 +594,7 @@ Trigger kiểm chéo với booking_rooms (không EXCLUDE được qua 2 bảng).
 
 Table rate_overrides {
   id bigint [pk, increment]
-  room_type_id bigint [note: 'CHECK: đúng 1 trong (room_type_id, room_id) khác NULL']
-  room_id bigint
+  room_type_id bigint [not null, note: 'Áp dụng cho toàn bộ phòng thuộc loại phòng']
   name varchar(120) [not null, note: 'Tết 2027, Cuối tuần hè']
   start_date date [not null]
   end_date date [not null]
@@ -607,7 +606,6 @@ Table rate_overrides {
 
   indexes {
     (room_type_id, start_date, end_date)
-    (room_id, start_date, end_date)
   }
   note: 'Có thể bị UPDATE → booking_room_nights.rate_override_id chỉ là TRACE field'
 }
@@ -1218,7 +1216,6 @@ Ref: room_status_blocks.created_by > users.id [delete: restrict]
 
 // Pricing & Policy
 Ref: rate_overrides.room_type_id > room_types.id [delete: cascade]
-Ref: rate_overrides.room_id > rooms.id [delete: cascade]
 Ref: cancellation_policy_rules.policy_id > cancellation_policies.id [delete: cascade]
 Ref: room_type_cancellation_policies.room_type_id > room_types.id [delete: cascade]
 Ref: room_type_cancellation_policies.cancellation_policy_id > cancellation_policies.id [delete: restrict]

@@ -19,10 +19,6 @@ public class RateOverride extends BaseEntity {
     @JoinColumn(name = "room_type_id")
     private RoomType roomType;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "room_id")
-    private Room room;
-
     @Column(nullable = false, length = 120)
     private String name;
 
