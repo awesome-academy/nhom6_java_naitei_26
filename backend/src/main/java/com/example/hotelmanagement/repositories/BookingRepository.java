@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.repositories;
 
 import com.example.hotelmanagement.entity.Booking;
+import com.example.hotelmanagement.entity.enums.BookingRoomStatus;
 import com.example.hotelmanagement.entity.enums.BookingStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -12,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -47,6 +49,37 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     List<Booking> findPendingBookingsPastHold(
             @Param("status") BookingStatus status,
             @Param("now") OffsetDateTime now
+    );
+
+    /**
+     * A booking can contain rooms with different arrival dates. It becomes a no-show only after
+     * every still-reserved room has passed its own check-in date.
+     */
+    @EntityGraph(attributePaths = "bookingRooms")
+    @Query("""
+            SELECT booking
+            FROM Booking booking
+            WHERE booking.status = :bookingStatus
+              AND booking.checkedInAt IS NULL
+              AND EXISTS (
+                  SELECT bookingRoom.id
+                  FROM BookingRoom bookingRoom
+                  WHERE bookingRoom.booking = booking
+                    AND bookingRoom.status = :reservedStatus
+              )
+              AND NOT EXISTS (
+                  SELECT bookingRoom.id
+                  FROM BookingRoom bookingRoom
+                  WHERE bookingRoom.booking = booking
+                    AND bookingRoom.status = :reservedStatus
+                    AND bookingRoom.checkInDate >= :today
+              )
+            ORDER BY booking.id ASC
+            """)
+    List<Booking> findConfirmedBookingsEligibleForNoShow(
+            @Param("bookingStatus") BookingStatus bookingStatus,
+            @Param("reservedStatus") BookingRoomStatus reservedStatus,
+            @Param("today") LocalDate today
     );
 
     @EntityGraph(attributePaths = {

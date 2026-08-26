@@ -8,7 +8,7 @@ import com.example.hotelmanagement.dto.user.CustomerListItemResponse;
 import com.example.hotelmanagement.dto.user.CustomerListResponse;
 import com.example.hotelmanagement.dto.user.CustomerStatusUpdateRequest;
 import com.example.hotelmanagement.dto.customerprofile.CustomerProfileResponse;
-import com.example.hotelmanagement.entity.AuditLog;
+import com.example.hotelmanagement.audit.AuditMutation;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.BookingRoom;
 import com.example.hotelmanagement.entity.CustomerProfile;
@@ -17,7 +17,6 @@ import com.example.hotelmanagement.entity.enums.UserStatus;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
-import com.example.hotelmanagement.repositories.AuditLogRepository;
 import com.example.hotelmanagement.repositories.BookingRepository;
 import com.example.hotelmanagement.repositories.CustomerProfileRepository;
 import com.example.hotelmanagement.repositories.UserRepository;
@@ -49,25 +48,22 @@ public class UserService {
     private final Clock clock;
     private final CustomerProfileRepository customerProfileRepository;
     private final BookingRepository bookingRepository;
-    private final AuditLogRepository auditLogRepository;
 
     @org.springframework.beans.factory.annotation.Autowired
     public UserService(
             UserRepository userRepository,
             Clock clock,
             CustomerProfileRepository customerProfileRepository,
-            BookingRepository bookingRepository,
-            AuditLogRepository auditLogRepository
+            BookingRepository bookingRepository
     ) {
         this.userRepository = userRepository;
         this.clock = clock;
         this.customerProfileRepository = customerProfileRepository;
         this.bookingRepository = bookingRepository;
-        this.auditLogRepository = auditLogRepository;
     }
 
     public UserService(UserRepository userRepository, Clock clock) {
-        this(userRepository, clock, null, null, null);
+        this(userRepository, clock, null, null);
     }
 
     @Transactional(readOnly = true)
@@ -132,31 +128,26 @@ public class UserService {
     }
 
     @PreAuthorize("hasRole('ADMIN')")
+    @AuditMutation(
+            action = "CUSTOMER_STATUS_CHANGED",
+            entityType = "user",
+            actorUserIdArgumentIndex = 2
+    )
     public UserResponse updateCustomerStatus(
             String publicId,
             @Valid CustomerStatusUpdateRequest request,
             Long actorUserId
     ) {
         User user = getExistingCustomer(publicId);
-        UserStatus previousStatus = user.getStatus();
         UserStatus targetStatus = request.status();
-        if (!isCustomerManagedStatus(previousStatus) || !isCustomerManagedStatus(targetStatus)) {
+        if (!isCustomerManagedStatus(user.getStatus()) || !isCustomerManagedStatus(targetStatus)) {
             throw new BusinessValidationException(
                     "Customer status can only transition between ACTIVE and DEACTIVATED"
             );
         }
 
         user.setStatus(targetStatus);
-        User savedUser = userRepository.save(user);
-        auditLogRepository.save(AuditLog.builder()
-                .actorUserId(actorUserId)
-                .action("CUSTOMER_STATUS_CHANGED")
-                .entityType("user")
-                .entityId(savedUser.getId())
-                .beforeData("{\"status\":\"" + previousStatus.name() + "\"}")
-                .afterData("{\"status\":\"" + targetStatus.name() + "\"}")
-                .build());
-        return mapUserResponse(savedUser);
+        return mapUserResponse(userRepository.save(user));
     }
 
     public UserResponse updateUser(String publicId, @Valid UserUpdateRequest request) {

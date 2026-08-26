@@ -4,6 +4,7 @@ import com.example.hotelmanagement.dto.booking.BookingResponse;
 import com.example.hotelmanagement.dto.booking.BookingBedSummaryResponse;
 import com.example.hotelmanagement.dto.booking.BookingRoomNightResponse;
 import com.example.hotelmanagement.dto.booking.BookingRoomResponse;
+import com.example.hotelmanagement.audit.AuditMutation;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.BookingRoom;
 import com.example.hotelmanagement.entity.BookingRoomNight;
@@ -82,6 +83,7 @@ public class BookingStateMachineService {
     }
 
     @PreAuthorize(PermissionExpressions.BOOKING_CHECK_IN)
+    @AuditMutation(action = "BOOKING_CHECKED_IN", entityType = "booking", actorUserIdArgumentIndex = 1)
     public BookingResponse checkIn(String bookingPublicId, Long staffUserId) {
         Booking booking = getBookingForUpdate(bookingPublicId);
         StaffProfile staff = staffProfileRepository.findByUser_Id(staffUserId)
@@ -94,6 +96,7 @@ public class BookingStateMachineService {
     }
 
     @PreAuthorize(PermissionExpressions.BOOKING_CHECK_OUT)
+    @AuditMutation(action = "BOOKING_CHECKED_OUT", entityType = "booking", actorUserIdArgumentIndex = 1)
     public BookingResponse checkOut(String bookingPublicId, Long staffUserId) {
         Booking booking = getBookingForUpdate(bookingPublicId);
         StaffProfile staff = staffProfileRepository.findByUser_Id(staffUserId)
@@ -108,6 +111,7 @@ public class BookingStateMachineService {
     }
 
     @PreAuthorize(PermissionExpressions.BOOKING_CANCEL)
+    @AuditMutation(action = "BOOKING_CANCELLED", entityType = "booking", actorUserIdArgumentIndex = 1)
     public BookingResponse cancel(String bookingPublicId, Long actorUserId, String reason) {
         Booking booking = getBookingForUpdate(bookingPublicId);
         ensureCanCancel(booking, actorUserId);
@@ -124,6 +128,7 @@ public class BookingStateMachineService {
      * is verified (BR-012); there is no end-user permission for this yet, so it is intentionally
      * not wired to a controller endpoint.
      */
+    @AuditMutation(action = "BOOKING_CONFIRMED", entityType = "booking")
     public BookingResponse confirm(String bookingPublicId) {
         Booking booking = getBookingForUpdate(bookingPublicId);
         applyTransition(
@@ -138,11 +143,18 @@ public class BookingStateMachineService {
     /**
      * CONFIRMED -> NO_SHOW. Meant to be called by the end-of-day no-show job (BE-8.4).
      */
+    @AuditMutation(action = "BOOKING_NO_SHOW", entityType = "booking")
     public BookingResponse markNoShow(String bookingPublicId) {
+        return markNoShow(bookingPublicId, null);
+    }
+
+    /** Stores the immutable no-show calculation alongside the status transition. */
+    @AuditMutation(action = "BOOKING_NO_SHOW", entityType = "booking")
+    public BookingResponse markNoShow(String bookingPublicId, String metadata) {
         Booking booking = getBookingForUpdate(bookingPublicId);
         applyTransition(
                 booking, BookingStatus.NO_SHOW, ActorType.SYSTEM, null,
-                StatusChangeSource.NO_SHOW_JOB, "Guest did not check in"
+                StatusChangeSource.NO_SHOW_JOB, "Guest did not check in", metadata
         );
         return mapResponse(bookingRepository.saveAndFlush(booking));
     }
@@ -151,6 +163,7 @@ public class BookingStateMachineService {
      * PENDING -> EXPIRED. Meant to be called by the hold-expiry job (BE-8.4, QĐ-3) once
      * hold_expires_at has passed without payment.
      */
+    @AuditMutation(action = "BOOKING_EXPIRED", entityType = "booking")
     public BookingResponse expire(String bookingPublicId) {
         Booking booking = getBookingForUpdate(bookingPublicId);
         applyTransition(
@@ -195,6 +208,18 @@ public class BookingStateMachineService {
             StatusChangeSource source,
             String reason
     ) {
+        applyTransition(booking, newStatus, actorType, changedBy, source, reason, null);
+    }
+
+    private void applyTransition(
+            Booking booking,
+            BookingStatus newStatus,
+            ActorType actorType,
+            Long changedBy,
+            StatusChangeSource source,
+            String reason,
+            String metadata
+    ) {
         BookingStatus currentStatus = booking.getStatus();
         if (!isAllowedTransition(currentStatus, newStatus)) {
             throw new BusinessValidationException(
@@ -228,6 +253,7 @@ public class BookingStateMachineService {
                         .changedBy(historyChangedBy)
                         .source(source)
                         .reason(reason)
+                        .metadata(metadata)
                         .build()
         );
     }

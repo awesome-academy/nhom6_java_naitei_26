@@ -64,6 +64,16 @@ mybatis:
 server:
   port: ${SERVER_PORT:8080}
 
+hotel:
+  jobs:
+    hold-expiry-enabled: ${HOLD_EXPIRY_ENABLED:true}
+    hold-expiry-delay: ${HOLD_EXPIRY_DELAY:1m}
+    no-show-enabled: ${NO_SHOW_ENABLED:true}
+    no-show-delay: ${NO_SHOW_DELAY:1h}
+    expired-token-cleanup-enabled: ${EXPIRED_TOKEN_CLEANUP_ENABLED:true}
+    expired-token-cleanup-delay: ${EXPIRED_TOKEN_CLEANUP_DELAY:1h}
+    expired-token-retention: ${EXPIRED_TOKEN_RETENTION:30d}
+
 logging:
   level:
     root: INFO

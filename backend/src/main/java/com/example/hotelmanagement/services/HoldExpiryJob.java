@@ -35,7 +35,10 @@ public class HoldExpiryJob {
         this.clock = clock;
     }
 
-    @Scheduled(fixedDelayString = "${hotel.jobs.hold-expiry-delay:60000}")
+    @Scheduled(
+            fixedDelayString = "#{T(org.springframework.boot.convert.DurationStyle)"
+                    + ".detectAndParse('${hotel.jobs.hold-expiry-delay:1m}').toMillis()}"
+    )
     public void expirePendingHolds() {
         OffsetDateTime now = OffsetDateTime.now(clock);
         bookingRepository.findPendingBookingsPastHold(BookingStatus.PENDING, now)

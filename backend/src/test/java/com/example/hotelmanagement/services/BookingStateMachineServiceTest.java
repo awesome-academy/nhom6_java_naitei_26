@@ -253,6 +253,18 @@ class BookingStateMachineServiceTest {
     }
 
     @Test
+    void markNoShowStoresPenaltyCalculationMetadata() {
+        stubSaveAndFlushReturnsArgument();
+        Booking booking = createBooking(BookingStatus.CONFIRMED, true);
+        when(bookingRepository.findForUpdateByPublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(booking));
+
+        service.markNoShow(BOOKING_PUBLIC_ID, "{\"penalty_amount\":600.00}");
+
+        var history = booking.getStatusHistory().iterator().next();
+        assertThat(history.getMetadata()).isEqualTo("{\"penalty_amount\":600.00}");
+    }
+
+    @Test
     void expireTransitionsPendingBooking() {
         stubSaveAndFlushReturnsArgument();
         Booking booking = createBooking(BookingStatus.PENDING, true);
