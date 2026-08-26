@@ -155,7 +155,7 @@ export function RevenueReportsPage() {
 
   if (!canReadRevenue) {
     return (
-      <div className="mx-auto max-w-2xl p-6">
+      <div className="mx-auto max-w-2xl">
         <Alert variant="destructive">
           <ShieldAlert data-icon="inline-start" />
           <AlertTitle>Bạn chưa có quyền xem báo cáo doanh thu</AlertTitle>
@@ -168,11 +168,11 @@ export function RevenueReportsPage() {
   }
 
   return (
-    <main className="space-y-6 p-6">
-      <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Báo cáo doanh thu</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className="text-2xl font-bold">Báo cáo doanh thu</h1>
+          <p className="text-sm text-[var(--muted-foreground)]">
             Theo dõi doanh thu, hiệu suất phòng và tỷ trọng các kênh booking.
           </p>
         </div>
@@ -334,7 +334,7 @@ export function RevenueReportsPage() {
           </p>
         </>
       )}
-    </main>
+    </div>
   )
 }
 
@@ -355,7 +355,7 @@ function MetricCard({ label, value, description }: { label: string; value: strin
 
 function ReportLoadingSkeleton() {
   return (
-    <div className="space-y-6 p-6" aria-label="Đang tải báo cáo">
+    <div className="flex flex-col gap-6" aria-label="Đang tải báo cáo">
       <Skeleton className="h-10 w-64" />
       <Skeleton className="h-28 w-full" />
       <div className="grid gap-4 md:grid-cols-3">

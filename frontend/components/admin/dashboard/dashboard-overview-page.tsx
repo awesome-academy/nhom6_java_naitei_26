@@ -98,11 +98,11 @@ export function DashboardOverviewPage({ portal = "/manager" }: { portal?: "/mana
   }
 
   return (
-    <main className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
+        <div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-sm text-[var(--muted-foreground)]">
             Tổng quan vận hành ngày {overview ? formatDate(overview.date) : formatDate(selectedDate)}.
           </p>
         </div>
@@ -131,7 +131,7 @@ export function DashboardOverviewPage({ portal = "/manager" }: { portal?: "/mana
           <QuickActions portal={portal} />
         </>
       ) : null}
-    </main>
+    </div>
   )
 }
 
@@ -324,7 +324,7 @@ function QuickActions({ portal }: { portal: "/manager" }) {
 
 function DashboardLoading() {
   return (
-    <main className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-4 w-72" />
@@ -337,6 +337,6 @@ function DashboardLoading() {
         <Skeleton className="h-96 rounded-xl" />
       </div>
       <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
-    </main>
+    </div>
   )
 }

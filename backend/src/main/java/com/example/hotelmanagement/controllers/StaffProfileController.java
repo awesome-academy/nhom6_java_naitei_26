@@ -9,12 +9,16 @@ import com.example.hotelmanagement.dto.staffprofile.StaffManagementListResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffPasswordUpdateRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileUpdateRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffEmploymentStatusUpdateRequest;
+import com.example.hotelmanagement.dto.staffprofile.StaffOwnProfileResponse;
+import com.example.hotelmanagement.dto.staffprofile.StaffOwnProfileUpdateRequest;
+import com.example.hotelmanagement.security.UserPrincipal;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import com.example.hotelmanagement.services.StaffProfileService;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -65,15 +69,34 @@ public class StaffProfileController {
         return ResponseEntity.ok(staffProfileService.getStaffManagementProfiles(active));
     }
 
+    @Operation(summary = "Get Own Staff Profile")
+    @GetMapping("/me")
+    @PreAuthorize("hasRole('STAFF')")
+    public ResponseEntity<StaffOwnProfileResponse> getOwnProfile(
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(staffProfileService.getOwnProfile(principal.getId()));
+    }
+
+    @Operation(summary = "Update Own Staff Profile")
+    @PatchMapping(value = "/me", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("hasRole('STAFF')")
+    public ResponseEntity<StaffOwnProfileResponse> updateOwnProfile(
+            @Valid @RequestBody StaffOwnProfileUpdateRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(staffProfileService.updateOwnProfile(principal.getId(), request));
+    }
+
     @Operation(summary = "Get Staff")
-    @GetMapping("/{employeeCode:(?!(?:management)$)[A-Za-z0-9_-]+}")
+    @GetMapping("/{employeeCode:[Ee][Mm][Pp]-[A-Za-z0-9_-]+}")
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
     public ResponseEntity<StaffProfileResponse> getStaff(@PathVariable String employeeCode) {
         return ResponseEntity.ok(staffProfileService.getStaff(employeeCode));
     }
 
     @Operation(summary = "Edit Staff")
-    @PatchMapping(value = "/{employeeCode:(?!(?:management)$)[A-Za-z0-9_-]+}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PatchMapping(value = "/{employeeCode:[Ee][Mm][Pp]-[A-Za-z0-9_-]+}", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
     public ResponseEntity<StaffProfileResponse> editStaff(
             @PathVariable String employeeCode,
@@ -83,7 +106,7 @@ public class StaffProfileController {
     }
 
     @Operation(summary = "Deactivate Staff")
-    @DeleteMapping("/{employeeCode:(?!(?:management)$)[A-Za-z0-9_-]+}")
+    @DeleteMapping("/{employeeCode:[Ee][Mm][Pp]-[A-Za-z0-9_-]+}")
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
     public ResponseEntity<Void> deactivateStaff(@PathVariable String employeeCode) {
         staffProfileService.deactivateStaff(employeeCode);
@@ -91,7 +114,7 @@ public class StaffProfileController {
     }
 
     @Operation(summary = "Update Staff employment status")
-    @PatchMapping(value = "/{employeeCode:(?!(?:management)$)[A-Za-z0-9_-]+}/status", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PatchMapping(value = "/{employeeCode:[Ee][Mm][Pp]-[A-Za-z0-9_-]+}/status", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
     public ResponseEntity<StaffProfileResponse> updateEmploymentStatus(
             @PathVariable String employeeCode,
@@ -104,7 +127,7 @@ public class StaffProfileController {
     }
 
     @Operation(summary = "Reset Staff password")
-    @PatchMapping(value = "/{employeeCode:(?!(?:management)$)[A-Za-z0-9_-]+}/password", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PatchMapping(value = "/{employeeCode:[Ee][Mm][Pp]-[A-Za-z0-9_-]+}/password", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
     public ResponseEntity<Void> updateStaffPassword(
             @PathVariable String employeeCode,
@@ -115,7 +138,7 @@ public class StaffProfileController {
     }
 
     @Operation(summary = "Resend Staff invitation")
-    @PostMapping("/{employeeCode:(?!(?:management)$)[A-Za-z0-9_-]+}/invitation/resend")
+    @PostMapping("/{employeeCode:[Ee][Mm][Pp]-[A-Za-z0-9_-]+}/invitation/resend")
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
     public ResponseEntity<Void> resendStaffInvitation(@PathVariable String employeeCode) {
         staffProfileService.resendStaffInvitation(employeeCode);

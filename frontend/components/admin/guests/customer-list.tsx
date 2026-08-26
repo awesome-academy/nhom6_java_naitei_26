@@ -241,9 +241,9 @@ export function CustomerList() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-tight">Khách hàng</h1>
-        <p className="text-sm text-muted-foreground">
+      <div>
+        <h1 className="text-2xl font-bold">Khách hàng</h1>
+        <p className="text-sm text-[var(--muted-foreground)]">
           Quản lý tài khoản customer và xem lịch sử booking ở chế độ chỉ đọc.
         </p>
       </div>

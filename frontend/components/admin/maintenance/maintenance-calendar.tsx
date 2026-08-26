@@ -65,9 +65,9 @@ export function MaintenanceCalendar({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <BlockLegend />
-      <div className="max-h-[68vh] overflow-auto rounded-xl border bg-[var(--card)] shadow-sm">
+      <div className="max-h-[68vh] w-full max-w-full overflow-auto rounded-xl border bg-[var(--card)] shadow-sm">
         <table className="min-w-max border-separate border-spacing-0 text-sm">
           <thead className="sticky top-0 z-30 bg-[var(--card)] shadow-sm">
             <tr>

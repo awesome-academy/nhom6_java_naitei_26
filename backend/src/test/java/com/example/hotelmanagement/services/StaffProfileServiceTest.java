@@ -2,10 +2,12 @@ package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.staffprofile.StaffHireRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffInvitationAcceptRequest;
+import com.example.hotelmanagement.dto.staffprofile.StaffManagementListResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffPasswordUpdateRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffListResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileUpdateRequest;
+import com.example.hotelmanagement.dto.staffprofile.StaffOwnProfileUpdateRequest;
 import com.example.hotelmanagement.entity.Role;
 import com.example.hotelmanagement.entity.AuthToken;
 import com.example.hotelmanagement.entity.StaffProfile;
@@ -113,6 +115,10 @@ class StaffProfileServiceTest {
         assertThat(response.employeeCode()).startsWith("EMP-").hasSize(12);
         assertThat(response.employmentStatus()).isEqualTo(EmploymentStatus.ACTIVE);
         assertThat(response.hiredAt()).isEqualTo(LocalDate.now(FIXED_CLOCK));
+        ArgumentCaptor<StaffProfile> profileCaptor = ArgumentCaptor.forClass(StaffProfile.class);
+        verify(staffProfileRepository).saveAndFlush(profileCaptor.capture());
+        assertThat(profileCaptor.getValue().getUser().getId()).isEqualTo(10L);
+        assertThat(profileCaptor.getValue().getEmploymentStatus()).isEqualTo(EmploymentStatus.ACTIVE);
         verify(emailService).sendStaffInvitationEmail("newstaff@example.com", "New Staff", "raw-token");
     }
 
@@ -282,6 +288,75 @@ class StaffProfileServiceTest {
         });
         verify(staffProfileRepository)
                 .findByEmploymentStatusAndUser_DeletedAtIsNullOrderByEmployeeCodeAsc(EmploymentStatus.ACTIVE);
+    }
+
+    @Test
+    void getStaffManagementProfilesIncludesPhoneAndSalary() {
+        User user = createUser(5L, "staff@example.com");
+        user.setPhone("0901234567");
+        StaffProfile profile = StaffProfile.builder()
+                .user(user)
+                .employeeCode("EMP-0001")
+                .position("Receptionist")
+                .department("Front Office")
+                .hiredAt(LocalDate.of(2026, 1, 1))
+                .employmentStatus(EmploymentStatus.ACTIVE)
+                .baseSalary(new BigDecimal("8000000.00"))
+                .build();
+        when(staffProfileRepository.findByUser_DeletedAtIsNullOrderByEmployeeCodeAsc())
+                .thenReturn(List.of(profile));
+
+        List<StaffManagementListResponse> response = staffProfileService.getStaffManagementProfiles(false);
+
+        assertThat(response).singleElement().satisfies(staff -> {
+            assertThat(staff.phone()).isEqualTo("0901234567");
+            assertThat(staff.baseSalary()).isEqualByComparingTo("8000000.00");
+        });
+    }
+
+    @Test
+    void updateOwnProfileOnlyUpdatesPhoneForAuthenticatedStaff() {
+        User user = createUser(5L, "staff@example.com");
+        user.setPhone("0901000000");
+        StaffProfile profile = StaffProfile.builder()
+                .user(user)
+                .employeeCode("EMP-0001")
+                .position("Receptionist")
+                .department("Front Office")
+                .hiredAt(LocalDate.of(2026, 1, 1))
+                .employmentStatus(EmploymentStatus.ACTIVE)
+                .baseSalary(new BigDecimal("800.00"))
+                .build();
+        when(staffProfileRepository.findByUser_Id(5L)).thenReturn(Optional.of(profile));
+
+        var response = staffProfileService.updateOwnProfile(5L, new StaffOwnProfileUpdateRequest(" 0902000000 "));
+
+        assertThat(user.getPhone()).isEqualTo("0902000000");
+        assertThat(response.phone()).isEqualTo("0902000000");
+        assertThat(response.employeeCode()).isEqualTo("EMP-0001");
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void updateOwnProfileRejectsPhoneAlreadyAssignedToAnotherUser() {
+        User user = createUser(5L, "staff@example.com");
+        StaffProfile profile = StaffProfile.builder()
+                .user(user)
+                .employeeCode("EMP-0001")
+                .hiredAt(LocalDate.of(2026, 1, 1))
+                .employmentStatus(EmploymentStatus.ACTIVE)
+                .build();
+        User existingUser = createUser(6L, "other@example.com");
+        existingUser.setPhone("0902000000");
+        when(staffProfileRepository.findByUser_Id(5L)).thenReturn(Optional.of(profile));
+        when(userRepository.findByPhoneAndDeletedAtIsNull("0902000000")).thenReturn(Optional.of(existingUser));
+
+        assertThatThrownBy(() -> staffProfileService.updateOwnProfile(
+                5L,
+                new StaffOwnProfileUpdateRequest("0902000000")
+        )).isInstanceOf(DuplicateResourceException.class);
+
+        verify(userRepository, never()).save(user);
     }
 
     private User createUser(Long id, String email) {
