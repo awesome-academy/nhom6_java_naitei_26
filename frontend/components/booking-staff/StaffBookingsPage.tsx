@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { BookingFilters, BookingFilterValues } from "./BookingFilters";
 import { BookingStatsCards } from "./BookingStatsCards";
 import { RoomAssignmentModal } from "./RoomAssignmentModal";
+import { FolioPanel } from "@/components/admin/bookings/folio-panel";
 import {
   getBookings,
   getBookingDetail,
@@ -27,12 +28,15 @@ import {
   checkOutBooking,
   cancelBooking,
 } from "@/lib/api/booking-staff-api";
+import { getActiveServiceItems } from "@/lib/api/folio";
 import {
   BookingListItem,
   BookingStaffDetail,
   BookingListFilterRequest,
   BookingStatus,
+  FolioChargeResponse,
 } from "@/types/booking-staff";
+import type { ServiceItemOption } from "@/types/folio";
 import { useAuth } from "@/lib/auth-context";
 import {
   AlertCircle,
@@ -45,6 +49,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
+import { toast } from "sonner";
 
 // Status labels
 const STATUS_LABELS: Record<string, string> = {
@@ -111,7 +116,8 @@ const EMPTY_FILTERS: BookingFilterValues = {
 
 export function StaffBookingsPage() {
   const router = useRouter();
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const canManageFolio = user?.permissions.includes("invoice:issue") ?? false;
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // State
@@ -148,6 +154,9 @@ export function StaffBookingsPage() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<BookingStaffDetail | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [serviceItems, setServiceItems] = useState<ServiceItemOption[]>([]);
+  const [isLoadingServiceItems, setIsLoadingServiceItems] = useState(false);
+  const [serviceItemsError, setServiceItemsError] = useState<string | null>(null);
 
   // Room assignment modal
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
@@ -164,7 +173,7 @@ export function StaffBookingsPage() {
   // Load bookings
   const loadBookings = useCallback(async () => {
     if (!isAuthenticated) {
-      return;
+      return false;
     }
     setIsLoading(true);
     setLoadError(null);
@@ -194,9 +203,11 @@ export function StaffBookingsPage() {
         totalItems: response.totalItems,
         totalPages: response.totalPages,
       });
+      return true;
     } catch (error) {
       console.error("Failed to load bookings:", error);
       setLoadError("Có lỗi khi tải danh sách đặt phòng");
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -208,6 +219,34 @@ export function StaffBookingsPage() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [loadBookings]);
+
+  const loadServiceItems = useCallback(async () => {
+    if (!isAuthenticated || !canManageFolio) {
+      setServiceItems([]);
+      setServiceItemsError(null);
+      return;
+    }
+
+    setIsLoadingServiceItems(true);
+    setServiceItemsError(null);
+    try {
+      setServiceItems(await getActiveServiceItems());
+    } catch (error) {
+      console.error("Failed to load service items:", error);
+      setServiceItemsError(
+        "Không thể tải danh mục dịch vụ. Dữ liệu Folio vẫn có thể xem ở chế độ chỉ đọc."
+      );
+    } finally {
+      setIsLoadingServiceItems(false);
+    }
+  }, [canManageFolio, isAuthenticated]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadServiceItems();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadServiceItems]);
 
   // Load booking detail
   const openBookingDetail = async (publicId: string) => {
@@ -223,6 +262,45 @@ export function StaffBookingsPage() {
       setIsLoadingDetail(false);
     }
   };
+
+  const refreshFolioAfterMutation = useCallback(async (bookingPublicId: string) => {
+    const [detailResult, listResult] = await Promise.allSettled([
+      getBookingDetail(bookingPublicId),
+      loadBookings(),
+    ]);
+
+    if (detailResult.status === "fulfilled") {
+      setSelectedBooking((current) =>
+        current?.publicId === bookingPublicId ? detailResult.value : current
+      );
+    }
+
+    const listRefreshFailed = listResult.status === "rejected" || !listResult.value;
+    if (detailResult.status === "rejected" || listRefreshFailed) {
+      console.error("Failed to refresh Folio aggregates after mutation", {
+        bookingPublicId,
+        detailError: detailResult.status === "rejected" ? detailResult.reason : null,
+        listError: listResult.status === "rejected" ? listResult.reason : null,
+      });
+      toast.warning(
+        "Khoản phát sinh đã được cập nhật, nhưng tổng tiền chưa thể đồng bộ. Vui lòng tải lại."
+      );
+    }
+  }, [loadBookings]);
+
+  const handleFolioChargeChanged = useCallback((charge: FolioChargeResponse) => {
+    setSelectedBooking((current) => {
+      if (!current || current.publicId !== charge.bookingPublicId) return current;
+
+      const exists = current.folioCharges.some((item) => item.id === charge.id);
+      const folioCharges = exists
+        ? current.folioCharges.map((item) => item.id === charge.id ? charge : item)
+        : [...current.folioCharges, charge];
+
+      return { ...current, folioCharges };
+    });
+    void refreshFolioAfterMutation(charge.bookingPublicId);
+  }, [refreshFolioAfterMutation]);
 
   // Confirm booking
   const handleConfirm = async () => {
@@ -536,7 +614,7 @@ export function StaffBookingsPage() {
                   <TabsTrigger value="info">Thông tin</TabsTrigger>
                   <TabsTrigger value="rooms">Phòng</TabsTrigger>
                   <TabsTrigger value="guests">Khách</TabsTrigger>
-                  <TabsTrigger value="folio">Dịch vụ</TabsTrigger>
+                  <TabsTrigger value="folio">Folio</TabsTrigger>
                   <TabsTrigger value="payments">Thanh toán</TabsTrigger>
                   <TabsTrigger value="history">Lịch sử</TabsTrigger>
                 </TabsList>
@@ -617,7 +695,7 @@ export function StaffBookingsPage() {
 
                 {/* Rooms Tab */}
                 <TabsContent value="rooms" className="mt-5 flex flex-col gap-4">
-                  {selectedBooking.rooms.map((room, idx) => (
+                  {selectedBooking.rooms.map((room) => (
                     <Card key={room.id}>
                       <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
@@ -702,35 +780,16 @@ export function StaffBookingsPage() {
                 </TabsContent>
 
                 {/* Folio Tab */}
-                <TabsContent value="folio" className="mt-5 flex flex-col gap-4">
-                  {selectedBooking.folioCharges.length === 0 ? (
-                    <p className="text-muted-foreground">Không có dịch vụ phát sinh</p>
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      {selectedBooking.folioCharges.map((charge) => (
-                        <Card key={charge.id} className={charge.isVoided ? "opacity-50" : ""}>
-                          <CardContent className="pt-4">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <div className="font-medium">
-                                  {charge.description}
-                                  {charge.isVoided && (
-                                    <Badge variant="destructive" className="ml-2">Đã hủy</Badge>
-                                  )}
-                                </div>
-                                <p className="text-sm text-muted-foreground">
-                                  {formatDateTime(charge.chargedAt)} | x{charge.quantity} | {formatCurrency(charge.unitPrice)}
-                                </p>
-                              </div>
-                              <p className="font-medium">
-                                {formatCurrency(charge.lineTotal)}
-                              </p>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
+                <TabsContent value="folio" className="mt-5">
+                  <FolioPanel
+                    booking={selectedBooking}
+                    serviceItems={serviceItems}
+                    canManage={canManageFolio}
+                    isLoadingServiceItems={isLoadingServiceItems}
+                    serviceItemsError={serviceItemsError}
+                    onRetryServiceItems={loadServiceItems}
+                    onChargeChanged={handleFolioChargeChanged}
+                  />
                 </TabsContent>
 
                 {/* Payments Tab */}
