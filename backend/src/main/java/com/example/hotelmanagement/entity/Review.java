@@ -58,6 +58,9 @@ public class Review extends BaseEntity {
     @Builder.Default
     private ReviewStatus status = ReviewStatus.PUBLISHED;
 
+    @Column(name = "moderation_reason", columnDefinition = "TEXT")
+    private String moderationReason;
+
     @Column(name = "staff_reply", columnDefinition = "TEXT")
     private String staffReply;
 

@@ -1120,6 +1120,7 @@ Table reviews {
   title varchar(200)
   comment text
   status review_status [not null, default: 'PUBLISHED', note: 'Cần kiểm duyệt nội dung']
+  moderation_reason text [note: 'Lý do moderation hiện tại; bắt buộc khi REJECTED']
   staff_reply text
   staff_reply_by bigint
   staff_replied_at timestamptz
