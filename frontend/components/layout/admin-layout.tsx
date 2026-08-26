@@ -25,6 +25,7 @@ import {
   Users,
   UserCog,
   BarChart3,
+  WalletCards,
   Settings,
   Bell,
   Search,
@@ -33,7 +34,7 @@ import {
   X,
   ChevronDown,
 } from "lucide-react"
-import { isAdminUser } from "@/lib/admin-auth"
+import { isBackOfficeUser } from "@/lib/admin-auth"
 import { useAuth } from "@/lib/auth-context"
 
 const adminNav = [
@@ -44,6 +45,7 @@ const adminNav = [
   { href: "/admin/pricing", label: "Quản lý giá", icon: BadgeDollarSign },
   { href: "/admin/cancellation-policies", label: "Chính sách hủy", icon: ShieldCheck },
   { href: "/admin/bookings", label: "Đặt phòng", icon: Calendar },
+  { href: "/admin/payments", label: "Thanh toán", icon: WalletCards },
   { href: "/admin/guests", label: "Khách hàng", icon: Users },
   { href: "/admin/staff", label: "Nhân viên", icon: UserCog },
   { href: "/admin/reports", label: "Báo cáo", icon: BarChart3 },
@@ -60,7 +62,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const { user, isAuthenticated, isLoading, clearAuth } = useAuth()
   const isAdminLoginPage = pathname === "/admin/login"
-  const hasAdminAccess = isAdminUser(user)
+  const hasAdminAccess = isBackOfficeUser(user)
   const adminInitials = user?.fullName
     .split(/\s+/)
     .filter(Boolean)

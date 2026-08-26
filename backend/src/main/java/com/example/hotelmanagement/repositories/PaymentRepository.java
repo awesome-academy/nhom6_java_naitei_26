@@ -4,6 +4,7 @@ import com.example.hotelmanagement.entity.Payment;
 import com.example.hotelmanagement.entity.enums.PaymentStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -15,7 +16,7 @@ import java.util.Collection;
 import java.util.Optional;
 
 @Repository
-public interface PaymentRepository extends JpaRepository<Payment, Long> {
+public interface PaymentRepository extends JpaRepository<Payment, Long>, JpaSpecificationExecutor<Payment> {
 
     boolean existsByBooking_IdAndStatusIn(Long bookingId, Collection<PaymentStatus> statuses);
 
@@ -25,6 +26,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     boolean existsByPaymentCode(String paymentCode);
 
+    Optional<Payment> findByPaymentCode(String paymentCode);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select payment from Payment payment where payment.paymentCode = :paymentCode")
     Optional<Payment> findForUpdateByPaymentCode(@Param("paymentCode") String paymentCode);
@@ -32,6 +35,10 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     Optional<Payment> findByIdempotencyKey(String idempotencyKey);
 
     Optional<Payment> findByProviderTxnId(String providerTxnId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select payment from Payment payment join fetch payment.booking where payment.paymentCode = :paymentCode")
+    Optional<Payment> findForManagementByPaymentCode(@Param("paymentCode") String paymentCode);
 
     Optional<Payment> findFirstByBooking_IdAndStatusInOrderByCreatedAtDesc(
             Long bookingId,

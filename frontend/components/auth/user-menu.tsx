@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/DropdownMenu";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-import { isAdminUser } from "@/lib/admin-auth";
+import { isBackOfficeUser } from "@/lib/admin-auth";
 import { logout } from "@/lib/api/auth";
 import { getStoredTokens } from "@/lib/api/auth";
 import {
@@ -44,7 +44,7 @@ export function UserMenu() {
 
   if (!user) return null;
 
-  const isAdmin = isAdminUser(user);
+  const isAdmin = isBackOfficeUser(user);
 
   const handleLogout = async () => {
     setOpen(false);
