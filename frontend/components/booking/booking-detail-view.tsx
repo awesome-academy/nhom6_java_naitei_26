@@ -253,6 +253,14 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
               </Link>
             </Button>
           )}
+          {booking.status === "CHECKED_OUT" && (
+            <Button asChild>
+              <Link href={`/profile/bookings/${encodeURIComponent(booking.publicId)}/invoice`}>
+                <ReceiptText data-icon="inline-start" />
+                Xem hóa đơn
+              </Link>
+            </Button>
+          )}
           {canCancelBooking(booking) && (
             <Button variant="outline" onClick={cancelCurrentBooking}>Hủy booking</Button>
           )}

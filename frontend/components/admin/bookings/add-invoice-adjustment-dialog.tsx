@@ -27,7 +27,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { addInvoiceAdjustment } from "@/lib/api/invoices"
-import type { InvoiceResponse } from "@/types/booking-staff"
+import type { InvoiceResponse } from "@/types/invoice"
 
 const amountPattern = /^-?\d{1,12}(?:\.\d{1,2})?$/
 const formSchema = z.object({
