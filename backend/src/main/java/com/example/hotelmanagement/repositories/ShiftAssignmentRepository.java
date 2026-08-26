@@ -23,6 +23,14 @@ public interface ShiftAssignmentRepository extends JpaRepository<ShiftAssignment
     @EntityGraph(attributePaths = {"staffProfile.user", "shift"})
     Optional<ShiftAssignment> findByPublicId(String publicId);
 
+    @EntityGraph(attributePaths = {"staffProfile.user", "shift"})
+    List<ShiftAssignment> findByWorkDateBetweenOrderByWorkDateAscShiftStartAtAsc(LocalDate from, LocalDate to);
+
+    @EntityGraph(attributePaths = {"staffProfile.user", "shift"})
+    List<ShiftAssignment> findByStaffProfile_EmployeeCodeIgnoreCaseOrderByWorkDateAscShiftStartAtAsc(
+            String employeeCode
+    );
+
     boolean existsByStaffProfileIdAndShiftIdAndWorkDate(
             Long staffId,
             Long shiftId,

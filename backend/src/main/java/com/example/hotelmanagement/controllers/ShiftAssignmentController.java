@@ -9,6 +9,7 @@ import com.example.hotelmanagement.security.PermissionExpressions;
 import com.example.hotelmanagement.security.UserPrincipal;
 import com.example.hotelmanagement.services.ShiftAssignmentService;
 import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,9 +21,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -38,9 +41,24 @@ public class ShiftAssignmentController {
         this.shiftAssignmentService = shiftAssignmentService;
     }
 
+    /**
+     * Lists shift assignments. With no params, returns everything; pass {@code employeeCode}
+     * for "lịch ca theo staff" (who's working which days), or both {@code from}/{@code to} for
+     * "lịch ca theo ngày/tuần" (who's assigned on a given date/week).
+     */
     @Operation(summary = "Get Shift Assignments")
     @GetMapping
-    public ResponseEntity<List<ShiftAssignmentResponse>> getShiftAssignments() {
+    public ResponseEntity<List<ShiftAssignmentResponse>> getShiftAssignments(
+            @RequestParam(required = false) String employeeCode,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        if (employeeCode != null) {
+            return ResponseEntity.ok(shiftAssignmentService.getShiftAssignmentsByStaff(employeeCode));
+        }
+        if (from != null || to != null) {
+            return ResponseEntity.ok(shiftAssignmentService.getShiftAssignmentsByDateRange(from, to));
+        }
         return ResponseEntity.ok(shiftAssignmentService.getShiftAssignments());
     }
 

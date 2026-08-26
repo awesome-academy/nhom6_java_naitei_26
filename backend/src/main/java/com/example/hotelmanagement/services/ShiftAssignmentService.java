@@ -71,6 +71,32 @@ public class ShiftAssignmentService {
         return mapShiftAssignmentResponse(getExistingAssignment(publicId));
     }
 
+    /** BE-8.1: lịch ca theo ngày/tuần — cả hai đầu khoảng đều bao gồm (inclusive). */
+    @Transactional(readOnly = true)
+    public List<ShiftAssignmentResponse> getShiftAssignmentsByDateRange(LocalDate from, LocalDate to) {
+        if (from == null || to == null) {
+            throw new BusinessValidationException("Both 'from' and 'to' dates are required");
+        }
+        if (to.isBefore(from)) {
+            throw new BusinessValidationException("'to' date cannot be before 'from' date");
+        }
+        return shiftAssignmentRepository.findByWorkDateBetweenOrderByWorkDateAscShiftStartAtAsc(from, to)
+                .stream()
+                .map(this::mapShiftAssignmentResponse)
+                .toList();
+    }
+
+    /** BE-8.1: lịch ca theo staff — xem một nhân viên trực ngày nào. */
+    @Transactional(readOnly = true)
+    public List<ShiftAssignmentResponse> getShiftAssignmentsByStaff(String employeeCode) {
+        String normalizedEmployeeCode = normalizeCode(employeeCode, "Employee code");
+        return shiftAssignmentRepository
+                .findByStaffProfile_EmployeeCodeIgnoreCaseOrderByWorkDateAscShiftStartAtAsc(normalizedEmployeeCode)
+                .stream()
+                .map(this::mapShiftAssignmentResponse)
+                .toList();
+    }
+
     public ShiftAssignmentResponse createShiftAssignment(
             @Valid ShiftAssignmentCreateRequest request,
             Long assignedBy
