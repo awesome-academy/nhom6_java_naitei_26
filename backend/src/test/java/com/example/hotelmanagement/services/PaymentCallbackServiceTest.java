@@ -50,6 +50,8 @@ class PaymentCallbackServiceTest {
     private PaymentLedgerService paymentLedgerService;
     @Mock
     private BookingStateMachineService bookingStateMachineService;
+    @Mock
+    private EmailService emailService;
 
     private PaymentCallbackService callbackService;
 
@@ -61,6 +63,7 @@ class PaymentCallbackServiceTest {
                 paymentEventRepository,
                 paymentLedgerService,
                 bookingStateMachineService,
+                emailService,
                 new ObjectMapper(),
                 FIXED_CLOCK
         );
@@ -89,6 +92,7 @@ class PaymentCallbackServiceTest {
         assertThat(payment.getPaidAt()).isNotNull();
         assertThat(payment.getVerifiedAt()).isNotNull();
         verify(paymentLedgerService).synchronizeSuccessfulPayment(payment);
+        verify(emailService).sendPaymentSuccessEmail(payment);
         verify(bookingStateMachineService).confirm("booking-public-id");
 
         ArgumentCaptor<PaymentEvent> eventCaptor = ArgumentCaptor.forClass(PaymentEvent.class);

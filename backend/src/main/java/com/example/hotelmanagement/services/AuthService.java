@@ -99,12 +99,16 @@ public class AuthService {
 
             // If token is not yet used, consume it and activate user
             if (token.getUsedAt() == null) {
+                boolean wasUnverified = user.getEmailVerifiedAt() == null;
                 token.setUsedAt(now());
-                if (user.getEmailVerifiedAt() == null) {
+                if (wasUnverified) {
                     user.setEmailVerifiedAt(now());
                 }
                 if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
                     user.setStatus(UserStatus.ACTIVE);
+                }
+                if (wasUnverified) {
+                    emailService.sendAccountActivatedEmail(user);
                 }
                 return new AuthMessageResponse("Xác thực email thành công");
             }
@@ -121,11 +125,15 @@ public class AuthService {
             }
 
             // Token used but user not active - try to activate
+            boolean wasUnverified = user.getEmailVerifiedAt() == null;
             if (user.getEmailVerifiedAt() == null) {
                 user.setEmailVerifiedAt(now());
             }
             if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
                 user.setStatus(UserStatus.ACTIVE);
+            }
+            if (wasUnverified) {
+                emailService.sendAccountActivatedEmail(user);
             }
             return new AuthMessageResponse("Xác thực email thành công");
         }

@@ -89,6 +89,7 @@ public class BookingService {
     private final BookingCalculatorService bookingCalculatorService;
     private final CancellationPolicyService cancellationPolicyService;
     private final BookingOptionResolverService bookingOptionResolverService;
+    private final EmailService emailService;
     private final Clock clock;
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -104,6 +105,7 @@ public class BookingService {
             BookingCalculatorService bookingCalculatorService,
             CancellationPolicyService cancellationPolicyService,
             BookingOptionResolverService bookingOptionResolverService,
+            EmailService emailService,
             Clock clock
     ) {
         this.bookingRepository = bookingRepository;
@@ -116,6 +118,7 @@ public class BookingService {
         this.bookingCalculatorService = bookingCalculatorService;
         this.cancellationPolicyService = cancellationPolicyService;
         this.bookingOptionResolverService = bookingOptionResolverService;
+        this.emailService = emailService;
         this.clock = clock;
     }
 
@@ -129,6 +132,7 @@ public class BookingService {
             RoomRepository roomRepository,
             BookingCalculatorService bookingCalculatorService,
             CancellationPolicyService cancellationPolicyService,
+            EmailService emailService,
             Clock clock
     ) {
         this.bookingRepository = bookingRepository;
@@ -141,6 +145,7 @@ public class BookingService {
         this.bookingCalculatorService = bookingCalculatorService;
         this.cancellationPolicyService = cancellationPolicyService;
         this.bookingOptionResolverService = null;
+        this.emailService = emailService;
         this.clock = clock;
     }
 
@@ -153,6 +158,7 @@ public class BookingService {
             RoomRepository roomRepository,
             BookingCalculatorService bookingCalculatorService,
             CancellationPolicyService cancellationPolicyService,
+            EmailService emailService,
             Clock clock
     ) {
         this(
@@ -165,6 +171,7 @@ public class BookingService {
                 roomRepository,
                 bookingCalculatorService,
                 cancellationPolicyService,
+                emailService,
                 clock
         );
     }
@@ -372,7 +379,8 @@ public class BookingService {
         booking.setCancelledAt(OffsetDateTime.now(clock));
         booking.setCancelledBy(userId);
         booking.setCancellationReason(CUSTOMER_REMOVED_PENDING_BOOKING_REASON);
-        bookingRepository.saveAndFlush(booking);
+        Booking cancelledBooking = bookingRepository.saveAndFlush(booking);
+        emailService.sendBookingCancelledEmail(cancelledBooking);
     }
 
     private boolean isCustomerRemovedPendingBooking(Booking booking) {

@@ -41,17 +41,20 @@ public class BookingStateMachineService {
     private final BookingRepository bookingRepository;
     private final StaffProfileRepository staffProfileRepository;
     private final InvoiceService invoiceService;
+    private final EmailService emailService;
     private final Clock clock;
 
     public BookingStateMachineService(
             BookingRepository bookingRepository,
             StaffProfileRepository staffProfileRepository,
             InvoiceService invoiceService,
+            EmailService emailService,
             Clock clock
     ) {
         this.bookingRepository = bookingRepository;
         this.staffProfileRepository = staffProfileRepository;
         this.invoiceService = invoiceService;
+        this.emailService = emailService;
         this.clock = clock;
     }
 
@@ -88,7 +91,9 @@ public class BookingStateMachineService {
 
         applyTransition(booking, BookingStatus.CANCELLED, ActorType.USER, actorUserId, StatusChangeSource.MANUAL, reason);
 
-        return mapResponse(bookingRepository.saveAndFlush(booking));
+        Booking cancelledBooking = bookingRepository.saveAndFlush(booking);
+        emailService.sendBookingCancelledEmail(cancelledBooking);
+        return mapResponse(cancelledBooking);
     }
 
     /**
@@ -102,7 +107,9 @@ public class BookingStateMachineService {
                 booking, BookingStatus.CONFIRMED, ActorType.SYSTEM, null,
                 StatusChangeSource.PAYMENT_CALLBACK, null
         );
-        return mapResponse(bookingRepository.saveAndFlush(booking));
+        Booking confirmedBooking = bookingRepository.saveAndFlush(booking);
+        emailService.sendBookingConfirmedEmail(confirmedBooking);
+        return mapResponse(confirmedBooking);
     }
 
     /**

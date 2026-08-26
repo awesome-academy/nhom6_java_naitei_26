@@ -86,6 +86,8 @@ class BookingServiceTest {
     private BookingCalculatorService bookingCalculatorService;
     @Mock
     private CancellationPolicyService cancellationPolicyService;
+    @Mock
+    private EmailService emailService;
 
     private BookingService bookingService;
 
@@ -101,6 +103,7 @@ class BookingServiceTest {
                 roomRepository,
                 bookingCalculatorService,
                 cancellationPolicyService,
+                emailService,
                 FIXED_CLOCK
         );
         lenient().doAnswer(invocation -> {
@@ -425,6 +428,7 @@ class BookingServiceTest {
         assertThat(booking.getCancellationReason()).isEqualTo("Customer removed pending booking before payment");
         assertThat(booking.getStatusHistory()).isEmpty();
         verify(bookingRepository).saveAndFlush(booking);
+        verify(emailService).sendBookingCancelledEmail(booking);
         verify(bookingRepository, never()).delete(any());
     }
 
