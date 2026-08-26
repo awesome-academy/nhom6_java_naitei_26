@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.invoice.InvoiceAdjustmentRequest;
+import com.example.hotelmanagement.dto.invoice.InvoiceBuyerUpdateRequest;
 import com.example.hotelmanagement.dto.invoice.InvoiceItemResponse;
 import com.example.hotelmanagement.dto.invoice.InvoiceResponse;
 import com.example.hotelmanagement.dto.invoice.InvoiceVoidRequest;
@@ -44,6 +45,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -51,7 +53,6 @@ import java.util.stream.Stream;
 @Service
 @Validated
 @Transactional
-@PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
 public class InvoiceService {
 
     private static final int MONEY_SCALE = 2;
@@ -65,6 +66,10 @@ public class InvoiceService {
     private static final String SERVICE_REFERENCE_TYPE = "FOLIO_CHARGE";
     private static final String INVOICE_NUMBER_PREFIX = "INV";
     private static final int INVOICE_NUMBER_MAX_ATTEMPTS = 5;
+    private static final Set<InvoiceStatus> CUSTOMER_VISIBLE_STATUSES = Set.of(
+            InvoiceStatus.ISSUED,
+            InvoiceStatus.VOID
+    );
 
     private final InvoiceRepository invoiceRepository;
     private final InvoiceItemRepository invoiceItemRepository;
@@ -126,6 +131,7 @@ public class InvoiceService {
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
     public InvoiceResponse getInvoice(String invoicePublicId) {
         String normalizedPublicId = normalizePublicId(invoicePublicId, "Invoice public id");
         Invoice invoice = invoiceRepository.findByPublicId(normalizedPublicId)
@@ -134,6 +140,7 @@ public class InvoiceService {
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
     public InvoiceResponse getDraftByBooking(String bookingPublicId) {
         String normalizedPublicId = normalizePublicId(bookingPublicId, "Booking public id");
         Invoice invoice = invoiceRepository
@@ -148,6 +155,50 @@ public class InvoiceService {
         return mapResponse(invoice);
     }
 
+    @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.BOOKING_READ_OWN)
+    public InvoiceResponse getCustomerInvoice(String bookingPublicId, Long userId) {
+        String normalizedBookingPublicId = normalizePublicId(
+                bookingPublicId,
+                "Booking public id"
+        );
+        Long normalizedUserId = validatePositiveId(userId, "User id");
+        List<Invoice> invoices = invoiceRepository
+                .findCustomerVisibleInvoices(
+                        normalizedBookingPublicId,
+                        normalizedUserId,
+                        CUSTOMER_VISIBLE_STATUSES
+                );
+        Invoice invoice = invoices.stream()
+                .filter(candidate -> candidate.getStatus() == InvoiceStatus.ISSUED)
+                .findFirst()
+                .or(() -> invoices.stream()
+                        .filter(candidate -> candidate.getStatus() == InvoiceStatus.VOID)
+                        .findFirst())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Customer-visible invoice for booking",
+                        normalizedBookingPublicId
+                ));
+        return mapResponse(invoice);
+    }
+
+    @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
+    public InvoiceResponse updateBuyer(
+            String invoicePublicId,
+            @Valid InvoiceBuyerUpdateRequest request
+    ) {
+        if (request == null) {
+            throw new BusinessValidationException("Invoice buyer update request is required");
+        }
+        Invoice invoice = getDraftForUpdate(invoicePublicId);
+        invoice.setBuyerName(normalizeRequiredText(request.buyerName(), "Buyer name", 150));
+        invoice.setBuyerAddress(normalizeOptionalText(request.buyerAddress(), "Buyer address", 2000));
+        invoice.setBuyerTaxCode(normalizeOptionalText(request.buyerTaxCode(), "Buyer tax code", 20));
+        invoice.setBuyerEmail(normalizeOptionalText(request.buyerEmail(), "Buyer email", 255));
+        return mapResponse(invoiceRepository.saveAndFlush(invoice));
+    }
+
+    @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
     public InvoiceResponse addAdjustment(
             String invoicePublicId,
             @Valid InvoiceAdjustmentRequest request
@@ -298,6 +349,7 @@ public class InvoiceService {
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice", normalizedPublicId));
     }
 
+    @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
     public InvoiceResponse removeAdjustment(String invoicePublicId, Long itemId) {
         Invoice invoice = getDraftForUpdate(invoicePublicId);
         Long normalizedItemId = validatePositiveId(itemId, "Invoice item id");

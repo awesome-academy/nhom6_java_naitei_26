@@ -50,9 +50,9 @@ Mỗi thực thể dưới đây tồn tại vì một câu trong tài liệu y�
 
 **Identity & Access**
 
-- **User** — chủ thể đăng nhập. Tách riêng khỏi Customer/Staff vì một người có thể vừa là nhân viên vừa là khách lưu trú, và vì OAuth (dòng 46-50) gắn với danh tính đăng nhập chứ không gắn với vai trò.
-- **Role, Permission** — dòng 159-161 nói "Admin có toàn bộ quyền của Staff cộng thêm quyền quản trị". Nếu dùng một cột `role VARCHAR` thì mỗi lần thêm quyền phải sửa code và deploy. Tách Role–Permission cho phép cấu hình bằng dữ liệu. Quan hệ User–Role là N–N để một người kiêm nhiệm được.
-- **CustomerProfile / StaffProfile** — hai vai trò có thuộc tính không giao nhau (khách cần địa chỉ, ngày sinh; nhân viên cần mã NV, ngày vào làm, phòng ban). Nhồi chung một bảng sẽ tạo hàng loạt cột NULL và không thể ràng buộc NOT NULL cho bên nào.
+- **User** — chủ thể đăng nhập. Tách riêng khỏi CustomerProfile/StaffProfile; Customer và Staff là hai loại tài khoản độc lập, không dùng chung một User và không có luồng chuyển Customer thành Staff.
+- **Role, Permission** — dòng 159-161 nói "Admin có toàn bộ quyền của Staff cộng thêm quyền quản trị". Tách Role–Permission cho phép cấu hình bằng dữ liệu. Mỗi User chỉ có một role hiện tại (`CUSTOMER`, `STAFF` hoặc `ADMIN`) để kiểm soát quyền rõ ràng; khi đổi vai trò, bản ghi role hiện tại được thay thế.
+- **CustomerProfile / StaffProfile** — hai loại tài khoản có thuộc tính không giao nhau. User role CUSTOMER chỉ có CustomerProfile; User role STAFF chỉ có StaffProfile. Staff được Admin tạo qua invitation, không tạo CustomerProfile.
 - **SocialAccount** — dòng 46-50, một User có thể liên kết Google + Facebook + X cùng lúc → quan hệ 1–N, không phải cột trên User.
 - **AuthToken** — dòng 42-45 và 179-184: token activation/reset "có thời hạn và chỉ dùng một lần". Đây là thực thể có vòng đời riêng (phát hành → hết hạn → đã dùng), không phải thuộc tính của User.
 
@@ -68,8 +68,8 @@ Mỗi thực thể dưới đây tồn tại vì một câu trong tài liệu y�
 
 **Pricing & Policy**
 
-- **RateOverride** — giá thực bán khác giá niêm yết theo mùa/cuối tuần/dịp lễ. **Master/config data**: dùng để *tính* giá lúc đặt, không dùng để *tính lại* booking cũ.
-- **CancellationPolicy + CancellationPolicyRule** — dòng 97 và BR-005: "hệ thống tính số tiền hoàn dựa trên **thời điểm hủy**". Một mốc thời gian duy nhất không diễn đạt được chính sách thực tế nhiều bậc (72h → 100%, 30h → 50%, 0h → 0%), nên Policy tách thành nhiều Rule. Policy còn giữ `% tăng giá` cho option thanh toán online. Admin chọn nhiều policy online cho từng RoomType qua bảng nối; option "thanh toán tại khách sạn" là cờ riêng trên RoomType và luôn dùng `NON_REFUND`. Toàn bộ policy + rules + phụ thu được snapshot vào từng `booking_rooms` để đổi chính sách không hồi tố khách cũ.
+- **RateOverride** — giá thực bán khác giá niêm yết theo mùa/cuối tuần/dịp lễ ở cấp **RoomType**. **Master/config data**: dùng để *tính* giá lúc đặt, không dùng để *tính lại* booking cũ.
+- **CancellationPolicy + CancellationPolicyRule** — dòng 97 và BR-005: "hệ thống tính số tiền hoàn dựa trên **thời điểm hủy**". Một mốc thời gian duy nhất không diễn đạt được chính sách thực tế nhiều bậc (72h → 100%, 30h → 50%, 0h → 0%), nên Policy tách thành nhiều Rule. Policy còn giữ `% tăng giá` cho option thanh toán online. Admin chọn nhiều policy online cho từng RoomType qua bảng nối; website và admin không còn option thanh toán tại khách sạn. Toàn bộ policy + rules + phụ thu được snapshot vào từng `booking_rooms` để đổi chính sách không hồi tố khách cũ.
 
 **Booking & Availability**
 
@@ -88,20 +88,20 @@ Mỗi thực thể dưới đây tồn tại vì một câu trong tài liệu y�
 
 **Payment**
 
-- **Payment** — dòng 79-83: mỗi lần giao dịch với gateway. Booking 1–N Payment vì có đặt cọc rồi trả phần còn lại khi check-out (dòng 134), và vì lần trả thất bại rồi trả lại là hai giao dịch. **Payment/Refund là ledger — source of truth của dòng tiền.**
+- **Payment** — dòng 79-83: mỗi lần giao dịch với gateway. Booking 1–N Payment vì lần trả thất bại rồi trả lại là hai giao dịch, và booking có thể phát sinh thêm khoản phải thu trong quá trình lưu trú. **Payment/Refund là ledger — source of truth của dòng tiền.**
 - **PaymentEvent** — BR-012 và dòng 83: "kết quả thanh toán phải được xác minh từ phía gateway". Lưu nguyên payload callback để đối soát, chống replay (gateway gửi lại IPN nhiều lần là chuyện thường), và làm chứng cứ khi tranh chấp.
 - **Refund** — dòng 81 có trạng thái `Refunded` và dòng 97 tính tiền hoàn. Tách khỏi Payment vì một lần thu có thể hoàn nhiều lần/hoàn một phần.
 
 **Feedback, Comms, Audit**
 
 - **Review** — dòng 98-101: chỉ khách đã hoàn tất lưu trú mới được đánh giá; đánh giá phòng, chất lượng, nhân viên/dịch vụ; **mỗi booking tối đa một review** (BR-007) → `booking_id UNIQUE`.
-- **EmailMessage** — dòng 174-177 và 185-193: Admin soạn email, System gửi, "lưu trạng thái gửi và lịch sử email". Cần cho retry khi gửi lỗi và cho việc chứng minh đã gửi email xác nhận booking.
+- **EmailMessage** — dòng 174-177 và 185-193: Back-office có quyền `email:send` soạn email theo booking, System gửi, "lưu trạng thái gửi và lịch sử email". Cần cho retry khi gửi lỗi và cho việc chứng minh đã gửi email xác nhận booking.
 - **AuditLog** — BR-008 nhắc "audit", dòng 167 nhắc "audit history". Ghi thao tác đổi giá, hủy booking, void hóa đơn.
 
 ### 2.3. Quan hệ giữa các thực thể
 
 ```
-User 1─N UserRole N─1 Role N─N Permission
+User 1─1 UserRole N─1 Role N─N Permission
 User 1─1 CustomerProfile          User 1─1 StaffProfile
 User 1─N SocialAccount            User 1─N AuthToken
 
@@ -109,7 +109,7 @@ RoomType 1─N Room                 RoomType N─N Amenity
 RoomType 1─N RoomTypeBed          RoomType 1─N RoomTypeImage
 Room     N─N Amenity              Room     1─N RoomImage
 Room     1─N RoomStatusBlock
-RoomType 1─N RateOverride  (hoặc gắn trực tiếp Room)
+RoomType 1─N RateOverride
 
 CancellationPolicy 1─N CancellationPolicyRule
 
@@ -142,7 +142,7 @@ Tài liệu nói thẳng ở dòng 119 và BR-003. Một phòng khả dụng cho
 Dòng 74 yêu cầu "kiểm tra lại availability trước khi tạo booking". Nhưng kiểm tra ở application rồi mới insert vẫn để lọt double-booking: hai request đồng thời đều đọc thấy trống rồi đều ghi thành công. Giải pháp là trigger BEFORE INSERT/UPDATE trên `booking_rooms` — request thứ hai bị DB từ chối ngay tại trigger, không phụ thuộc timing. Kết hợp `SELECT ... FOR UPDATE` trên `rooms` trong transaction tạo booking để giảm contention ở tầng trigger.
 
 **QĐ-3. Booking PENDING phải có thời điểm hết hạn.**
-Dòng 76-78: booking tạo ở trạng thái PENDING rồi mới thanh toán. Nếu khách bỏ giữa đường, phòng bị giữ vô thời hạn và không bán được. Cần `hold_expires_at` + job giải phóng. Thiếu cột này là lỗi thất thoát doanh thu.
+Các bước chọn phòng và xem giá chỉ là draft; sau khi customer chọn payment method, backend mới kiểm tra availability lần cuối, tạo PENDING và giữ phòng. Nếu khách bỏ giữa đường, cần `hold_expires_at` + job chuyển sang EXPIRED và giải phóng phòng; booking EXPIRED vẫn được giữ để tra cứu.
 
 **QĐ-4. Snapshot mọi thứ ảnh hưởng tới tiền, đúng một lần, tại đúng thời điểm.**
 Giá đêm (`booking_room_nights.price`), chính sách hủy (`booking_rooms.cancellation_policy_snapshot`), hoa hồng OTA (`bookings.source_commission_percent_snapshot`), giá dịch vụ (`folio_charges.unit_price`), thông tin người mua trên hóa đơn (`invoices.buyer_*`) đều được copy tại thời điểm giao dịch. Nếu join sang bảng gốc để hiển thị, việc Staff sửa giá hôm nay sẽ làm đổi hóa đơn đã in tháng trước.
@@ -191,7 +191,9 @@ Tài khoản đăng nhập. Không chứa thuộc tính riêng của khách hay 
 | `password_hash`               | TEXT         | NULL                                           | NULL hợp lệ với tài khoản tạo từ OAuth (dòng 50). Lưu bcrypt cost ≥ 12 hoặc argon2id                                                                     |
 | `phone`                       | VARCHAR(20)  | NULL, UNIQUE khi không NULL                   | Dòng 36 thu số điện thoại                                                                                                                                      |
 | `full_name`                   | VARCHAR(150) | NOT NULL                                       |                                                                                                                                                                     |
-| `avatar_url`                  | TEXT         | NULL                                           | Dòng 58                                                                                                                                                            |
+| `avatar_url`                  | TEXT         | NULL                                           | URL legacy/OAuth hoặc URI nội bộ của avatar hiện tại; URL trả cho client được backend cấp presigned                                                                                                                                                            |
+| `avatar_storage_key`          | TEXT         | NULL                                           | Object key do server sinh trong bucket `avatars`; không nhận trực tiếp từ client                                                                                                                                                            |
+| `avatar_content_type`         | VARCHAR(100) | NULL                                           | MIME type đã xác minh từ metadata object trong MinIO                                                                                                                                                            |
 | `status`                      | user_status  | NOT NULL, default`PENDING_VERIFICATION`      | `PENDING_VERIFICATION / ACTIVE / SUSPENDED / DEACTIVATED`. Dòng 166, dòng 59 (khách không tự đổi được)                                                  |
 | `failed_login_count`          | SMALLINT     | NOT NULL, default 0                            | Chống brute force                                                                                                                                                  |
 | `locked_until`                | TIMESTAMPTZ  | NULL                                           | Khóa tạm sau nhiều lần sai                                                                                                                                      |
@@ -208,9 +210,11 @@ Tài khoản đăng nhập. Không chứa thuộc tính riêng của khách hay 
 | `roles`            | `id`, `code`, `name`, `description`, `is_system`  | `code` UNIQUE (`CUSTOMER`/`STAFF`/`ADMIN`). `is_system=true` chặn Admin xóa role gốc làm hỏng phân quyền |
 | `permissions`      | `id`, `code`, `resource`, `action`, `description` | `code` UNIQUE dạng `room:create`, `booking:cancel_any`, `staff:manage`. UNIQUE(`resource`,`action`)          |
 | `role_permissions` | `role_id`, `permission_id`                              | PK kép; FK`ON DELETE CASCADE` (xóa permission thì bỏ khỏi role là đúng)                                         |
-| `user_roles`       | `user_id`, `role_id`, `assigned_at`, `assigned_by`  | PK kép. N–N để một User kiêm nhiệm;`assigned_by` để audit ai cấp quyền                                       |
+| `user_roles`       | `user_id`, `role_id`, `assigned_at`, `assigned_by`  | PK kép và UNIQUE(`user_id`), bảo đảm một User chỉ có một role hiện tại;`assigned_by` để audit ai cấp quyền                                       |
 
-Vì sao không dùng `users.role VARCHAR`: dòng 160-161 mô tả Admin ⊃ Staff. Với enum một cột, mỗi lần thêm quyền cho Staff phải sửa code kiểm tra ở mọi endpoint. Với RBAC, thêm dòng vào `role_permissions` là xong.
+Role vẫn là bảng riêng thay vì enum trong `users` để quyền được cấu hình qua `role_permissions`; bảng nối chỉ còn giữ tương thích với RBAC hiện tại và bị giới hạn một dòng trên mỗi User.
+
+`maintenance:manage` là quyền riêng để tạo, gia hạn và xóa `room_status_blocks`. STAFF chỉ có `room:read` đối với Room/RoomType, nhưng có thể vận hành lịch bảo trì bằng quyền này; không dùng `room:update` cho maintenance để Staff không thể sửa master data của phòng.
 
 ### 3.3. `customer_profiles`
 
@@ -233,12 +237,15 @@ Vì sao không dùng `users.role VARCHAR`: dòng 160-161 mô tả Admin ⊃ Staf
 | `id`                | BIGINT            | PK                                   |                                                                                       |
 | `user_id`           | BIGINT            | NOT NULL, UNIQUE, FK→users RESTRICT | RESTRICT vì BR-008/dòng 167: Staff đã xử lý booking/invoice không được xóa |
 | `employee_code`     | VARCHAR(20)       | NOT NULL, UNIQUE                     | Mã nhân viên nội bộ                                                              |
-| `position`          | VARCHAR(80)       | NOT NULL                             | Receptionist, Housekeeping, Manager                                                   |
+| `position`          | VARCHAR(80)       | NULL                                 | Chức danh tùy chọn; chưa chuẩn hóa bằng bảng danh mục                                  |
 | `department`        | VARCHAR(80)       | NULL                                 |                                                                                       |
 | `hired_at`          | DATE              | NOT NULL                             |                                                                                       |
 | `terminated_at`     | DATE              | NULL, CHECK`>= hired_at`           | Dòng 165 "deactivate/fire" → ghi ngày, không xóa dòng                           |
+| `email_at_termination` | VARCHAR(255)   | NULL                              | Email đăng nhập trước khi tài khoản Staff bị lưu trữ để tuyển lại bằng email cũ |
 | `employment_status` | employment_status | NOT NULL default`ACTIVE`           | `ACTIVE / ON_LEAVE / TERMINATED`                                                    |
 | `base_salary`       | NUMERIC(14,2)     | NULL                                 | Nhạy cảm: chỉ Admin đọc, cần view riêng hoặc column-level grant               |
+
+Vòng đời Staff: invitation tạo User role `STAFF` ở `PENDING_VERIFICATION`; Staff phải mở link, xác thực email và đặt mật khẩu mới trước khi đăng nhập. Sau đó `ACTIVE ↔ ON_LEAVE`; chỉ `ACTIVE` và User `ACTIVE` đã xác thực được phân ca mới. `ACTIVE` hoặc `ON_LEAVE` có thể chuyển sang `TERMINATED`; đây là trạng thái cuối, User chuyển sang `DEACTIVATED` và StaffProfile không bị xóa hay khôi phục. Admin có thể reset mật khẩu trực tiếp mà không cần mật khẩu cũ.
 
 ### 3.5. `user_social_accounts`
 
@@ -263,7 +270,7 @@ Dùng chung cho activation (dòng 179-181) và reset password (dòng 42-45, 182-
 | ---------------- | --------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`           | BIGINT          | PK                              |                                                                                                                                                                                                                                       |
 | `user_id`      | BIGINT          | NOT NULL, FK→users CASCADE     |                                                                                                                                                                                                                                       |
-| `token_type`   | auth_token_type | NOT NULL                        | `EMAIL_VERIFICATION / PASSWORD_RESET / EMAIL_CHANGE`                                                                                                                                                                                |
+| `token_type`   | auth_token_type | NOT NULL                        | `EMAIL_VERIFICATION / STAFF_INVITATION / PASSWORD_RESET / EMAIL_CHANGE`                                                                                                                                                             |
 | `token_hash`   | CHAR(64)        | NOT NULL, UNIQUE                | **Lưu SHA-256 của token, không lưu token gốc.** Token là chuỗi random entropy cao nên SHA-256 ở đây là đủ (khác trường hợp CCCD ở mục 6.5). Nếu DB bị lộ, kẻ tấn công không dùng lại được token |
 | `expires_at`   | TIMESTAMPTZ     | NOT NULL, CHECK`> created_at` | "Đường dẫn có thời hạn" (dòng 45)                                                                                                                                                                                             |
 | `used_at`      | TIMESTAMPTZ     | NULL                            | "chỉ được sử dụng một lần" (dòng 45): hợp lệ khi`used_at IS NULL AND expires_at > now()`                                                                                                                                 |
@@ -392,8 +399,8 @@ Nếu bỏ shift management, hai bảng này có thể để trống mà không 
 | `size_sqm`                                     | NUMERIC(6,2)  | NULL                                         |                                                                                                                                 |
 | `is_active`                                    | BOOLEAN       | NOT NULL default true                        | Ngừng bán loại phòng mà không xóa                                                                                        |
 | `sort_order`                                   | SMALLINT      | NOT NULL default 0                           | Dòng 199 phòng nổi bật                                                                                                      |
-| `pay_at_hotel_enabled`                         | BOOLEAN       | NOT NULL default true                         | Admin bật/tắt option "Thanh toán tại khách sạn" cho RoomType. Option này luôn dùng policy `NON_REFUND` khi tạo booking. |
-| `pay_at_hotel_price_adjustment_percent`        | NUMERIC(5,2)  | NOT NULL default 10, CHECK`BETWEEN 0 AND 100` | Phụ thu cho option thanh toán tại khách sạn. Tách khỏi `NON_REFUND` để online non-refundable vẫn có thể giữ giá gốc. |
+| `pay_at_hotel_enabled`                         | BOOLEAN       | NOT NULL default false                        | Cột legacy giữ tương thích schema; option thanh toán tại khách sạn đã bị vô hiệu hóa và không còn editable trong admin. |
+| `pay_at_hotel_price_adjustment_percent`        | NUMERIC(5,2)  | NOT NULL default 0, CHECK`BETWEEN 0 AND 100`  | Cột legacy; luôn giữ 0 vì option thanh toán tại khách sạn không còn được bán. |
 | `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ   |                                              |                                                                                                                                 |
 
 ### 4.2. `room_type_cancellation_policies`
@@ -408,7 +415,7 @@ Bảng nối cấu hình **các policy hủy bán theo kênh thanh toán online*
 | `is_active`              | BOOLEAN      | NOT NULL default true                          | Tắt một option mà không xóa cấu hình |
 | `sort_order`             | INT          | NOT NULL default 0                             | Thứ tự hiển thị option trên trang booking |
 
-UNIQUE(`room_type_id`, `cancellation_policy_id`) — một RoomType không có hai option online trùng policy. RoomType active phải có ít nhất một option bán: hoặc `pay_at_hotel_enabled=true`, hoặc có ít nhất một dòng active trong bảng này.
+UNIQUE(`room_type_id`, `cancellation_policy_id`) — một RoomType không có hai option online trùng policy. RoomType active phải có ít nhất một dòng policy online active trong bảng này.
 
 ### 4.3. `room_type_beds`
 
@@ -520,8 +527,7 @@ Giá theo mùa/cuối tuần/dịp lễ. Dòng 75 yêu cầu "tính số đêm l
 | Cột                          | Kiểu         | Ràng buộc                    | Giải thích                                                                                                                      |
 | ----------------------------- | ------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                        | BIGINT        | PK                             |                                                                                                                                   |
-| `room_type_id`              | BIGINT        | NULL, FK→room_types CASCADE   |                                                                                                                                   |
-| `room_id`                   | BIGINT        | NULL, FK→rooms CASCADE        |                                                                                                                                   |
+| `room_type_id`              | BIGINT        | NOT NULL, FK→room_types CASCADE | Rule áp dụng cho toàn bộ phòng thuộc loại phòng này                                                                                |
 | `name`                      | VARCHAR(120)  | NOT NULL                       | "Tết 2027", "Cuối tuần hè"                                                                                                    |
 | `start_date` / `end_date` | DATE          | NOT NULL, CHECK`end > start` |                                                                                                                                   |
 | `price`                     | NUMERIC(14,2) | NOT NULL, CHECK`>= 0`        | Giá tuyệt đối cho một đêm                                                                                                  |
@@ -529,7 +535,7 @@ Giá theo mùa/cuối tuần/dịp lễ. Dòng 75 yêu cầu "tính số đêm l
 | `priority`                  | SMALLINT      | NOT NULL default 0             | Khi nhiều rule trùng ngày, lấy`priority` cao nhất. Bắt buộc phải có, nếu không kết quả tính giá là ngẫu nhiên |
 | `is_active`                 | BOOLEAN       | NOT NULL default true          |                                                                                                                                   |
 
-CHECK: `(room_type_id IS NOT NULL) <> (room_id IS NOT NULL)` — đúng một trong hai, tránh dòng vừa gắn loại phòng vừa gắn phòng gây nhập nhằng.
+Rate override luôn phải có `room_type_id`, áp dụng cho toàn bộ phòng thuộc loại phòng đó. Không hỗ trợ cấu hình giá riêng theo từng `room_id`.
 
 Thứ tự tính giá một đêm: `rate_override` (priority cao nhất) → `rooms.price_override` → `room_types.base_price`.
 
@@ -660,8 +666,6 @@ Giữ thông tin **đơn đặt** và **người liên hệ**. Không giữ kho�
 | `discount_total`                     | NUMERIC(14,2)          | NOT NULL default 0, CHECK`>= 0`              | Giảm giá mức booking                                                                                                                                                                                                                             |
 | `tax_total`                          | NUMERIC(14,2)          | NOT NULL default 0, CHECK`>= 0`              | VAT + phí dịch vụ                                                                                                                                                                                                                                |
 | `total_amount`                       | NUMERIC(14,2)          | NOT NULL, CHECK`>= 0`                        | Số phải trả cuối cùng                                                                                                                                                                                                                          |
-| `deposit_percent_snapshot`            | NUMERIC(5,2)           | NOT NULL, CHECK`> 0 AND <= 100`              | Tỷ lệ đặt cọc áp dụng khi tạo booking. Lấy từ cấu hình khách sạn và không thay đổi khi cấu hình về sau được sửa.                                                                                                                               |
-| `required_deposit_amount`             | NUMERIC(14,2)          | NOT NULL, CHECK`>= 0 AND <= total_amount`    | Số tiền đặt cọc phải thu, tính và snapshot cùng booking. Phát sinh dịch vụ sau đó không được làm tăng khoản cọc này.                                                                                                                            |
 | `paid_amount`                        | NUMERIC(14,2)          | NOT NULL default 0, CHECK`>= 0`              | **Tổng payment SUCCEEDED đã nhận. Không bị giảm khi refund** — xem 7.6                                                                                                                                                                |
 | `refunded_amount`                    | NUMERIC(14,2)          | NOT NULL default 0, CHECK`>= 0`              | Tổng refund COMPLETED.`net_received = paid_amount - refunded_amount`                                                                                                                                                                             |
 | `room_tax_percent_snapshot`          | NUMERIC(5,2)           | NOT NULL default 0, CHECK`BETWEEN 0 AND 100` | Thuế suất áp cho tiền phòng, chốt lúc tạo booking. Cần để`tax_total` và dòng ROOM trên hóa đơn tính lại được từ snapshot mà không đọc config hiện tại. **Cần business xác nhận thuế suất** — xem mục 14 |
@@ -693,8 +697,6 @@ Ràng buộc mức bảng:
 
 ```sql
 CHECK (total_amount = rooms_total + services_total + tax_total - discount_total)
-CHECK (deposit_percent_snapshot > 0 AND deposit_percent_snapshot <= 100)
-CHECK (required_deposit_amount >= 0 AND required_deposit_amount <= total_amount)
 CHECK (paid_amount     <= total_amount + 0.01)   -- chặn thu quá
 CHECK (refunded_amount <= paid_amount)           -- không hoàn quá số đã thu
 CHECK (status <> 'CHECKED_IN'  OR checked_in_at  IS NOT NULL)   -- BR-010
@@ -926,7 +928,9 @@ CHECK ((actor_type = 'USER'   AND changed_by IS NOT NULL)
     OR (actor_type = 'SYSTEM' AND changed_by IS NULL))
 ```
 
-**Append-only.** Chặn bằng trigger, không chỉ bằng quy ước:
+**Append-only.** Chặn bằng trigger, không chỉ bằng quy ước. Ngoại lệ duy nhất là service hard-delete
+toàn bộ aggregate chưa thanh toán của một booking `PENDING`; trigger cho phép xóa timeline trong
+trường hợp này sau khi đã chứng minh booking chưa có payment thành công.
 
 ```sql
 DELIMITER $$
@@ -950,11 +954,19 @@ Index: `(booking_id, created_at)`.
 
 ### 6.7. Không hard delete booking đã phát sinh nghiệp vụ
 
-Booking ở trạng thái `CONFIRMED / CHECKED_IN / CHECKED_OUT / CANCELLED / NO_SHOW` **không được hard delete**, và các dữ liệu con phải được giữ: `booking_rooms`, `booking_room_nights`, `booking_guests`, `booking_status_history`, `invoices`, `payments`.
+Booking ở trạng thái `CONFIRMED / CHECKED_IN / CHECKED_OUT / CANCELLED / NO_SHOW / EXPIRED` **không được hard delete**, và các dữ liệu con phải được giữ: `booking_rooms`, `booking_room_nights`, `booking_guests`, `booking_status_history`, `invoices`, `payments`.
 
 Vì vậy **mọi FK từ bảng con của booking dùng `ON DELETE RESTRICT`, không dùng CASCADE.** Bản trước dùng CASCADE cho `booking_rooms`/`booking_guests`/`booking_status_history` — một lệnh `DELETE FROM bookings WHERE id = ...` chạy tay sẽ xóa sạch cả timeline và lịch sử giá, vi phạm BR-008/BR-013. RESTRICT làm lệnh đó thất bại, đúng như mong muốn.
 
-Trường hợp duy nhất được xóa vật lý: booking **chưa từng chốt** (`PENDING` hoặc `EXPIRED`, chưa có payment thành công, chưa có invoice) — ví dụ dọn rác các hold bị bỏ sau nhiều tháng. Việc này làm qua một stored procedure ghi rõ giới hạn, xóa con trước cha trong một transaction:
+Booking `PENDING` chưa có payment thành công là ngoại lệ cho phép customer bấm **Xóa booking**.
+Service phải khóa booking, kiểm tra `paid_amount = 0`, không có payment `SUCCEEDED`/refund và không
+có invoice, sau đó xóa rooms, nights, guests, payment attempts/events chưa thành công, status history
+và booking trong cùng transaction. Không gửi email cancelled cho thao tác này. Booking hết hạn vẫn
+được giữ ở trạng thái `EXPIRED`; việc dọn dữ liệu kỹ thuật (nếu có) là quy trình riêng, không phải
+thao tác customer.
+
+Trường hợp purge kỹ thuật được xóa vật lý chỉ áp dụng cho booking **chưa từng chốt** và phải dùng
+procedure ghi rõ giới hạn, xóa con trước cha trong một transaction:
 
 ```sql
 CREATE PROCEDURE purge_abandoned_booking(IN p_booking_id BIGINT)
@@ -968,7 +980,7 @@ BEGIN
   IF v_status IS NULL THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Booking not found';
   END IF;
-  IF v_status NOT IN ('PENDING','EXPIRED') THEN
+  IF v_status <> 'PENDING' THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Booking has business activity, cannot delete';
   END IF;
 
@@ -989,7 +1001,19 @@ BEGIN
 END;
 ```
 
-Lưu ý `booking_status_history` có trigger chặn DELETE, nên procedure này cần chạy với quyền cho phép tạm vô hiệu trigger (`session_replication_role` hoặc một cờ trong trigger function). Nếu team muốn tuyệt đối không xóa gì, bỏ hai dòng cuối và chỉ giữ booking ở `EXPIRED` — tốn dung lượng nhưng đơn giản hơn.
+Trigger append-only có nhánh ngoại lệ kiểm tra booking `PENDING` chưa từng thanh toán thành công;
+không vô hiệu hóa trigger trên session ứng dụng.
+
+### 6.8. Quy tắc tạo booking website
+
+- Các bước chọn phòng, nhập liên hệ và xem giá chỉ là draft ở frontend; không ghi `bookings`.
+- Chỉ khi customer chọn phương thức thanh toán trực tuyến và bấm tiếp tục, backend mới khóa các phòng
+  khả dụng, kiểm tra overlap lần cuối, tính lại giá và tạo `PENDING` cùng `booking_rooms = RESERVED`
+  với `hold_expires_at` 15 phút. Nếu conflict thì không tạo payment.
+- Nguồn `WEBSITE` không được dùng `PAY_AT_HOTEL`; staff/admin xác nhận thủ công là ngoại lệ thu tiền
+  mặt ngoài payment ledger, ghi `booking_status_history.source = MANUAL` và không tự tạo payment.
+- `PENDING → CONFIRMED` tự động chỉ xảy ra khi payment có `SUCCEEDED`, `verified_at` hợp lệ và tổng
+  tiền đã nhận đạt `total_amount`.
 
 ---
 
@@ -1278,6 +1302,7 @@ Dòng 98-101, BR-006, BR-007.
 | `title`                                 | VARCHAR(200)  | NULL                                             |                                                                                       |
 | `comment`                               | TEXT          | NULL                                             | Dòng 100: bình luận                                                                |
 | `status`                                | review_status | NOT NULL default`PUBLISHED`                    | `PENDING / PUBLISHED / HIDDEN / REJECTED` — cần kiểm duyệt nội dung xúc phạm |
+| `moderation_reason`                     | TEXT          | NULL                                             | Lý do moderation hiện tại; bắt buộc khi `status='REJECTED'`, xóa khi chuyển sang `PUBLISHED` hoặc `HIDDEN` |
 | `staff_reply`                           | TEXT          | NULL                                             | Khách sạn phản hồi                                                                |
 | `staff_reply_by` / `staff_replied_at` |               | NULL                                             |                                                                                       |
 | `created_at` / `updated_at`           | TIMESTAMPTZ   | NOT NULL default now()                           |                                                                                       |
@@ -1291,7 +1316,7 @@ Danh mục nội dung email có version hiện tại để hệ thống render r
 | Cột                           | Kiểu         | Ràng buộc                | Giải thích                                                                                                                                    |
 | ------------------------------ | ------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                         | BIGINT        | PK                         |                                                                                                                                                 |
-| `code`                       | VARCHAR(60)   | NOT NULL, UNIQUE           | `EMAIL_VERIFICATION / PASSWORD_RESET / BOOKING_CONFIRMED / PAYMENT_SUCCESS / BOOKING_CANCELLED / PAYMENT_REFUND / ACCOUNT_ACTIVATED` |
+| `code`                       | VARCHAR(60)   | NOT NULL, UNIQUE           | `EMAIL_VERIFICATION / STAFF_INVITATION / PASSWORD_RESET / BOOKING_CONFIRMED / PAYMENT_SUCCESS / BOOKING_CANCELLED / PAYMENT_REFUND / ACCOUNT_ACTIVATED` |
 | `name`                       | VARCHAR(120)  | NOT NULL                   | Tên quản trị                                                                                                                              |
 | `description`                | TEXT          | NULL                       |                                                                                                                                                 |
 | `subject`                    | VARCHAR(300)  | NOT NULL                   | Có thể chứa placeholder `{{variable_name}}`                                                                                             |
@@ -1303,7 +1328,7 @@ Danh mục nội dung email có version hiện tại để hệ thống render r
 
 ### 7.11. `email_messages`
 
-Dòng 174-177 (Admin soạn), 178-193 (System gửi).
+Dòng 174-177 (back-office có `email:send` soạn theo booking), 178-193 (System gửi). Recipient của email soạn tay luôn là `bookings.contact_email`; không nhận recipient/CC/BCC từ client để tránh lạm dụng gửi mail.
 
 | Cột                           | Kiểu        | Ràng buộc                 | Giải thích                                                                                             |
 | ------------------------------ | ------------ | --------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -1568,11 +1593,11 @@ START TRANSACTION;
          COALESCE(
            (SELECT o.price FROM rate_overrides o
             WHERE o.is_active
-              AND (o.room_id = $16 OR o.room_type_id = rt.id)
+              AND o.room_type_id = rt.id
               AND n.stay_date BETWEEN o.start_date AND o.end_date - INTERVAL 1 DAY
               AND (o.weekdays IS NULL
                    OR JSON_CONTAINS(o.weekdays, CAST(DAYOFWEEK(n.stay_date) - 1 AS JSON)))
-            ORDER BY o.priority DESC, o.room_id IS NOT NULL DESC
+            ORDER BY o.priority DESC, o.id ASC
             LIMIT 1),
            r.price_override, rt.base_price)
   FROM nights n
@@ -2002,7 +2027,7 @@ Thay đổi schema so với bản đầu, theo nhóm.
 | Thêm P7–P10 vào nguyên tắc                | Ba tầng dữ liệu; không dùng SCD Type 2; một source of truth; enum vs bảng lookup               |
 | Thêm QĐ-5, QĐ-6                             | Sơ đồ ba mốc snapshot; khoảng ngày chỉ ở`booking_rooms`                                     |
 | Thêm view`v_booking_stay_range`             | Thay cho cột ngày đã bỏ ở`bookings`                                                           |
-| Thêm mục 6.7                                 | Chính sách không hard delete + procedure`purge_abandoned_booking` giới hạn cho PENDING/EXPIRED |
+| Thêm mục 6.7                                 | Chính sách không hard delete + procedure`purge_abandoned_booking` giới hạn cho PENDING chưa thanh toán |
 | Thêm mục 8.2, 8.4                            | Đồng bộ`booking_room_status`; danh sách 13 trigger cần viết                                   |
 | Thêm mục 11.1                                | Bảng source of truth cho mọi giá trị tiền                                                        |
 | Thêm query 9.5, 9.6, 9.7                      | Arrivals/departures theo`booking_rooms`; tính refund từ snapshot; view khoảng lưu trú          |

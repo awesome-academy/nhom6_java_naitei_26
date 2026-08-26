@@ -27,6 +27,18 @@ export {
 export { Checkbox } from "./checkbox";
 export { DataTable } from "./dataTable";
 export {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogOverlay,
+  DialogPortal,
+  DialogTitle,
+  DialogTrigger,
+} from "./dialog";
+export {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -44,6 +56,16 @@ export {
   FormMessage,
 } from "./form";
 export { Input } from "./input";
+export { Popover, PopoverContent, PopoverTrigger } from "./popover";
+export {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "./pagination";
 export { Label } from "./label";
 export { Separator } from "./separator";
 export {
@@ -56,6 +78,7 @@ export {
 export {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,

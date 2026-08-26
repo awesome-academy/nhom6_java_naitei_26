@@ -35,6 +35,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Renders invoice PDFs with OpenPDF and stores them in the MinIO "invoices" bucket.
@@ -52,6 +53,10 @@ public class InvoicePdfService {
             "Type", "Description", "Qty", "Unit Price", "Subtotal", "Discount", "Tax", "Total"
     };
     private static final float[] TABLE_WIDTHS = {8f, 30f, 7f, 12f, 12f, 10f, 9f, 12f};
+    private static final Set<InvoiceStatus> CUSTOMER_VISIBLE_STATUSES = Set.of(
+            InvoiceStatus.ISSUED,
+            InvoiceStatus.VOID
+    );
 
     private final InvoiceRepository invoiceRepository;
     private final InvoicePdfStorage invoicePdfStorage;
@@ -73,6 +78,41 @@ public class InvoicePdfService {
     @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
     public InvoicePdfResponse getDownloadUrl(String invoicePublicId) {
         Invoice invoice = getExistingInvoice(invoicePublicId);
+        return createDownloadUrl(invoice);
+    }
+
+    @PreAuthorize(PermissionExpressions.BOOKING_READ_OWN)
+    public InvoicePdfResponse getCustomerDownloadUrl(
+            String bookingPublicId,
+            String invoicePublicId,
+            Long userId
+    ) {
+        String normalizedBookingPublicId = normalizeRequiredId(
+                bookingPublicId,
+                "Booking public id"
+        );
+        String normalizedInvoicePublicId = normalizeRequiredId(
+                invoicePublicId,
+                "Invoice public id"
+        );
+        if (userId == null || userId <= 0) {
+            throw new BusinessValidationException("User id must be a positive number");
+        }
+        Invoice invoice = invoiceRepository
+                .findCustomerVisibleInvoice(
+                        normalizedInvoicePublicId,
+                        normalizedBookingPublicId,
+                        userId,
+                        CUSTOMER_VISIBLE_STATUSES
+                )
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Customer-visible invoice for booking",
+                        normalizedBookingPublicId
+                ));
+        return createDownloadUrl(invoice);
+    }
+
+    private InvoicePdfResponse createDownloadUrl(Invoice invoice) {
         if (invoice.getStatus() == InvoiceStatus.DRAFT) {
             throw new BusinessValidationException("Only an ISSUED or VOID invoice has a PDF");
         }
@@ -89,6 +129,17 @@ public class InvoicePdfService {
 
         InvoicePdfStorage.PresignedUrl downloadUrl = invoicePdfStorage.createDownloadUrl(objectKey);
         return new InvoicePdfResponse(downloadUrl.url(), downloadUrl.expiresAt());
+    }
+
+    private String normalizeRequiredId(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new BusinessValidationException(fieldName + " cannot be blank");
+        }
+        String normalized = value.strip();
+        if (normalized.length() > 36) {
+            throw new BusinessValidationException(fieldName + " must not exceed 36 characters");
+        }
+        return normalized;
     }
 
     private Invoice getExistingInvoice(String invoicePublicId) {

@@ -52,12 +52,12 @@ class PaymentLedgerServiceTest {
     }
 
     @Test
-    void synchronizeSuccessfulPaymentUpdatesBookingAndConfirmsWhenDepositIsMet() {
+    void synchronizeSuccessfulPaymentUpdatesBookingAndConfirmsWhenFullAmountIsPaid() {
         Booking booking = booking();
         Payment payment = Payment.builder()
                 .paymentCode("PAY-2026-001")
                 .booking(booking)
-                .amount(money("300000.00"))
+                .amount(money("1000000.00"))
                 .status(PaymentStatus.SUCCEEDED)
                 .verifiedAt(OffsetDateTime.now())
                 .build();
@@ -65,15 +65,15 @@ class PaymentLedgerServiceTest {
 
         when(bookingRepository.findForUpdateById(10L)).thenReturn(Optional.of(booking));
         when(paymentRepository.sumAmountsByBookingIdAndStatuses(eq(10L), any()))
-                .thenReturn(money("300000.00"));
+                .thenReturn(money("1000000.00"));
         when(refundRepository.sumAmountsByBookingIdAndStatus(10L, RefundStatus.COMPLETED))
                 .thenReturn(BigDecimal.ZERO);
 
         PaymentLedgerResult result = paymentLedgerService.synchronizeSuccessfulPayment(payment);
 
-        assertThat(booking.getPaidAmount()).isEqualByComparingTo("300000.00");
+        assertThat(booking.getPaidAmount()).isEqualByComparingTo("1000000.00");
         assertThat(booking.getRefundedAmount()).isEqualByComparingTo("0.00");
-        assertThat(booking.getPaymentStatus()).isEqualTo(BookingPaymentStatus.PARTIALLY_PAID);
+        assertThat(booking.getPaymentStatus()).isEqualTo(BookingPaymentStatus.PAID);
         assertThat(result.bookingPublicId()).isEqualTo("booking-public-id");
         assertThat(result.shouldConfirmBooking()).isTrue();
     }
@@ -120,7 +120,6 @@ class PaymentLedgerServiceTest {
                 .bookingCode("BK-2026-000001")
                 .status(BookingStatus.PENDING)
                 .totalAmount(money("1000000.00"))
-                .requiredDepositAmount(money("300000.00"))
                 .paidAmount(BigDecimal.ZERO)
                 .refundedAmount(BigDecimal.ZERO)
                 .build();

@@ -20,6 +20,8 @@ export const deletePendingBookingRoom = (
   bookingPublicId: string,
   bookingRoomId: number,
 ) => apiClient.delete<Booking | void>(`/api/bookings/${bookingPublicId}/rooms/${bookingRoomId}`);
+export const cancelBooking = (bookingPublicId: string, reason = "Customer requested cancellation") =>
+  apiClient.post<Booking>(`/api/bookings/${bookingPublicId}/cancel`, { reason });
 export const getAvailability = (checkInDate: string, checkOutDate: string) =>
   apiClient.get<Record<string, number[]>>(
     `/api/rooms/availability?checkInDate=${checkInDate}&checkOutDate=${checkOutDate}`,
@@ -27,7 +29,7 @@ export const getAvailability = (checkInDate: string, checkOutDate: string) =>
 export const calculateBookingPrice = (
   body: {
     roomTypeCode: string;
-    paymentOption: "ONLINE" | "PAY_AT_HOTEL";
+    paymentOption: "ONLINE";
     cancellationPolicyCode: string;
     checkInDate: string;
     checkOutDate: string;

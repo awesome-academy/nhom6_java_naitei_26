@@ -8,7 +8,7 @@ FE-3.1 gồm:
 
 - Danh sách Room Type chưa soft-delete, tìm kiếm theo code/tên và phân trang phía client.
 - Form tạo/sửa thông tin bán phòng, sức chứa, cấu hình giường và tiện nghi.
-- Upload nhiều ảnh trực tiếp lên bucket MinIO `room-images` bằng presigned URL.
+- Upload nhiều ảnh trực tiếp lên bucket MinIO `room-type-images` bằng presigned URL.
 - Confirm dialog trước khi soft-delete.
 - Ẩn/hiện thao tác theo permission trong access token.
 
@@ -89,7 +89,7 @@ Mỗi file thực hiện ba bước:
 }
 ```
 
-Backend kiểm tra Room Type, MIME, extension, kích thước và giới hạn số ảnh. Server sinh UUID cùng object key nội bộ:
+Backend kiểm tra Room Type, MIME, extension, kích thước và giới hạn số ảnh. Server sinh UUID cùng object key nội bộ trong bucket `room-type-images`:
 
 ```text
 room-types/{roomTypeId}/{uploadId}.{ext}

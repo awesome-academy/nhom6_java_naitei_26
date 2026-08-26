@@ -64,6 +64,16 @@ mybatis:
 server:
   port: ${SERVER_PORT:8080}
 
+hotel:
+  jobs:
+    hold-expiry-enabled: ${HOLD_EXPIRY_ENABLED:true}
+    hold-expiry-delay: ${HOLD_EXPIRY_DELAY:1m}
+    no-show-enabled: ${NO_SHOW_ENABLED:true}
+    no-show-delay: ${NO_SHOW_DELAY:1h}
+    expired-token-cleanup-enabled: ${EXPIRED_TOKEN_CLEANUP_ENABLED:true}
+    expired-token-cleanup-delay: ${EXPIRED_TOKEN_CLEANUP_DELAY:1h}
+    expired-token-retention: ${EXPIRED_TOKEN_RETENTION:30d}
+
 logging:
   level:
     root: INFO
@@ -97,7 +107,10 @@ app:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${MINIO_ACCESS_KEY:${MINIO_ROOT_USER:}}
     secret-key: ${MINIO_SECRET_KEY:${MINIO_ROOT_PASSWORD:}}
+    initialize-on-startup: ${MINIO_INITIALIZE_ON_STARTUP:true}
     room-images-bucket: ${MINIO_ROOM_IMAGES_BUCKET:room-images}
+    room-type-images-bucket: ${MINIO_ROOM_TYPE_IMAGES_BUCKET:room-type-images}
+    avatars-bucket: ${MINIO_AVATARS_BUCKET:avatars}
     upload-url-ttl: ${MINIO_UPLOAD_URL_TTL:1h}
     download-url-ttl: ${MINIO_DOWNLOAD_URL_TTL:15m}
     max-image-size-bytes: ${ROOM_IMAGE_MAX_SIZE_BYTES:10485760}
@@ -117,6 +130,7 @@ app:
     password-reset-token-ttl: ${AUTH_PASSWORD_RESET_TOKEN_TTL:30m}
     frontend-verify-url: ${FRONTEND_VERIFY_URL:http://localhost:3000/auth/verify-email}
     frontend-reset-url: ${FRONTEND_RESET_URL:http://localhost:3000/auth/reset-password}
+    frontend-staff-invitation-url: ${FRONTEND_STAFF_INVITATION_URL:http://localhost:3000/staff-invitation}
   guest-document:
     encryption-key: ${GUEST_DOCUMENT_ENCRYPTION_KEY:}
     lookup-hmac-key: ${GUEST_DOCUMENT_LOOKUP_HMAC_KEY:}

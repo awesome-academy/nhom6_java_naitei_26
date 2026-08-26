@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { storeTokens } from "@/lib/api/auth"
-import { isAdminUser } from "@/lib/admin-auth"
+import { isBackOfficeUser } from "@/lib/admin-auth"
 import { useAuth } from "@/lib/auth-context"
 import { useRouter } from "next/navigation"
 
@@ -63,9 +63,9 @@ function GoogleOAuthCallbackContent() {
 
         const { accessToken, refreshToken, user } = decoded
 
-        if (isAdminUser(user)) {
+        if (isBackOfficeUser(user)) {
           setStatus("error")
-          setErrorMessage("Tài khoản quản trị không đăng nhập bằng Google trên website khách hàng. Vui lòng dùng /admin/login.")
+          setErrorMessage("Tài khoản Manager không đăng nhập bằng Google trên website khách hàng. Vui lòng dùng /manager/login.")
           return
         }
 

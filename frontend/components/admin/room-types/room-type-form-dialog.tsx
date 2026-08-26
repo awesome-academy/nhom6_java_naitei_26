@@ -93,8 +93,6 @@ const roomTypeSchema = z
     sizeSqm: z.number().positive("Diện tích phải lớn hơn 0").nullable(),
     isActive: z.boolean(),
     sortOrder: z.number().int().min(0),
-    payAtHotelEnabled: z.boolean(),
-    payAtHotelPriceAdjustmentPercent: z.number().min(0).max(100),
     onlineCancellationPolicyCodes: z.array(z.string().trim().max(30)).max(20),
     beds: z
       .array(
@@ -122,11 +120,7 @@ const roomTypeSchema = z
         message: "Số trẻ em không được vượt quá sức chứa",
       })
     }
-    if (
-      value.isActive &&
-      !value.payAtHotelEnabled &&
-      value.onlineCancellationPolicyCodes.length === 0
-    ) {
+    if (value.isActive && value.onlineCancellationPolicyCodes.length === 0) {
       context.addIssue({
         code: "custom",
         path: ["onlineCancellationPolicyCodes"],
@@ -184,8 +178,6 @@ function defaultValues(roomType: RoomType | null): RoomTypeFormValues {
     sizeSqm: roomType?.sizeSqm == null ? null : Number(roomType.sizeSqm),
     isActive: roomType?.isActive ?? true,
     sortOrder: roomType?.sortOrder ?? 0,
-    payAtHotelEnabled: roomType?.payAtHotelEnabled ?? true,
-    payAtHotelPriceAdjustmentPercent: Number(roomType?.payAtHotelPriceAdjustmentPercent ?? 10),
     onlineCancellationPolicyCodes:
       roomType?.onlineCancellationPolicyOptions.map((option) => option.cancellationPolicy.code) ?? ["NON_REFUND"],
     beds: roomType?.beds.length
@@ -225,7 +217,6 @@ export function RoomTypeFormDialog({
   const watchedBeds = useWatch({ control: form.control, name: "beds" })
   const selectedAmenities = useWatch({ control: form.control, name: "amenityCodes" })
   const selectedPolicyCodes = useWatch({ control: form.control, name: "onlineCancellationPolicyCodes" }) ?? []
-  const payAtHotelEnabled = useWatch({ control: form.control, name: "payAtHotelEnabled" })
   const selectedName = useWatch({ control: form.control, name: "name" })
   const isActive = useWatch({ control: form.control, name: "isActive" })
 
@@ -332,8 +323,6 @@ export function RoomTypeFormDialog({
       sizeSqm: values.sizeSqm,
       isActive: values.isActive,
       sortOrder: values.sortOrder,
-      payAtHotelEnabled: values.payAtHotelEnabled,
-      payAtHotelPriceAdjustmentPercent: values.payAtHotelPriceAdjustmentPercent,
       onlineCancellationPolicyCodes: values.onlineCancellationPolicyCodes,
     }
 
@@ -483,31 +472,6 @@ export function RoomTypeFormDialog({
                         Chưa có policy active để chọn.
                       </p>
                     )}
-                  </div>
-                  <div className="grid gap-4 border-t pt-4 md:grid-cols-[1fr_180px]">
-                    <div className="flex items-center gap-3">
-                      <Switch
-                        checked={payAtHotelEnabled}
-                        onCheckedChange={(checked) => {
-                          form.setValue("payAtHotelEnabled", checked, {
-                            shouldDirty: true,
-                            shouldValidate: true,
-                          })
-                        }}
-                      />
-                      <div>
-                        <Label>Thanh toán tại khách sạn</Label>
-                        <p className="text-xs text-[var(--muted-foreground)]">
-                          Luôn dùng non-refundable cho option này.
-                        </p>
-                      </div>
-                    </div>
-                    <NumberField
-                      form={form}
-                      name="payAtHotelPriceAdjustmentPercent"
-                      label="Phụ thu (%)"
-                      step="0.01"
-                    />
                   </div>
                 </div>
                 {policyLoadError && (
@@ -757,7 +721,6 @@ interface NumberFieldProps {
     | "maxAdults"
     | "maxChildren"
     | "sortOrder"
-    | "payAtHotelPriceAdjustmentPercent"
   label: string
   step?: string
 }

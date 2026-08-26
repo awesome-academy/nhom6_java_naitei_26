@@ -81,6 +81,24 @@ public class QueuedEmailService implements EmailService {
 
     @Override
     @Transactional
+    public void sendStaffInvitationEmail(String toEmail, String fullName, String token) {
+        String invitationUrl = authProperties.frontendStaffInvitationUrl() + "?token=" + token;
+        queueTemplate(
+                EmailTemplateCode.STAFF_INVITATION,
+                toEmail,
+                null,
+                null,
+                Map.of(
+                        "invitationLink", invitationUrl,
+                        "token", valueOrEmpty(token),
+                        "email", valueOrEmpty(toEmail),
+                        "fullName", valueOrEmpty(fullName)
+                )
+        );
+    }
+
+    @Override
+    @Transactional
     public void sendPasswordResetEmail(String toEmail, String fullName, String token) {
         String resetUrl = authProperties.frontendResetUrl() + "?token=" + token;
         queueTemplate(
@@ -178,6 +196,33 @@ public class QueuedEmailService implements EmailService {
                         "currency", valueOrEmpty(booking.getCurrency())
                 )
         );
+    }
+
+    @Transactional
+    public EmailMessage queueCustomBookingEmail(
+            Booking booking,
+            String subject,
+            String body,
+            Long actorUserId
+    ) {
+        if (booking == null || booking.getContactEmail() == null || booking.getContactEmail().isBlank()) {
+            throw new EmailQueueException("Booking contact email is required");
+        }
+        String normalizedSubject = normalizeSubject(subject);
+        String normalizedBody = normalizeBody(body);
+        EmailMessage message = EmailMessage.builder()
+                .toEmail(normalizeEmail(booking.getContactEmail()))
+                .toUserId(getRecipientUserId(booking))
+                .subject(normalizedSubject)
+                .bodyText(normalizedBody)
+                .bodyHtml(toSafeHtml(normalizedBody))
+                .status(EmailStatus.QUEUED)
+                .attemptCount(0)
+                .scheduledAt(now())
+                .relatedBookingId(booking.getId())
+                .createdBy(actorUserId)
+                .build();
+        return emailMessageRepository.save(message);
     }
 
     @Transactional
@@ -323,6 +368,40 @@ public class QueuedEmailService implements EmailService {
             log.warn("Rejected invalid email recipient", exception);
             throw new EmailQueueException("Email recipient is invalid", exception);
         }
+    }
+
+    private String normalizeSubject(String subject) {
+        if (subject == null) {
+            throw new EmailQueueException("Email subject is required");
+        }
+        String normalized = subject.strip();
+        if (normalized.isEmpty() || normalized.length() > 300
+                || normalized.indexOf('\r') >= 0 || normalized.indexOf('\n') >= 0) {
+            throw new EmailQueueException("Email subject is invalid");
+        }
+        return normalized;
+    }
+
+    private String normalizeBody(String body) {
+        if (body == null) {
+            throw new EmailQueueException("Email body is required");
+        }
+        String normalized = body.strip();
+        if (normalized.isEmpty() || normalized.length() > 10_000) {
+            throw new EmailQueueException("Email body is invalid");
+        }
+        return normalized;
+    }
+
+    private String toSafeHtml(String body) {
+        return body.replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#x27;")
+                .replace("\n", "<br>");
     }
 
     private String truncateError(Throwable failure) {

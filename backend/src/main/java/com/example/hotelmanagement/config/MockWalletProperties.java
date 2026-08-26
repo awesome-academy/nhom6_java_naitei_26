@@ -13,4 +13,8 @@ public class MockWalletProperties {
 
     private boolean enabled;
     private String checkoutBaseUrl = "http://localhost:3000/payment/mock-wallet";
+
+    public void setCheckoutBaseUrl(String checkoutBaseUrl) {
+        this.checkoutBaseUrl = checkoutBaseUrl;
+    }
 }

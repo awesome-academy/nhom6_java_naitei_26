@@ -8,6 +8,7 @@ BE-2.5 cung cấp API cho Admin định nghĩa ca trực và phân công Staff v
 - `shift_assignments` là snapshot lịch đã phân công, gồm thời điểm bắt đầu và kết thúc thực tế.
 - BR-014 yêu cầu người gọi có permission `shift:manage`.
 - BR-015 không cho một Staff có hai assignment hiệu lực bị overlap.
+- Chỉ Staff có role `STAFF`, User `ACTIVE`, email đã xác thực và employment status `ACTIVE` mới được phân ca.
 
 ## 2. API contract
 
@@ -26,7 +27,19 @@ Tất cả endpoint dưới đây cần access token hợp lệ và authority `s
 | `PUT` | `/api/shift-assignments/{publicId}` | Đổi Staff, ca, ngày, trạng thái hoặc ghi chú |
 | `DELETE` | `/api/shift-assignments/{publicId}` | Set `status=CANCELLED`, trả `204 No Content` |
 
+Staff tự phục vụ lịch cá nhân qua các endpoint sau. Backend lấy StaffProfile từ user trong JWT, không nhận `employeeCode` từ client:
+
+| Method | Endpoint | Quyền | Kết quả |
+| --- | --- | --- | --- |
+| `GET` | `/api/staff/shift-assignments?from=YYYY-MM-DD&to=YYYY-MM-DD` | `shift:read_own` | Assignment của Staff hiện tại trong khoảng ngày |
+| `POST` | `/api/staff/shift-assignments/{publicId}/complete` | `shift:update_own` | Chuyển `SCHEDULED` thành `COMPLETED` sau giờ kết thúc ca |
+| `POST` | `/api/staff/shift-assignments/{publicId}/absent` | `shift:update_own` | Chuyển `SCHEDULED` thành `ABSENT`, bắt buộc có `note` |
+
+Staff chỉ được cập nhật assignment của chính mình. Các trạng thái khác `SCHEDULED` không được cập nhật lại. Thời điểm hiện tại được kiểm tra theo instant của `shift_end_at`; timezone hiển thị/lập lịch vẫn là timezone khách sạn.
+
 `POST /api/shift-assignments` nhận `employeeCode`, `shiftCode`, `workDate` và `note`. Client không được truyền `assignedBy`; backend lấy user ID từ JWT principal.
+
+Staff chỉ được phân assignment khi `employment_status=ACTIVE`. Staff `ON_LEAVE` vẫn có thể đăng nhập nhưng bị từ chối assignment mới; Staff `TERMINATED` không thể đăng nhập, không thể khôi phục và chỉ còn dữ liệu lịch sử.
 
 ## 3. Flow quản lý Shift
 

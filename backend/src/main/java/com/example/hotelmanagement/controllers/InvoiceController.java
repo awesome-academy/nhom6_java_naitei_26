@@ -3,6 +3,7 @@ package com.example.hotelmanagement.controllers;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import com.example.hotelmanagement.dto.invoice.InvoiceAdjustmentRequest;
+import com.example.hotelmanagement.dto.invoice.InvoiceBuyerUpdateRequest;
 import com.example.hotelmanagement.dto.invoice.InvoicePdfResponse;
 import com.example.hotelmanagement.dto.invoice.InvoiceResponse;
 import com.example.hotelmanagement.dto.invoice.InvoiceVoidRequest;
@@ -20,13 +21,13 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(value = "/api", produces = MediaType.APPLICATION_JSON_VALUE)
-@PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
 @Tag(name = "Invoices", description = "Manage draft invoice details and invoice lookup.")
 public class InvoiceController {
 
@@ -39,11 +40,13 @@ public class InvoiceController {
     }
 
     @GetMapping("/invoices/{invoicePublicId}/pdf")
+    @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
     public ResponseEntity<InvoicePdfResponse> getPdf(@PathVariable String invoicePublicId) {
         return ResponseEntity.ok(invoicePdfService.getDownloadUrl(invoicePublicId));
     }
 
     @PostMapping("/invoices/{invoicePublicId}/issue")
+    @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
     public ResponseEntity<InvoiceResponse> issue(
             @PathVariable String invoicePublicId,
             @AuthenticationPrincipal UserPrincipal principal
@@ -63,6 +66,7 @@ public class InvoiceController {
 
     @Operation(summary = "Get Invoice")
     @GetMapping("/invoices/{invoicePublicId}")
+    @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
     public ResponseEntity<InvoiceResponse> getInvoice(
             @PathVariable String invoicePublicId
     ) {
@@ -71,10 +75,24 @@ public class InvoiceController {
 
     @Operation(summary = "Get Draft By Booking")
     @GetMapping("/bookings/{bookingPublicId}/invoices/draft")
+    @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
     public ResponseEntity<InvoiceResponse> getDraftByBooking(
             @PathVariable String bookingPublicId
     ) {
         return ResponseEntity.ok(invoiceService.getDraftByBooking(bookingPublicId));
+    }
+
+    @Operation(summary = "Update Draft Invoice Buyer")
+    @PutMapping(
+            value = "/invoices/{invoicePublicId}/buyer",
+            consumes = MediaType.APPLICATION_JSON_VALUE
+    )
+    @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
+    public ResponseEntity<InvoiceResponse> updateBuyer(
+            @PathVariable String invoicePublicId,
+            @Valid @RequestBody InvoiceBuyerUpdateRequest request
+    ) {
+        return ResponseEntity.ok(invoiceService.updateBuyer(invoicePublicId, request));
     }
 
     @Operation(summary = "Add Adjustment")
@@ -82,6 +100,7 @@ public class InvoiceController {
             value = "/invoices/{invoicePublicId}/adjustments",
             consumes = MediaType.APPLICATION_JSON_VALUE
     )
+    @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
     public ResponseEntity<InvoiceResponse> addAdjustment(
             @PathVariable String invoicePublicId,
             @Valid @RequestBody InvoiceAdjustmentRequest request
@@ -91,6 +110,7 @@ public class InvoiceController {
 
     @Operation(summary = "Remove Adjustment")
     @DeleteMapping("/invoices/{invoicePublicId}/adjustments/{itemId}")
+    @PreAuthorize(PermissionExpressions.INVOICE_ISSUE)
     public ResponseEntity<InvoiceResponse> removeAdjustment(
             @PathVariable String invoicePublicId,
             @PathVariable Long itemId

@@ -7,7 +7,9 @@ import java.io.Serializable;
 import java.time.OffsetDateTime;
 
 @Entity
-@Table(name = "user_roles")
+@Table(name = "user_roles", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_user_roles_user", columnNames = "user_id")
+})
 @Getter
 @Setter
 @NoArgsConstructor

@@ -5,13 +5,11 @@ import com.example.hotelmanagement.dto.pricing.RateOverrideResponse;
 import com.example.hotelmanagement.dto.pricing.RateOverrideUpdateRequest;
 import com.example.hotelmanagement.dto.pricing.RoomTypeRateOverrideCreateRequest;
 import com.example.hotelmanagement.entity.RateOverride;
-import com.example.hotelmanagement.entity.Room;
 import com.example.hotelmanagement.entity.RoomType;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.RateOverrideConflictException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.RateOverrideRepository;
-import com.example.hotelmanagement.repositories.RoomRepository;
 import com.example.hotelmanagement.repositories.RoomTypeRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import jakarta.validation.Valid;
@@ -35,18 +33,15 @@ public class RateOverrideService {
 
     private final RateOverrideRepository rateOverrideRepository;
     private final RoomTypeRepository roomTypeRepository;
-    private final RoomRepository roomRepository;
     private final RateOverrideWeekdayCodec weekdayCodec;
 
     public RateOverrideService(
             RateOverrideRepository rateOverrideRepository,
             RoomTypeRepository roomTypeRepository,
-            RoomRepository roomRepository,
             RateOverrideWeekdayCodec weekdayCodec
     ) {
         this.rateOverrideRepository = rateOverrideRepository;
         this.roomTypeRepository = roomTypeRepository;
-        this.roomRepository = roomRepository;
         this.weekdayCodec = weekdayCodec;
     }
 
@@ -66,7 +61,6 @@ public class RateOverrideService {
     public RateOverrideResponse createRateOverride(@Valid RateOverrideCreateRequest request) {
         validateRateOverrideData(
                 request.roomTypeId(),
-                request.roomId(),
                 request.name(),
                 request.startDate(),
                 request.endDate(),
@@ -74,11 +68,9 @@ public class RateOverrideService {
                 request.weekdays(),
                 request.priority()
         );
-        RateOverrideTarget target = resolveTarget(request.roomTypeId(), request.roomId());
-        return createRateOverrideForTarget(
-                target,
-                request.roomTypeId(),
-                request.roomId(),
+        RoomType roomType = resolveRoomType(request.roomTypeId());
+        return createRateOverrideForRoomType(
+                roomType,
                 request.name(),
                 request.startDate(),
                 request.endDate(),
@@ -105,10 +97,8 @@ public class RateOverrideService {
                 .orElseThrow(() -> new ResourceNotFoundException("Room type", normalizedCode));
         validatePositiveId(roomType.getId(), "Room type id");
 
-        return createRateOverrideForTarget(
-                new RateOverrideTarget(roomType, null),
-                roomType.getId(),
-                null,
+        return createRateOverrideForRoomType(
+                roomType,
                 request.name(),
                 request.startDate(),
                 request.endDate(),
@@ -125,7 +115,6 @@ public class RateOverrideService {
         RateOverride rateOverride = getExistingRateOverride(id);
         validateRateOverrideData(
                 request.roomTypeId(),
-                request.roomId(),
                 request.name(),
                 request.startDate(),
                 request.endDate(),
@@ -133,10 +122,8 @@ public class RateOverrideService {
                 request.weekdays(),
                 request.priority()
         );
-        RateOverrideTarget target = resolveTarget(request.roomTypeId(), request.roomId());
         validateNoConflict(
                 request.roomTypeId(),
-                request.roomId(),
                 request.startDate(),
                 request.endDate(),
                 request.weekdays(),
@@ -144,8 +131,7 @@ public class RateOverrideService {
                 rateOverride.getId()
         );
 
-        rateOverride.setRoomType(target.roomType());
-        rateOverride.setRoom(target.room());
+        rateOverride.setRoomType(resolveRoomType(request.roomTypeId()));
         rateOverride.setName(request.name().strip());
         rateOverride.setStartDate(request.startDate());
         rateOverride.setEndDate(request.endDate());
@@ -168,22 +154,14 @@ public class RateOverrideService {
                 .orElseThrow(() -> new ResourceNotFoundException("Rate override", id.toString()));
     }
 
-    private RateOverrideTarget resolveTarget(Long roomTypeId, Long roomId) {
-        if (roomId != null) {
-            Room room = roomRepository.findByIdAndDeletedAtIsNull(roomId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Room", roomId.toString()));
-            return new RateOverrideTarget(null, room);
-        }
-
+    private RoomType resolveRoomType(Long roomTypeId) {
         RoomType roomType = roomTypeRepository.findByIdAndDeletedAtIsNull(roomTypeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Room type", roomTypeId.toString()));
-        return new RateOverrideTarget(roomType, null);
+        return roomType;
     }
 
-    private RateOverrideResponse createRateOverrideForTarget(
-            RateOverrideTarget target,
-            Long roomTypeId,
-            Long roomId,
+    private RateOverrideResponse createRateOverrideForRoomType(
+            RoomType roomType,
             String name,
             LocalDate startDate,
             LocalDate endDate,
@@ -192,8 +170,7 @@ public class RateOverrideService {
             Integer priority
     ) {
         validateNoConflict(
-                roomTypeId,
-                roomId,
+                roomType.getId(),
                 startDate,
                 endDate,
                 weekdays,
@@ -201,8 +178,7 @@ public class RateOverrideService {
                 null
         );
         RateOverride rateOverride = RateOverride.builder()
-                .roomType(target.roomType())
-                .room(target.room())
+                .roomType(roomType)
                 .name(name.strip())
                 .startDate(startDate)
                 .endDate(endDate)
@@ -216,7 +192,6 @@ public class RateOverrideService {
 
     private void validateRateOverrideData(
             Long roomTypeId,
-            Long roomId,
             String name,
             LocalDate startDate,
             LocalDate endDate,
@@ -224,17 +199,7 @@ public class RateOverrideService {
             Set<Integer> weekdays,
             Integer priority
     ) {
-        if ((roomTypeId == null) == (roomId == null)) {
-            throw new BusinessValidationException(
-                    "Exactly one of roomTypeId or roomId must be provided"
-            );
-        }
-        if (roomTypeId != null) {
-            validatePositiveId(roomTypeId, "Room type id");
-        }
-        if (roomId != null) {
-            validatePositiveId(roomId, "Room id");
-        }
+        validatePositiveId(roomTypeId, "Room type id");
         validateRateOverrideFields(name, startDate, endDate, price, weekdays, priority);
     }
 
@@ -292,7 +257,6 @@ public class RateOverrideService {
 
     private void validateNoConflict(
             Long roomTypeId,
-            Long roomId,
             LocalDate startDate,
             LocalDate endDate,
             Set<Integer> weekdays,
@@ -300,7 +264,6 @@ public class RateOverrideService {
             Long excludedId
     ) {
         List<RateOverride> candidates = rateOverrideRepository.findActiveConflicts(
-                roomId,
                 roomTypeId,
                 startDate,
                 endDate,
@@ -380,7 +343,6 @@ public class RateOverrideService {
                 rateOverride.getId(),
                 rateOverride.getRoomType() == null ? null : rateOverride.getRoomType().getCode(),
                 rateOverride.getRoomType() == null ? null : rateOverride.getRoomType().getName(),
-                rateOverride.getRoom() == null ? null : rateOverride.getRoom().getRoomNumber(),
                 rateOverride.getName(),
                 rateOverride.getStartDate(),
                 rateOverride.getEndDate(),
@@ -393,6 +355,4 @@ public class RateOverrideService {
         );
     }
 
-    private record RateOverrideTarget(RoomType roomType, Room room) {
-    }
 }

@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.refund.RefundCompleteRequest;
+import com.example.hotelmanagement.audit.AuditMutation;
 import com.example.hotelmanagement.dto.refund.RefundResponse;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.BookingRoom;
@@ -149,6 +150,12 @@ public class RefundService {
 
     /** PENDING -> PROCESSING. See the class-level note about the requested APPROVED status. */
     @PreAuthorize(PermissionExpressions.REFUND_APPROVE)
+    @AuditMutation(
+            action = "REFUND_APPROVED",
+            entityType = "refund",
+            entityIdArgumentIndex = 1,
+            actorUserIdArgumentIndex = 2
+    )
     public RefundResponse approve(String bookingPublicId, Long refundId, Long actorUserId) {
         Refund refund = getRefundForUpdate(bookingPublicId, refundId);
         if (refund.getStatus() != RefundStatus.PENDING) {
@@ -161,6 +168,7 @@ public class RefundService {
 
     /** PROCESSING -> COMPLETED. Synchronizes the payment/booking/invoice ledger in-transaction. */
     @PreAuthorize(PermissionExpressions.REFUND_APPROVE)
+    @AuditMutation(action = "REFUND_COMPLETED", entityType = "refund", entityIdArgumentIndex = 1)
     public RefundResponse complete(String bookingPublicId, Long refundId, RefundCompleteRequest request) {
         Refund refund = getRefundForUpdate(bookingPublicId, refundId);
         if (refund.getStatus() != RefundStatus.PROCESSING) {

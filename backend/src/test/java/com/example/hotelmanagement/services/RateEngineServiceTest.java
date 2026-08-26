@@ -68,8 +68,7 @@ class RateEngineServiceTest {
                 new DailyRateResponse(LocalDate.of(2026, 8, 21), money("1000.00")),
                 new DailyRateResponse(LocalDate.of(2026, 8, 22), money("1000.00"))
         ), rates);
-        verify(rateOverrideRepository).findActiveOverridesForPricing(
-                ROOM_ID,
+        verify(rateOverrideRepository).findActiveRoomTypeOverridesForPricing(
                 ROOM_TYPE_ID,
                 CHECK_IN_DATE,
                 checkOutDate
@@ -96,13 +95,7 @@ class RateEngineServiceTest {
         Room room = createRoom(money("1200.00"));
         LocalDate checkOutDate = LocalDate.of(2026, 8, 22);
         RateOverride rateOverride = createRoomTypeOverride(
-                1L,
-                1,
-                money("900.00"),
-                CHECK_IN_DATE,
-                CHECK_OUT_DATE,
-                null,
-                room
+                1L, 1, money("900.00"), CHECK_IN_DATE, CHECK_OUT_DATE, null
         );
         stubPricingData(room, checkOutDate, List.of(rateOverride));
 
@@ -120,10 +113,10 @@ class RateEngineServiceTest {
         Room room = createRoom(null);
         LocalDate checkOutDate = LocalDate.of(2026, 8, 22);
         RateOverride lowPriority = createRoomTypeOverride(
-                1L, 5, money("900.00"), CHECK_IN_DATE, CHECK_OUT_DATE, null, room
+                1L, 5, money("900.00"), CHECK_IN_DATE, CHECK_OUT_DATE, null
         );
         RateOverride highPriority = createRoomTypeOverride(
-                2L, 10, money("800.00"), CHECK_IN_DATE, CHECK_OUT_DATE, null, room
+                2L, 10, money("800.00"), CHECK_IN_DATE, CHECK_OUT_DATE, null
         );
         stubPricingData(room, checkOutDate, List.of(lowPriority, highPriority));
 
@@ -145,8 +138,7 @@ class RateEngineServiceTest {
                 money("1500.00"),
                 CHECK_IN_DATE,
                 CHECK_OUT_DATE,
-                "[6, 7]",
-                room
+                "[6, 7]"
         );
         stubPricingData(room, CHECK_OUT_DATE, List.of(weekendRate));
 
@@ -165,37 +157,16 @@ class RateEngineServiceTest {
     }
 
     @Test
-    void calculateDailyRatesPrefersRoomSpecificOverrideAtEqualPriority() {
+    void calculateDailyRatesRejectsEqualPriorityOverridesForSameRoomType() {
         Room room = createRoom(null);
         LocalDate checkOutDate = LocalDate.of(2026, 8, 22);
         RateOverride roomTypeRate = createRoomTypeOverride(
-                1L, 5, money("900.00"), CHECK_IN_DATE, CHECK_OUT_DATE, null, room
+                1L, 5, money("900.00"), CHECK_IN_DATE, CHECK_OUT_DATE, null
         );
-        RateOverride roomRate = createRoomOverride(
-                2L, 5, money("850.00"), CHECK_IN_DATE, CHECK_OUT_DATE, null, room
+        RateOverride secondRoomTypeRate = createRoomTypeOverride(
+                2L, 5, money("850.00"), CHECK_IN_DATE, CHECK_OUT_DATE, null
         );
-        stubPricingData(room, checkOutDate, List.of(roomTypeRate, roomRate));
-
-        List<DailyRateResponse> rates = rateEngineService.calculateDailyRates(
-                ROOM_ID,
-                CHECK_IN_DATE,
-                checkOutDate
-        );
-
-        assertEquals(money("850.00"), rates.getFirst().price());
-    }
-
-    @Test
-    void calculateDailyRatesRejectsEqualPriorityAndSpecificity() {
-        Room room = createRoom(null);
-        LocalDate checkOutDate = LocalDate.of(2026, 8, 22);
-        RateOverride firstRoomRate = createRoomOverride(
-                1L, 5, money("900.00"), CHECK_IN_DATE, CHECK_OUT_DATE, null, room
-        );
-        RateOverride secondRoomRate = createRoomOverride(
-                2L, 5, money("850.00"), CHECK_IN_DATE, CHECK_OUT_DATE, null, room
-        );
-        stubPricingData(room, checkOutDate, List.of(firstRoomRate, secondRoomRate));
+        stubPricingData(room, checkOutDate, List.of(roomTypeRate, secondRoomTypeRate));
 
         assertThrows(
                 PricingConfigurationException.class,
@@ -211,8 +182,8 @@ class RateEngineServiceTest {
     void calculateDailyRatesRejectsMalformedWeekdays() {
         Room room = createRoom(null);
         LocalDate checkOutDate = LocalDate.of(2026, 8, 22);
-        RateOverride malformedRate = createRoomOverride(
-                1L, 5, money("900.00"), CHECK_IN_DATE, CHECK_OUT_DATE, "[6, invalid]", room
+        RateOverride malformedRate = createRoomTypeOverride(
+                1L, 5, money("900.00"), CHECK_IN_DATE, CHECK_OUT_DATE, "[6, invalid]"
         );
         stubPricingData(room, checkOutDate, List.of(malformedRate));
 
@@ -230,8 +201,8 @@ class RateEngineServiceTest {
     void calculateDailyRatesRejectsUnsupportedWeekdayNumber() {
         Room room = createRoom(null);
         LocalDate checkOutDate = LocalDate.of(2026, 8, 22);
-        RateOverride malformedRate = createRoomOverride(
-                1L, 5, money("900.00"), CHECK_IN_DATE, CHECK_OUT_DATE, "[0, 7]", room
+        RateOverride malformedRate = createRoomTypeOverride(
+                1L, 5, money("900.00"), CHECK_IN_DATE, CHECK_OUT_DATE, "[0, 7]"
         );
         stubPricingData(room, checkOutDate, List.of(malformedRate));
 
@@ -264,8 +235,7 @@ class RateEngineServiceTest {
                 () -> rateEngineService.calculateDailyRates(ROOM_ID, CHECK_IN_DATE, CHECK_OUT_DATE)
         );
 
-        verify(rateOverrideRepository, never()).findActiveOverridesForPricing(
-                ROOM_ID,
+        verify(rateOverrideRepository, never()).findActiveRoomTypeOverridesForPricing(
                 ROOM_TYPE_ID,
                 CHECK_IN_DATE,
                 CHECK_OUT_DATE
@@ -278,8 +248,7 @@ class RateEngineServiceTest {
             List<RateOverride> rateOverrides
     ) {
         when(roomRepository.findByIdAndDeletedAtIsNull(ROOM_ID)).thenReturn(Optional.of(room));
-        when(rateOverrideRepository.findActiveOverridesForPricing(
-                ROOM_ID,
+        when(rateOverrideRepository.findActiveRoomTypeOverridesForPricing(
                 ROOM_TYPE_ID,
                 CHECK_IN_DATE,
                 checkOutDate
@@ -287,6 +256,19 @@ class RateEngineServiceTest {
     }
 
     private Room createRoom(BigDecimal priceOverride) {
+        RoomType roomType = createRoomType();
+
+        Room room = Room.builder()
+                .roomNumber("A101")
+                .roomType(roomType)
+                .priceOverride(priceOverride)
+                .isActive(true)
+                .build();
+        room.setId(ROOM_ID);
+        return room;
+    }
+
+    private RoomType createRoomType() {
         RoomType roomType = RoomType.builder()
                 .code("DLX")
                 .name("Deluxe")
@@ -300,15 +282,7 @@ class RateEngineServiceTest {
                 .isActive(true)
                 .build();
         roomType.setId(ROOM_TYPE_ID);
-
-        Room room = Room.builder()
-                .roomNumber("A101")
-                .roomType(roomType)
-                .priceOverride(priceOverride)
-                .isActive(true)
-                .build();
-        room.setId(ROOM_ID);
-        return room;
+        return roomType;
     }
 
     private RateOverride createRoomTypeOverride(
@@ -317,35 +291,11 @@ class RateEngineServiceTest {
             BigDecimal price,
             LocalDate startDate,
             LocalDate endDate,
-            String weekdays,
-            Room room
+            String weekdays
     ) {
         RateOverride rateOverride = RateOverride.builder()
-                .roomType(room.getRoomType())
+                .roomType(createRoomType())
                 .name("Room type rate " + id)
-                .startDate(startDate)
-                .endDate(endDate)
-                .price(price)
-                .weekdays(weekdays)
-                .priority(priority)
-                .isActive(true)
-                .build();
-        rateOverride.setId(id);
-        return rateOverride;
-    }
-
-    private RateOverride createRoomOverride(
-            Long id,
-            int priority,
-            BigDecimal price,
-            LocalDate startDate,
-            LocalDate endDate,
-            String weekdays,
-            Room room
-    ) {
-        RateOverride rateOverride = RateOverride.builder()
-                .room(room)
-                .name("Room rate " + id)
                 .startDate(startDate)
                 .endDate(endDate)
                 .price(price)

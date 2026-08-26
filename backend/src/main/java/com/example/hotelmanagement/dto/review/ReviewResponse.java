@@ -7,6 +7,9 @@ import java.time.OffsetDateTime;
 public record ReviewResponse(
         Long id,
         String bookingPublicId,
+        String bookingCode,
+        String customerName,
+        String customerEmail,
         String roomNumber,
         String roomTypeCode,
         String roomTypeName,
@@ -18,6 +21,7 @@ public record ReviewResponse(
         String title,
         String comment,
         ReviewStatus status,
+        String moderationReason,
         String staffReply,
         Long staffReplyBy,
         OffsetDateTime staffRepliedAt,

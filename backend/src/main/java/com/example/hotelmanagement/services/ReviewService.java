@@ -1,11 +1,15 @@
 package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.review.ReviewCreateRequest;
+import com.example.hotelmanagement.dto.review.ReviewListResponse;
 import com.example.hotelmanagement.dto.review.ReviewModerationRequest;
 import com.example.hotelmanagement.dto.review.ReviewReplyRequest;
 import com.example.hotelmanagement.dto.review.ReviewResponse;
+import com.example.hotelmanagement.dto.review.StaffReviewListResponse;
+import com.example.hotelmanagement.dto.review.StaffReviewResponse;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.BookingRoom;
+import com.example.hotelmanagement.entity.CustomerProfile;
 import com.example.hotelmanagement.entity.Review;
 import com.example.hotelmanagement.entity.Room;
 import com.example.hotelmanagement.entity.RoomType;
@@ -19,6 +23,8 @@ import com.example.hotelmanagement.repositories.BookingRepository;
 import com.example.hotelmanagement.repositories.ReviewRepository;
 import com.example.hotelmanagement.repositories.StaffProfileRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +50,7 @@ import java.util.Set;
 @Transactional
 public class ReviewService {
 
+    private static final int MAX_MODERATION_REASON_LENGTH = 1000;
     private static final Set<ReviewStatus> MODERATION_TARGET_STATUSES = Set.of(
             ReviewStatus.PUBLISHED, ReviewStatus.HIDDEN, ReviewStatus.REJECTED
     );
@@ -94,16 +101,98 @@ public class ReviewService {
         return mapResponse(reviewRepository.saveAndFlush(reviewBuilder.build()));
     }
 
+    /** Returns the current customer's review for the booking, if one has already been submitted. */
+    @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.REVIEW_CREATE)
+    public ReviewResponse getReview(String bookingPublicId, Long actorUserId) {
+        bookingRepository.findOneByPublicIdAndCustomerProfile_User_Id(bookingPublicId, actorUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", bookingPublicId));
+
+        Review review = reviewRepository.findByBooking_PublicId(bookingPublicId)
+                .orElseThrow(() -> new ResourceNotFoundException("Review", bookingPublicId));
+        return mapResponse(review);
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.REVIEW_MODERATE)
+    public ReviewListResponse listReviews(
+            ReviewStatus status,
+            String roomTypeCode,
+            Integer rating,
+            Integer page,
+            Integer size
+    ) {
+        int normalizedPage = page == null || page < 0 ? 0 : page;
+        int normalizedSize = size == null || size <= 0 ? 20 : Math.min(size, 100);
+        String normalizedRoomTypeCode = normalizeOptionalText(roomTypeCode);
+        if (rating != null && (rating < 1 || rating > 5)) {
+            throw new BusinessValidationException("Overall rating must be between 1 and 5");
+        }
+
+        Page<Review> reviews = reviewRepository.findAllForAdmin(
+                status,
+                normalizedRoomTypeCode,
+                rating,
+                PageRequest.of(normalizedPage, normalizedSize)
+        );
+        return new ReviewListResponse(
+                reviews.getContent().stream().map(this::mapResponse).toList(),
+                reviews.getNumber(),
+                reviews.getSize(),
+                reviews.getTotalElements(),
+                reviews.getTotalPages()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.REVIEW_REPLY)
+    public StaffReviewListResponse listReviewsForStaffReply(
+            ReviewStatus status,
+            String roomTypeCode,
+            Integer rating,
+            Integer page,
+            Integer size
+    ) {
+        int normalizedPage = page == null || page < 0 ? 0 : page;
+        int normalizedSize = size == null || size <= 0 ? 20 : Math.min(size, 100);
+        String normalizedRoomTypeCode = normalizeOptionalText(roomTypeCode);
+        if (rating != null && (rating < 1 || rating > 5)) {
+            throw new BusinessValidationException("Overall rating must be between 1 and 5");
+        }
+
+        Page<Review> reviews = reviewRepository.findAllForStaffReply(
+                status,
+                normalizedRoomTypeCode,
+                rating,
+                PageRequest.of(normalizedPage, normalizedSize)
+        );
+        return new StaffReviewListResponse(
+                reviews.getContent().stream().map(this::mapStaffResponse).toList(),
+                reviews.getNumber(),
+                reviews.getSize(),
+                reviews.getTotalElements(),
+                reviews.getTotalPages()
+        );
+    }
+
     /** Admin approve/reject: PENDING (or an already-moderated review) -> PUBLISHED/HIDDEN/REJECTED. */
     @PreAuthorize(PermissionExpressions.REVIEW_MODERATE)
     public ReviewResponse moderate(String bookingPublicId, ReviewModerationRequest request) {
-        if (!MODERATION_TARGET_STATUSES.contains(request.status())) {
+        if (request == null || request.status() == null || !MODERATION_TARGET_STATUSES.contains(request.status())) {
             throw new BusinessValidationException(
                     "Moderation status must be one of PUBLISHED, HIDDEN, or REJECTED"
             );
         }
+        String moderationReason = normalizeOptionalText(request.moderationReason());
+        if (moderationReason != null && moderationReason.length() > MAX_MODERATION_REASON_LENGTH) {
+            throw new BusinessValidationException("Moderation reason must not exceed 1000 characters");
+        }
+        if (request.status() == ReviewStatus.REJECTED && moderationReason == null) {
+            throw new BusinessValidationException("A moderation reason is required when rejecting a review");
+        }
         Review review = getReviewForUpdate(bookingPublicId);
         review.setStatus(request.status());
+        review.setModerationReason(request.status() == ReviewStatus.REJECTED ? moderationReason : null);
         return mapResponse(reviewRepository.saveAndFlush(review));
     }
 
@@ -111,11 +200,11 @@ public class ReviewService {
     @PreAuthorize(PermissionExpressions.REVIEW_REPLY)
     public ReviewResponse reply(String bookingPublicId, ReviewReplyRequest request, Long actorUserId) {
         Review review = getReviewForUpdate(bookingPublicId);
-        StaffProfile staffProfile = staffProfileRepository.findByUser_Id(actorUserId)
-                .orElseThrow(() -> new ResourceNotFoundException("Staff profile", actorUserId.toString()));
+        StaffProfile staffProfile = staffProfileRepository.findByUser_Id(actorUserId).orElse(null);
 
         review.setStaffReply(normalizeOptionalText(request.staffReply()));
-        review.setStaffReplyBy(staffProfile.getId());
+        // ADMIN accounts do not require a StaffProfile; the audit aspect still records the actor.
+        review.setStaffReplyBy(staffProfile == null ? null : staffProfile.getId());
         review.setStaffRepliedAt(OffsetDateTime.now(clock));
 
         return mapResponse(reviewRepository.saveAndFlush(review));
@@ -136,11 +225,19 @@ public class ReviewService {
     }
 
     private ReviewResponse mapResponse(Review review) {
+        CustomerProfile customerProfile = review.getCustomerProfile();
         Room room = review.getRoom();
         RoomType roomType = review.getRoomType();
+        String customerName = customerProfile != null && customerProfile.getUser() != null
+                ? customerProfile.getUser().getFullName() : null;
+        String customerEmail = customerProfile != null && customerProfile.getUser() != null
+                ? customerProfile.getUser().getEmail() : null;
         return new ReviewResponse(
                 review.getId(),
                 review.getBooking().getPublicId(),
+                review.getBooking().getBookingCode(),
+                customerName,
+                customerEmail,
                 room != null ? room.getRoomNumber() : null,
                 roomType != null ? roomType.getCode() : null,
                 roomType != null ? roomType.getName() : null,
@@ -152,11 +249,39 @@ public class ReviewService {
                 review.getTitle(),
                 review.getComment(),
                 review.getStatus(),
+                review.getModerationReason(),
                 review.getStaffReply(),
                 review.getStaffReplyBy(),
                 review.getStaffRepliedAt(),
                 review.getCreatedAt(),
                 review.getUpdatedAt()
+        );
+    }
+
+    private StaffReviewResponse mapStaffResponse(Review review) {
+        ReviewResponse response = mapResponse(review);
+        return new StaffReviewResponse(
+                response.id(),
+                response.bookingPublicId(),
+                response.bookingCode(),
+                response.customerName(),
+                response.customerEmail(),
+                response.roomNumber(),
+                response.roomTypeCode(),
+                response.roomTypeName(),
+                response.overallRating(),
+                response.roomRating(),
+                response.cleanlinessRating(),
+                response.serviceRating(),
+                response.valueRating(),
+                response.title(),
+                response.comment(),
+                response.status(),
+                response.staffReply(),
+                response.staffReplyBy(),
+                response.staffRepliedAt(),
+                response.createdAt(),
+                response.updatedAt()
         );
     }
 

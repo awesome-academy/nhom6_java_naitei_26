@@ -10,7 +10,9 @@ ALTER TABLE bookings
 
 UPDATE bookings
 SET required_deposit_amount = total_amount
-WHERE required_deposit_amount = 0.00 AND total_amount > 0.00;
+WHERE required_deposit_amount = 0.00
+  AND total_amount > 0.00
+  AND status <> 'CANCELLED';
 
 ALTER TABLE bookings
     ADD CONSTRAINT chk_bookings_deposit_percent

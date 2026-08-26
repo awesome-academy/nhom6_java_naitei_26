@@ -152,7 +152,7 @@
   - `invoice:issue`, `invoice:void`
   - `review:moderate`, `email:send`
   - `staff:manage`, `shift:manage`, `audit:read`
-- Seed 3 roles (CUSTOMER/STAFF/ADMIN) + all permissions vào V1 migration
+- Seed 3 roles (CUSTOMER/STAFF/ADMIN) + all permissions vào V1 migration; mỗi User chỉ có một role hiện tại và đổi role là thay thế role cũ
 - Interceptor kiểm tra RBAC trước khi gọi service
 
 #### BE-2.4 | CustomerProfile & StaffProfile CRUD | Priority: Normal | 19/08 | Est: 4h
@@ -163,9 +163,11 @@
   - Cập nhật thông tin cá nhân
   - Deactivate (soft delete)
 - Staff-specific:
-  - Hire: tạo staff_profile + user nếu chưa có
-  - Edit
-  - Deactivate: set `terminated_at`, `employment_status=TERMINATED`
+  - Admin tạo User role `STAFF` + staff_profile độc lập, không dùng Customer và không tạo CustomerProfile
+  - Invitation email: User ở `PENDING_VERIFICATION`, Staff xác thực email và đặt mật khẩu mới qua link một lần
+  - Edit và Admin reset mật khẩu trực tiếp; reset thu hồi refresh token hiện tại
+  - Status: `ACTIVE`, `ON_LEAVE`, `TERMINATED`; chỉ Staff đã xác thực, User `ACTIVE` và employment `ACTIVE` được phân ca
+  - Terminate: set `terminated_at`, lưu email lịch sử, chuyển User sang `DEACTIVATED`, không khôi phục; tuyển lại tạo User/StaffProfile mới và cho phép tái sử dụng email bằng email lưu trữ hậu tố tăng dần
 - Additional fields:
   - `customer_profiles.loyalty_points`
   - `staff_profiles.base_salary` (chỉ ADMIN đọc)
@@ -240,7 +242,7 @@
 - Cập nhật `housekeeping_status`:
   - CLEAN → DIRTY (sau checkout)
   - DIRTY → CLEANING → CLEAN
-- `RoomImageService`: upload/sort ảnh → MinIO bucket `room-images`
+- `RoomImageService`: ảnh phòng vật lý là legacy/out-of-scope trong local stack; bucket `room-images` không được provision
 - Endpoints:
   - "Danh sách phòng theo loại"
   - "Lọc theo view, tầng, tiện nghi"
@@ -274,7 +276,7 @@
     - Form với beds config
     - Amenities multi-select
     - Giá, mô tả
-  - Upload ảnh loại phòng (MinIO)
+  - Upload ảnh loại phòng (MinIO bucket `room-type-images`)
   - Soft delete với confirm dialog
 
 #### FE-3.2 | Admin — Rooms Management + Floor Map | Priority: Urgent | 20/08 | Est: 5h
@@ -323,8 +325,8 @@
 #### BE-4.2 | RateOverride CRUD | Priority: Normal | 21/08 | Est: 3h
 
 - `RateOverrideService` + `RateOverrideController`
-- Fields: `room_type_id`/`room_id`, date range, price, weekdays, priority
-- Validate: đúng 1 trong 2 room identifiers khác null
+- Fields: `room_type_id`, date range, price, weekdays, priority
+- Rate override chỉ áp dụng cho toàn bộ phòng thuộc một RoomType; không hỗ trợ `room_id`
 - List overrides đang active
 
 #### BE-4.3 | CancellationPolicy + Rules | Priority: Urgent | 21/08 | Est: 4h
@@ -337,7 +339,7 @@
   - NON_REFUND: 0h → 0%
 - Snapshot policy + rules vào JSON → gửi lên booking
 - Admin gắn nhiều cancellation policy online ở từng RoomType; policy có `% tăng giá` khi bán online.
-- Mỗi RoomType có thể bật/tắt option `Thanh toán tại khách sạn`; option này luôn dùng `NON_REFUND` và có phụ thu riêng trên RoomType.
+- RoomType chỉ còn các option thanh toán online gắn với cancellation policy; option `Thanh toán tại khách sạn` đã bỏ khỏi website và không còn cấu hình trong admin.
 - Customer chọn RoomType + payment/cancellation option; backend tự assign phòng vật lý còn trống, không cho customer chọn phòng cụ thể.
 
 #### BE-4.4 | Booking Price Calculator API | Priority: Urgent | 21/08 | Est: 4h
@@ -414,7 +416,9 @@
 
 #### BE-5.2 | Booking Creation — Snapshot Pricing | Priority: Urgent | 22/08 | Est: 6h
 
-- `BookingService.createBooking()`: tạo booking ở PENDING
+- `BookingService.createBooking()`: chỉ được gọi ở bước customer đã chọn payment method; tạo booking ở PENDING
+- Trước khi insert: lock các room khả dụng, kiểm tra overlap/trạng thái lần cuối trong cùng transaction;
+  conflict thì không tạo booking/payment
 - Tính giá từng đêm → ghi `booking_room_nights` rows
 - Snapshot fields:
   - `room_tax_percent_snapshot`
@@ -468,9 +472,10 @@
 
 - Multi-step booking wizard:
   - B1: Chọn phòng & ngày (Availability API → hiển thị phòng khả dụng)
-  - B2: Nhập thông tin liên hệ + khách lưu trú
-  - B3: Review option thanh toán/chính sách hủy theo từng RoomType đã chọn
-  - B4: Đặt cọc (chọn payment method → redirect gateway)
+  - B2: Nhập thông tin liên hệ
+  - B3: Review draft và chính sách hủy; chưa tạo booking database
+  - B4: Chọn payment method, bấm tiếp tục → tạo PENDING, tạo payment đủ tổng booking → redirect gateway
+  - Website chỉ dùng payment online; backend từ chối `PAY_AT_HOTEL`
 - Progress indicator
 
 #### FE-5.2 | Customer — My Bookings | Priority: Urgent | 22/08 | Est: 4h
@@ -482,7 +487,9 @@
   - Thông tin phòng, ngày, tổng tiền, trạng thái
   - Timeline (từ `booking_status_history`)
 - Actions:
-  - Nút "Hủy booking" (nếu PENDING/CONFIRMED → BR-005)
+  - `PENDING` còn hạn: Thanh toán, Xem chi tiết, Xóa booking (hard delete nếu chưa có payment thành công)
+  - `CONFIRMED`: Hủy booking theo policy; từ `CHECKED_IN` trở đi không có xóa/hủy thường
+  - `EXPIRED`: giữ trong danh sách, không còn nút thanh toán
   - Nút "Xem hóa đơn"
 
 #### FE-5.3 | Staff — Booking Management | Priority: Urgent | 22/08 | Est: 5h
@@ -501,8 +508,9 @@
 
 **Checkpoint cuối ngày 5:**
 
-- Customer đặt 2 đêm Deluxe → tạo booking PENDING
-- Staff confirm → gán phòng 301 → check-in
+- Customer đặt 2 đêm Deluxe → chọn payment online → tạo booking PENDING và thanh toán đủ
+- Payment callback verified đủ tiền → tự động CONFIRMED; staff chỉ dùng Confirm thủ công cho trường hợp thu tiền mặt
+- Gán phòng 301 → check-in
 - Xem invoice
 
 ---
@@ -663,7 +671,9 @@
   - `payment_status`
 - Khi payment chuyển SUCCEEDED
 - BR-012: chỉ verified payment mới trigger booking CONFIRMED
-  - Tự động hạ PENDING → CONFIRMED sau deposit verified
+  - Tự động hạ PENDING → CONFIRMED sau khi thanh toán đủ toàn bộ booking được xác minh
+- Staff/admin có thể Confirm thủ công booking PENDING để ghi nhận tiền mặt ngoài payment ledger;
+  lịch sử dùng `MANUAL`, không tạo payment record tự động
 - Refund: cập nhật `refunded_amount` + `payment_status` trên 3 bảng
 
 #### BE-7.4 | Refund Service — Cancellation Refund | Priority: High | 24/08 | Est: 5h
@@ -809,6 +819,8 @@
   1. `HoldExpiryJob`:
      - Scan PENDING bookings where `hold_expires_at < now()`
      - Chuyển EXPIRED
+     - Giải phóng booking_rooms và đánh dấu payment PENDING/PROCESSING là EXPIRED
+     - Không hard delete booking
   2. `NoShowJob`:
      - Scan CONFIRMED bookings where `check_in_date < today()` and not checked in
      - Chuyển NO_SHOW
@@ -923,14 +935,15 @@
 
 ## MinIO Integration Points
 
-- Room images
 - Room type images
 - Invoice PDFs
 - User avatars
 
+Physical room images are not provisioned by the standard local stack because customers
+book by Room Type. The legacy `RoomImageService` remains out of scope for this flow.
+
 **Bucket naming:**
 
-- `room-images`
 - `room-type-images`
 - `invoices`
 - `avatars`

@@ -14,31 +14,14 @@ import java.util.Optional;
 @Repository
 public interface RateOverrideRepository extends JpaRepository<RateOverride, Long> {
 
-    @EntityGraph(attributePaths = {"room", "roomType"})
+    @EntityGraph(attributePaths = "roomType")
     List<RateOverride> findAllByIsActiveTrueOrderByStartDateAscPriorityDescIdAsc();
 
-    @EntityGraph(attributePaths = {"room", "roomType"})
+    @EntityGraph(attributePaths = "roomType")
     Optional<RateOverride> findByIdAndIsActiveTrue(Long id);
 
     @Query("""
             SELECT rateOverride FROM RateOverride rateOverride
-            LEFT JOIN FETCH rateOverride.room targetRoom
-            LEFT JOIN FETCH rateOverride.roomType targetRoomType
-            WHERE rateOverride.isActive = true
-              AND rateOverride.startDate < :checkOutDate
-              AND rateOverride.endDate > :checkInDate
-              AND (targetRoom.id = :roomId OR targetRoomType.id = :roomTypeId)
-            """)
-    List<RateOverride> findActiveOverridesForPricing(
-            @Param("roomId") Long roomId,
-            @Param("roomTypeId") Long roomTypeId,
-            @Param("checkInDate") LocalDate checkInDate,
-            @Param("checkOutDate") LocalDate checkOutDate
-    );
-
-    @Query("""
-            SELECT rateOverride FROM RateOverride rateOverride
-            LEFT JOIN FETCH rateOverride.room targetRoom
             LEFT JOIN FETCH rateOverride.roomType targetRoomType
             WHERE rateOverride.isActive = true
               AND rateOverride.startDate < :checkOutDate
@@ -53,18 +36,15 @@ public interface RateOverrideRepository extends JpaRepository<RateOverride, Long
 
     @Query("""
             SELECT rateOverride FROM RateOverride rateOverride
-            LEFT JOIN FETCH rateOverride.room targetRoom
             LEFT JOIN FETCH rateOverride.roomType targetRoomType
             WHERE rateOverride.isActive = true
               AND rateOverride.priority = :priority
               AND rateOverride.startDate < :endDate
               AND rateOverride.endDate > :startDate
               AND (:excludedId IS NULL OR rateOverride.id <> :excludedId)
-              AND ((:roomId IS NOT NULL AND targetRoom.id = :roomId)
-                    OR (:roomTypeId IS NOT NULL AND targetRoomType.id = :roomTypeId))
+              AND targetRoomType.id = :roomTypeId
             """)
     List<RateOverride> findActiveConflicts(
-            @Param("roomId") Long roomId,
             @Param("roomTypeId") Long roomTypeId,
             @Param("startDate") LocalDate startDate,
             @Param("endDate") LocalDate endDate,

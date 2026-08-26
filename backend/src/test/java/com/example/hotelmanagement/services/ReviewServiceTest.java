@@ -3,6 +3,7 @@ package com.example.hotelmanagement.services;
 import com.example.hotelmanagement.dto.review.ReviewCreateRequest;
 import com.example.hotelmanagement.dto.review.ReviewModerationRequest;
 import com.example.hotelmanagement.dto.review.ReviewReplyRequest;
+import com.example.hotelmanagement.dto.review.ReviewListResponse;
 import com.example.hotelmanagement.dto.review.ReviewResponse;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.BookingRoom;
@@ -149,13 +150,73 @@ class ReviewServiceTest {
     }
 
     @Test
+    void getReviewReturnsOwnedBookingReview() {
+        Booking booking = checkedOutBooking(1);
+        Review review = pendingReview();
+        review.setBooking(booking);
+        when(bookingRepository.findOneByPublicIdAndCustomerProfile_User_Id(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID))
+                .thenReturn(Optional.of(booking));
+        when(reviewRepository.findByBooking_PublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(review));
+
+        ReviewResponse response = reviewService.getReview(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID);
+
+        assertThat(response.status()).isEqualTo(ReviewStatus.PENDING);
+        assertThat(response.bookingPublicId()).isEqualTo(BOOKING_PUBLIC_ID);
+    }
+
+    @Test
+    void getReviewRejectsBookingNotOwnedByActor() {
+        when(bookingRepository.findOneByPublicIdAndCustomerProfile_User_Id(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> reviewService.getReview(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(reviewRepository, never()).findByBooking_PublicId(any());
+    }
+
+    @Test
+    void getReviewReturnsNotFoundWhenOwnedBookingHasNoReview() {
+        Booking booking = checkedOutBooking(1);
+        when(bookingRepository.findOneByPublicIdAndCustomerProfile_User_Id(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID))
+                .thenReturn(Optional.of(booking));
+        when(reviewRepository.findByBooking_PublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> reviewService.getReview(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void listReviewsUsesAdminFiltersAndPagination() {
+        org.springframework.data.domain.Page<Review> result =
+                new org.springframework.data.domain.PageImpl<>(java.util.List.of(pendingReview()));
+        when(reviewRepository.findAllForAdmin(
+                ReviewStatus.PENDING,
+                "DLX",
+                5,
+                org.springframework.data.domain.PageRequest.of(1, 10)
+        )).thenReturn(result);
+
+        ReviewListResponse response = reviewService.listReviews(ReviewStatus.PENDING, "  DLX  ", 5, 1, 10);
+
+        assertThat(response.items()).hasSize(1);
+        assertThat(response.page()).isEqualTo(0);
+        assertThat(response.size()).isEqualTo(1);
+        verify(reviewRepository).findAllForAdmin(
+                ReviewStatus.PENDING,
+                "DLX",
+                5,
+                org.springframework.data.domain.PageRequest.of(1, 10)
+        );
+    }
+
+    @Test
     void moderateTransitionsPendingToPublished() {
         Review review = pendingReview();
         when(reviewRepository.findForUpdateByBooking_PublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(review));
         when(reviewRepository.saveAndFlush(review)).thenReturn(review);
 
         ReviewResponse response = reviewService.moderate(
-                BOOKING_PUBLIC_ID, new ReviewModerationRequest(ReviewStatus.PUBLISHED)
+                BOOKING_PUBLIC_ID, new ReviewModerationRequest(ReviewStatus.PUBLISHED, null)
         );
 
         assertThat(response.status()).isEqualTo(ReviewStatus.PUBLISHED);
@@ -164,7 +225,7 @@ class ReviewServiceTest {
     @Test
     void moderateRejectsPendingAsTargetStatus() {
         assertThatThrownBy(() -> reviewService.moderate(
-                BOOKING_PUBLIC_ID, new ReviewModerationRequest(ReviewStatus.PENDING)
+                BOOKING_PUBLIC_ID, new ReviewModerationRequest(ReviewStatus.PENDING, null)
         )).isInstanceOf(BusinessValidationException.class);
         verify(reviewRepository, never()).findForUpdateByBooking_PublicId(any());
     }
@@ -174,8 +235,45 @@ class ReviewServiceTest {
         when(reviewRepository.findForUpdateByBooking_PublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> reviewService.moderate(
-                BOOKING_PUBLIC_ID, new ReviewModerationRequest(ReviewStatus.REJECTED)
+                BOOKING_PUBLIC_ID, new ReviewModerationRequest(ReviewStatus.REJECTED, "Policy violation")
         )).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void moderateRejectsWithoutReason() {
+        assertThatThrownBy(() -> reviewService.moderate(
+                BOOKING_PUBLIC_ID, new ReviewModerationRequest(ReviewStatus.REJECTED, "  ")
+        )).isInstanceOf(BusinessValidationException.class);
+        verify(reviewRepository, never()).findForUpdateByBooking_PublicId(any());
+    }
+
+    @Test
+    void moderateStoresRejectReason() {
+        Review review = pendingReview();
+        when(reviewRepository.findForUpdateByBooking_PublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(review));
+        when(reviewRepository.saveAndFlush(review)).thenReturn(review);
+
+        reviewService.moderate(
+                BOOKING_PUBLIC_ID,
+                new ReviewModerationRequest(ReviewStatus.REJECTED, "  Nội dung vi phạm chính sách  ")
+        );
+
+        assertThat(review.getModerationReason()).isEqualTo("Nội dung vi phạm chính sách");
+    }
+
+    @Test
+    void moderateClearsReasonWhenPublishingAgain() {
+        Review review = pendingReview();
+        review.setStatus(ReviewStatus.REJECTED);
+        review.setModerationReason("Nội dung cũ");
+        when(reviewRepository.findForUpdateByBooking_PublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(review));
+        when(reviewRepository.saveAndFlush(review)).thenReturn(review);
+
+        reviewService.moderate(
+                BOOKING_PUBLIC_ID, new ReviewModerationRequest(ReviewStatus.PUBLISHED, null)
+        );
+
+        assertThat(review.getModerationReason()).isNull();
     }
 
     @Test
@@ -198,15 +296,18 @@ class ReviewServiceTest {
     }
 
     @Test
-    void replyThrowsWhenActorHasNoStaffProfile() {
+    void replyAllowsAdminActorWithoutStaffProfile() {
         Review review = pendingReview();
         when(reviewRepository.findForUpdateByBooking_PublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(review));
         when(staffProfileRepository.findByUser_Id(STAFF_USER_ID)).thenReturn(Optional.empty());
+        when(reviewRepository.saveAndFlush(review)).thenReturn(review);
 
-        assertThatThrownBy(() -> reviewService.reply(
+        ReviewResponse response = reviewService.reply(
                 BOOKING_PUBLIC_ID, new ReviewReplyRequest("Thanks"), STAFF_USER_ID
-        )).isInstanceOf(ResourceNotFoundException.class);
-        verify(reviewRepository, never()).saveAndFlush(any());
+        );
+
+        assertThat(response.staffReply()).isEqualTo("Thanks");
+        assertThat(response.staffReplyBy()).isNull();
     }
 
     private Booking checkedOutBooking(int roomCount) {

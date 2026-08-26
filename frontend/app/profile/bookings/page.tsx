@@ -5,6 +5,7 @@ import Link from "next/link"
 import {
   CalendarDays,
   Clock,
+  CreditCard,
   Eye,
   Hotel,
   Loader2,
@@ -35,14 +36,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
-import { deletePendingBooking, deletePendingBookingRoom, getMyBookings } from "@/lib/api/booking"
+import { cancelBooking, deletePendingBooking, getMyBookings } from "@/lib/api/booking"
 import type { Booking, BookingRoom, BookingStatus } from "@/types/booking"
 
 type DeleteTarget =
   | { type: "booking"; booking: Booking }
-  | { type: "room"; booking: Booking; room: BookingRoom }
 
 const bookingStatusLabels: Record<BookingStatus, string> = {
   PENDING: "Chờ xác nhận",
@@ -118,20 +117,15 @@ function getTotalNights(booking: Booking) {
   return booking.rooms.reduce((sum, room) => sum + getRoomNights(room), 0)
 }
 
-function getRoomSummary(booking: Booking) {
-  const groupedRooms = new Map<string, number>()
-
-  booking.rooms.forEach((room) => {
-    groupedRooms.set(room.roomTypeName, (groupedRooms.get(room.roomTypeName) ?? 0) + 1)
-  })
-
-  return Array.from(groupedRooms.entries())
-    .map(([roomTypeName, count]) => `${count} ${roomTypeName}`)
-    .join(", ")
-}
-
 function getPaymentLabel(status: string) {
   return paymentStatusLabels[status] ?? status
+}
+
+function canPayBooking(booking: Booking) {
+  return booking.status === "PENDING"
+    && ["UNPAID", "PARTIALLY_PAID"].includes(booking.paymentStatus)
+    && booking.holdExpiresAt !== null
+    && new Date(booking.holdExpiresAt).getTime() > Date.now()
 }
 
 function getErrorMessage(error: unknown) {
@@ -189,7 +183,6 @@ export default function ProfileBookingsPage() {
         booking.bookingCode,
         booking.contactName,
         booking.contactEmail,
-        getRoomSummary(booking),
         ...booking.rooms.flatMap((room) => [
           room.roomNumber ?? "",
           room.roomTypeCode,
@@ -221,20 +214,6 @@ export default function ProfileBookingsPage() {
           booking.publicId !== deleteTarget.booking.publicId
         )))
         toast.success("Đã xóa booking chờ thanh toán")
-      } else {
-        const updatedBooking = await deletePendingBookingRoom(
-          deleteTarget.booking.publicId,
-          deleteTarget.room.bookingRoomId,
-        )
-        setBookings((current) => {
-          if (!updatedBooking) {
-            return current.filter((booking) => booking.publicId !== deleteTarget.booking.publicId)
-          }
-          return current.map((booking) => (
-            booking.publicId === updatedBooking.publicId ? updatedBooking : booking
-          ))
-        })
-        toast.success("Đã xóa phòng khỏi booking")
       }
       setDeleteTarget(null)
     } catch (error) {
@@ -274,7 +253,7 @@ export default function ProfileBookingsPage() {
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Tìm theo mã booking, loại phòng, số phòng..."
+            placeholder="Tìm theo mã booking hoặc thông tin liên hệ..."
             className="pl-10"
           />
         </div>
@@ -326,8 +305,15 @@ export default function ProfileBookingsPage() {
               onRequestDeleteBooking={(targetBooking) => {
                 setDeleteTarget({ type: "booking", booking: targetBooking })
               }}
-              onRequestDeleteRoom={(targetBooking, room) => {
-                setDeleteTarget({ type: "room", booking: targetBooking, room })
+              onCancel={async (targetBooking) => {
+                if (!window.confirm("Hủy booking theo chính sách hiện tại?")) return
+                try {
+                  const updated = await cancelBooking(targetBooking.publicId)
+                  setBookings((current) => current.map((item) => item.publicId === updated.publicId ? updated : item))
+                  toast.success("Đã gửi yêu cầu hủy booking")
+                } catch (error) {
+                  toast.error(getErrorMessage(error))
+                }
               }}
             />
           ))}
@@ -343,12 +329,10 @@ export default function ProfileBookingsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {deleteTarget?.type === "booking" ? "Xóa booking chờ thanh toán?" : "Xóa phòng khỏi booking?"}
+              Xóa booking chờ thanh toán?
             </DialogTitle>
             <DialogDescription>
-              {deleteTarget?.type === "booking"
-                ? `Booking ${deleteTarget.booking.bookingCode} sẽ bị xóa khỏi danh sách và giải phóng các phòng đang giữ.`
-                : `${deleteTarget?.room.roomTypeName} sẽ được xóa khỏi booking ${deleteTarget?.booking.bookingCode}; tổng tiền sẽ được tính lại.`}
+              Booking {deleteTarget?.booking.bookingCode} sẽ bị xóa vĩnh viễn và giải phóng các phòng đang giữ.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -427,13 +411,12 @@ function EmptyBookings() {
 function BookingCard({
   booking,
   onRequestDeleteBooking,
-  onRequestDeleteRoom,
+  onCancel,
 }: {
   booking: Booking
   onRequestDeleteBooking: (booking: Booking) => void
-  onRequestDeleteRoom: (booking: Booking, room: BookingRoom) => void
+  onCancel: (booking: Booking) => void
 }) {
-  const firstRoom = booking.rooms[0]
   const roomCount = booking.rooms.length
   const nightCount = getTotalNights(booking)
   const guestCount = booking.adults + booking.children
@@ -443,8 +426,10 @@ function BookingCard({
       <CardHeader className="gap-3 border-b pb-4">
         <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
           <div className="flex flex-col gap-2">
+            <CardTitle className="text-xl">
+              Mã đặt phòng: {booking.bookingCode}
+            </CardTitle>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-sm text-muted-foreground">{booking.bookingCode}</span>
               <Badge variant={getBookingStatusVariant(booking.status)}>
                 {bookingStatusLabels[booking.status] ?? booking.status}
               </Badge>
@@ -452,9 +437,6 @@ function BookingCard({
                 {getPaymentLabel(booking.paymentStatus)}
               </Badge>
             </div>
-            <CardTitle className="text-xl">
-              {getRoomSummary(booking) || "TripStay Hotel"}
-            </CardTitle>
           </div>
           <div className="flex flex-col gap-1 md:text-right">
             <span className="text-xl font-semibold">
@@ -475,49 +457,6 @@ function BookingCard({
           <InfoBlock icon={Users} label="Khách dự kiến" value={`${guestCount} khách`} />
         </div>
 
-        <Separator />
-
-        <div className="flex flex-col gap-3">
-          {booking.rooms.map((room) => (
-            <div key={room.bookingRoomId} className="overflow-hidden rounded-lg border bg-background">
-              <div className="flex items-start justify-between gap-3 border-b bg-muted/30 px-4 py-3">
-                <div className="flex flex-col gap-1">
-                  <span className="font-semibold">{room.roomTypeName}</span>
-                  <span className="text-sm text-muted-foreground">
-                    {displayDate(room.checkInDate)} - {displayDate(room.checkOutDate)} · {getRoomNights(room)} đêm
-                  </span>
-                </div>
-                <div className="flex shrink-0 items-start gap-2">
-                  <div className="text-right">
-                    <p className="font-semibold">{money(room.roomSubtotal, booking.currency)}</p>
-                    <p className="text-xs text-muted-foreground">Tiền phòng</p>
-                  </div>
-                  {booking.status === "PENDING" && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 text-destructive hover:bg-destructive/10"
-                      aria-label={`Xóa ${room.roomTypeName}`}
-                      onClick={() => onRequestDeleteRoom(booking, room)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <div className="grid gap-3 px-4 py-3 text-sm sm:grid-cols-3">
-                <RoomMeta label="Chính sách hủy" value={room.cancellationPolicyName ?? "Chưa có chính sách hủy"} />
-                <RoomMeta
-                  label="Thanh toán"
-                  value={room.paymentOption === "PAY_AT_HOTEL" ? "Thanh toán tại khách sạn" : "Thanh toán trực tuyến"}
-                />
-                <RoomMeta label="Khách dự kiến" value={`${room.guestCount} khách`} />
-              </div>
-            </div>
-          ))}
-        </div>
-
         <div className="flex flex-col justify-between gap-2 text-sm text-muted-foreground md:flex-row">
           <span>Người liên hệ: {booking.contactName} · {booking.contactPhone ?? booking.contactEmail}</span>
           <span>Tạo lúc {displayDateTime(booking.createdAt)}</span>
@@ -529,14 +468,16 @@ function BookingCard({
           </div>
         )}
 
-        {!firstRoom && (
-          <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
-            Booking chưa có phòng lưu trú.
-          </div>
-        )}
-
         <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
-          <Button asChild type="button" variant="outline" size="sm">
+          {canPayBooking(booking) && (
+            <Button asChild size="sm" className="flex-1">
+              <Link href={`/payment/${booking.publicId}`}>
+                <CreditCard data-icon="inline-start" />
+                Thanh toán booking
+              </Link>
+            </Button>
+          )}
+          <Button asChild type="button" variant="outline" size="sm" className={booking.status === "PENDING" ? "flex-1" : undefined}>
             <Link href={`/profile/bookings/${booking.publicId}`}>
               <Eye data-icon="inline-start" />
               Xem chi tiết
@@ -547,25 +488,20 @@ function BookingCard({
               type="button"
               variant="outline"
               size="sm"
-              className="border-destructive/30 text-destructive hover:bg-destructive/10"
+              className="flex-1 border-destructive/30 text-destructive hover:bg-destructive/10"
               onClick={() => onRequestDeleteBooking(booking)}
             >
-              <Trash2 />
               Xóa booking
+            </Button>
+          )}
+          {booking.status === "CONFIRMED" && (
+            <Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => onCancel(booking)}>
+              Hủy booking
             </Button>
           )}
         </div>
       </CardContent>
     </Card>
-  )
-}
-
-function RoomMeta({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs uppercase text-muted-foreground">{label}</span>
-      <span className="font-medium">{value}</span>
-    </div>
   )
 }
 

@@ -59,6 +59,10 @@ export async function resetPassword(
   return apiClient.post<AuthMessageResponse>("/api/auth/password-reset/confirm", data)
 }
 
+export async function acceptStaffInvitation(data: { token: string; newPassword: string }): Promise<AuthMessageResponse> {
+  return apiClient.post<AuthMessageResponse>("/api/auth/staff-invitation/accept", data)
+}
+
 export async function refreshToken(data: RefreshTokenRequest): Promise<AuthResponse> {
   const response = await apiClient.post<AuthResponse>("/api/auth/refresh", data)
   storeTokens(response.accessToken, response.refreshToken)

@@ -55,7 +55,6 @@ public class RoomTypeService {
     private static final int MAX_TOTAL_BEDS = 10;
     private static final String DEFAULT_CURRENCY = "VND";
     private static final int DEFAULT_SORT_ORDER = 0;
-    private static final String NON_REFUND_POLICY_CODE = "NON_REFUND";
 
     private final RoomTypeRepository roomTypeRepository;
     private final AmenityRepository amenityRepository;
@@ -174,10 +173,10 @@ public class RoomTypeService {
         roomType.setSizeSqm(request.sizeSqm());
         roomType.setIsActive(getValueOrDefault(request.isActive(), true));
         roomType.setSortOrder(getValueOrDefault(request.sortOrder(), DEFAULT_SORT_ORDER));
-        roomType.setPayAtHotelEnabled(getValueOrDefault(request.payAtHotelEnabled(), true));
+        roomType.setPayAtHotelEnabled(false);
         roomType.setPayAtHotelPriceAdjustmentPercent(normalizePercent(
-                request.payAtHotelPriceAdjustmentPercent(),
-                new BigDecimal("10.00")
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
         ));
         replaceCancellationPolicyOptions(roomType, request.onlineCancellationPolicyCodes());
         validateBookingOptions(roomType);
@@ -193,10 +192,10 @@ public class RoomTypeService {
         roomType.setCurrency(normalizeCurrency(request.currency()));
         roomType.setExtraBedPrice(request.extraBedPrice());
         roomType.setSizeSqm(request.sizeSqm());
-        roomType.setPayAtHotelEnabled(getValueOrDefault(request.payAtHotelEnabled(), roomType.getPayAtHotelEnabled()));
+        roomType.setPayAtHotelEnabled(false);
         roomType.setPayAtHotelPriceAdjustmentPercent(normalizePercent(
-                request.payAtHotelPriceAdjustmentPercent(),
-                roomType.getPayAtHotelPriceAdjustmentPercent()
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
         ));
         replaceCancellationPolicyOptions(roomType, request.onlineCancellationPolicyCodes());
 
@@ -364,7 +363,7 @@ public class RoomTypeService {
         }
         boolean hasOnlineOption = roomType.getCancellationPolicyOptions().stream()
                 .anyMatch(option -> Boolean.TRUE.equals(option.getIsActive()));
-        if (!hasOnlineOption && !Boolean.TRUE.equals(roomType.getPayAtHotelEnabled())) {
+        if (!hasOnlineOption) {
             throw new BusinessValidationException("Active room types must have at least one booking option");
         }
     }
@@ -443,16 +442,6 @@ public class RoomTypeService {
                 ))
                 .forEach(options::add);
 
-        if (Boolean.TRUE.equals(roomType.getPayAtHotelEnabled())) {
-            cancellationPolicyRepository.findByCodeIgnoreCaseAndIsActiveTrue(NON_REFUND_POLICY_CODE)
-                    .map(policy -> new RoomTypeBookingOptionResponse(
-                            "PAY_AT_HOTEL:" + policy.getCode(),
-                            BookingPaymentOption.PAY_AT_HOTEL,
-                            mapCancellationPolicyResponse(policy),
-                            roomType.getPayAtHotelPriceAdjustmentPercent()
-                    ))
-                    .ifPresent(options::add);
-        }
         return List.copyOf(options);
     }
 

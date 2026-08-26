@@ -42,6 +42,7 @@ enum oauth_provider {
 
 enum auth_token_type {
   EMAIL_VERIFICATION
+  STAFF_INVITATION
   PASSWORD_RESET
   EMAIL_CHANGE
 }
@@ -244,7 +245,7 @@ Table users {
     status
     (status, deleted_at)
   }
-  note: 'Tài khoản đăng nhập. Tách khỏi profile vì 1 người có thể vừa là staff vừa là khách.'
+  note: 'Tài khoản đăng nhập. CUSTOMER và STAFF là hai loại tài khoản độc lập; Staff được tạo qua invitation và không có CustomerProfile.'
 }
 
 Table roles {
@@ -286,8 +287,9 @@ Table user_roles {
 
   indexes {
     (user_id, role_id) [pk]
+    (user_id) [unique]
   }
-  note: 'N-N để 1 user kiêm nhiệm nhiều vai trò. BR-014'
+  note: 'Mỗi user chỉ có một role hiện tại; role mới thay role cũ.'
 }
 
 Table customer_profiles {
@@ -310,10 +312,11 @@ Table staff_profiles {
   id bigint [pk, increment]
   user_id bigint [not null, unique]
   employee_code varchar(20) [not null, unique]
-  position varchar(80) [not null]
+  position varchar(80)
   department varchar(80)
   hired_at date [not null]
   terminated_at date [note: 'Fire = ghi ngày, không xóa dòng - BR-008']
+  email_at_termination varchar(255) [note: 'Email trước khi tài khoản Staff được lưu trữ']
   employment_status employment_status [not null, default: 'ACTIVE']
   base_salary decimal(14,2) [note: 'Nhạy cảm: chỉ Admin đọc']
   created_at timestamptz [not null, default: `now()`]
@@ -449,8 +452,8 @@ Table room_types {
   size_sqm decimal(6,2)
   is_active boolean [not null, default: true]
   sort_order smallint [not null, default: 0]
-  pay_at_hotel_enabled boolean [not null, default: true, note: 'Bật option thanh toán tại khách sạn; luôn dùng NON_REFUND']
-  pay_at_hotel_price_adjustment_percent decimal(5,2) [not null, default: 10, note: 'Phụ thu cho option thanh toán tại khách sạn. CHECK 0..100']
+  pay_at_hotel_enabled boolean [not null, default: false, note: 'Legacy column; option thanh toán tại khách sạn đã bị vô hiệu hóa']
+  pay_at_hotel_price_adjustment_percent decimal(5,2) [not null, default: 0, note: 'Legacy column; không còn sử dụng']
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [not null, default: `now()`]
   deleted_at timestamptz
@@ -591,8 +594,7 @@ Trigger kiểm chéo với booking_rooms (không EXCLUDE được qua 2 bảng).
 
 Table rate_overrides {
   id bigint [pk, increment]
-  room_type_id bigint [note: 'CHECK: đúng 1 trong (room_type_id, room_id) khác NULL']
-  room_id bigint
+  room_type_id bigint [not null, note: 'Áp dụng cho toàn bộ phòng thuộc loại phòng']
   name varchar(120) [not null, note: 'Tết 2027, Cuối tuần hè']
   start_date date [not null]
   end_date date [not null]
@@ -604,7 +606,6 @@ Table rate_overrides {
 
   indexes {
     (room_type_id, start_date, end_date)
-    (room_id, start_date, end_date)
   }
   note: 'Có thể bị UPDATE → booking_room_nights.rate_override_id chỉ là TRACE field'
 }
@@ -684,8 +685,6 @@ Table bookings {
   discount_total decimal(14,2) [not null, default: 0]
   tax_total decimal(14,2) [not null, default: 0]
   total_amount decimal(14,2) [not null]
-  deposit_percent_snapshot decimal(5,2) [not null, note: 'Tỷ lệ cọc được snapshot lúc tạo booking; thay đổi cấu hình không hồi tố booking cũ']
-  required_deposit_amount decimal(14,2) [not null, default: 0, note: 'Số tiền cọc phải thu, không tăng theo dịch vụ phát sinh sau khi đặt']
   paid_amount decimal(14,2) [not null, default: 0, note: 'Tổng payment SUCCEEDED. KHÔNG giảm khi refund']
   refunded_amount decimal(14,2) [not null, default: 0, note: 'net_received = paid_amount - refunded_amount']
   room_tax_percent_snapshot decimal(5,2) [not null, default: 0, note: 'Thuế suất tiền phòng, chốt lúc tạo booking']
@@ -722,8 +721,6 @@ khác ngày trả, khách đổi phòng giữa kỳ, overlap kiểm theo từng 
 Cần khoảng chung -> view v_booking_stay_range (MIN/MAX từ booking_rooms).
 
 CHECK (total_amount = rooms_total + services_total + tax_total - discount_total)
-CHECK (deposit_percent_snapshot > 0 AND deposit_percent_snapshot <= 100)
-CHECK (required_deposit_amount >= 0 AND required_deposit_amount <= total_amount)
 CHECK (paid_amount <= total_amount + 0.01)
 CHECK (refunded_amount <= paid_amount)
 CHECK (status<>'CHECKED_IN'  OR checked_in_at  IS NOT NULL)   -- BR-010
@@ -1121,6 +1118,7 @@ Table reviews {
   title varchar(200)
   comment text
   status review_status [not null, default: 'PUBLISHED', note: 'Cần kiểm duyệt nội dung']
+  moderation_reason text [note: 'Lý do moderation hiện tại; bắt buộc khi REJECTED']
   staff_reply text
   staff_reply_by bigint
   staff_replied_at timestamptz
@@ -1218,7 +1216,6 @@ Ref: room_status_blocks.created_by > users.id [delete: restrict]
 
 // Pricing & Policy
 Ref: rate_overrides.room_type_id > room_types.id [delete: cascade]
-Ref: rate_overrides.room_id > rooms.id [delete: cascade]
 Ref: cancellation_policy_rules.policy_id > cancellation_policies.id [delete: cascade]
 Ref: room_type_cancellation_policies.room_type_id > room_types.id [delete: cascade]
 Ref: room_type_cancellation_policies.cancellation_policy_id > cancellation_policies.id [delete: restrict]

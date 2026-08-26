@@ -48,7 +48,7 @@ public class RateEngineService {
                 .orElseThrow(() -> new ResourceNotFoundException("Room", roomId.toString()));
         Long roomTypeId = getRoomTypeId(room);
         List<ResolvedRateOverride> rateOverrides = rateOverrideRepository
-                .findActiveOverridesForPricing(roomId, roomTypeId, checkInDate, checkOutDate)
+                .findActiveRoomTypeOverridesForPricing(roomTypeId, checkInDate, checkOutDate)
                 .stream()
                 .filter(rateOverride -> Boolean.TRUE.equals(rateOverride.getIsActive()))
                 .map(this::resolveRateOverride)
@@ -131,11 +131,10 @@ public class RateEngineService {
 
     private void validateRateOverride(RateOverride rateOverride) {
         Long rateOverrideId = rateOverride.getId();
-        boolean hasRoomTarget = rateOverride.getRoom() != null;
         boolean hasRoomTypeTarget = rateOverride.getRoomType() != null;
-        if (hasRoomTarget == hasRoomTypeTarget) {
+        if (!hasRoomTypeTarget) {
             throw new PricingConfigurationException(
-                    "Rate override " + rateOverrideId + " must target exactly one room or room type"
+                    "Rate override " + rateOverrideId + " must target a room type"
             );
         }
         if (rateOverride.getStartDate() == null || rateOverride.getEndDate() == null
@@ -175,24 +174,18 @@ public class RateEngineService {
         List<RateOverride> highestPriorityOverrides = matchingOverrides.stream()
                 .filter(rateOverride -> rateOverride.getPriority() == highestPriority)
                 .toList();
-        boolean hasRoomSpecificOverride = highestPriorityOverrides.stream()
-                .anyMatch(rateOverride -> rateOverride.getRoom() != null);
-        List<RateOverride> mostSpecificOverrides = highestPriorityOverrides.stream()
-                .filter(rateOverride -> !hasRoomSpecificOverride || rateOverride.getRoom() != null)
-                .toList();
-
-        if (mostSpecificOverrides.size() > 1) {
-            String conflictingIds = mostSpecificOverrides.stream()
+        if (highestPriorityOverrides.size() > 1) {
+            String conflictingIds = highestPriorityOverrides.stream()
                     .map(RateOverride::getId)
                     .map(String::valueOf)
                     .sorted()
                     .collect(java.util.stream.Collectors.joining(", "));
             throw new PricingConfigurationException(
                     "Rate overrides " + conflictingIds
-                            + " have the same priority and specificity for " + date
+                            + " have the same priority for room type on " + date
             );
         }
-        return Optional.of(mostSpecificOverrides.getFirst());
+        return Optional.of(highestPriorityOverrides.getFirst());
     }
 
     private BigDecimal getFallbackPrice(Room room) {

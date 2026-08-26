@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   ArrowLeft,
   CalendarDays,
@@ -10,6 +11,7 @@ import {
   CreditCard,
   Hotel,
   Mail,
+  MessageSquareText,
   Phone,
   ReceiptText,
   UserRound,
@@ -38,6 +40,8 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { getMyBookingDetail } from "@/lib/api/booking"
+import { cancelBooking, deletePendingBooking } from "@/lib/api/booking"
+import { getBookingReview } from "@/lib/api/reviews"
 import type {
   Booking,
   BookingDetail,
@@ -144,10 +148,27 @@ function getErrorMessage(error: unknown) {
   return apiError.message || "Không thể tải chi tiết booking."
 }
 
+function canPayBooking(booking: Booking) {
+  return booking.status === "PENDING"
+    && ["UNPAID", "PARTIALLY_PAID"].includes(booking.paymentStatus)
+    && booking.holdExpiresAt !== null
+    && new Date(booking.holdExpiresAt).getTime() > Date.now()
+}
+
+function canDeleteBooking(booking: Booking) {
+  return booking.status === "PENDING" && booking.paymentStatus === "UNPAID"
+}
+
+function canCancelBooking(booking: Booking) {
+  return booking.status === "CONFIRMED"
+}
+
 export function BookingDetailView({ publicId }: { publicId: string }) {
+  const router = useRouter()
   const [detail, setDetail] = useState<BookingDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [hasReview, setHasReview] = useState<boolean | null>(null)
 
   useEffect(() => {
     let ignore = false
@@ -155,9 +176,23 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
     async function loadBookingDetail() {
       setIsLoading(true)
       setError(null)
+      setHasReview(null)
       try {
         const response = await getMyBookingDetail(publicId)
-        if (!ignore) setDetail(response)
+        if (ignore) return
+        setDetail(response)
+
+        if (response.booking.status !== "CHECKED_OUT") {
+          setHasReview(false)
+          return
+        }
+
+        try {
+          await getBookingReview(publicId)
+          if (!ignore) setHasReview(true)
+        } catch {
+          if (!ignore) setHasReview(false)
+        }
       } catch (loadError) {
         if (!ignore) setError(getErrorMessage(loadError))
       } finally {
@@ -197,6 +232,18 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
 
   const { booking } = detail
 
+  async function removeBooking() {
+    if (!canDeleteBooking(booking) || !window.confirm("Xóa booking chờ thanh toán?")) return
+    await deletePendingBooking(booking.publicId)
+    router.replace("/profile/bookings")
+  }
+
+  async function cancelCurrentBooking() {
+    if (!canCancelBooking(booking) || !window.confirm("Hủy booking theo chính sách hiện tại?")) return
+    await cancelBooking(booking.publicId)
+    router.refresh()
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <BookingBreadcrumb current={booking.bookingCode} />
@@ -214,12 +261,47 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
           </div>
           <p className="font-mono text-sm text-muted-foreground">{booking.bookingCode}</p>
         </div>
-        <Button asChild variant="outline">
-          <Link href="/profile/bookings">
-            <ArrowLeft data-icon="inline-start" />
-            Danh sách booking
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {canPayBooking(booking) && (
+            <Button asChild>
+              <Link href={`/payment/${booking.publicId}`}>
+                <CreditCard data-icon="inline-start" />
+                Thanh toán booking
+              </Link>
+            </Button>
+          )}
+          {booking.status === "CHECKED_OUT" && (
+            <>
+              <Button asChild>
+                <Link href={`/profile/bookings/${encodeURIComponent(booking.publicId)}/invoice`}>
+                  <ReceiptText data-icon="inline-start" />
+                  Xem hóa đơn
+                </Link>
+              </Button>
+              {hasReview === false && (
+                <Button asChild variant="outline">
+                  <Link href={`/profile/bookings/${encodeURIComponent(booking.publicId)}/review`}>
+                    <MessageSquareText data-icon="inline-start" />
+                    Viết đánh giá
+                  </Link>
+                </Button>
+              )}
+              {hasReview === true && <Badge variant="secondary">Đã gửi đánh giá</Badge>}
+            </>
+          )}
+          {canCancelBooking(booking) && (
+            <Button variant="outline" onClick={cancelCurrentBooking}>Hủy booking</Button>
+          )}
+          {canDeleteBooking(booking) && (
+            <Button variant="outline" className="text-destructive" onClick={removeBooking}>Xóa booking</Button>
+          )}
+          <Button asChild variant="outline">
+            <Link href="/profile/bookings">
+              <ArrowLeft data-icon="inline-start" />
+              Danh sách booking
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {booking.status === "PENDING" && booking.holdExpiresAt && (
@@ -240,17 +322,14 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
         </Alert>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="flex min-w-0 flex-col gap-6">
-          <StayDetailsCard booking={booking} />
-          <BookingTimeline history={detail.statusHistory} currentStatus={booking.status} />
-        </div>
-
-        <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-6">
+        <StayDetailsCard booking={booking} />
+        <div className="grid gap-6 lg:grid-cols-2">
           <PaymentSummaryCard detail={detail} />
           <ContactCard booking={booking} />
-          <BookingNotesCard detail={detail} />
         </div>
+        <BookingNotesCard detail={detail} />
+        <BookingTimeline history={detail.statusHistory} currentStatus={booking.status} />
       </div>
     </div>
   )
@@ -332,29 +411,11 @@ function RoomDetailCard({
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <DetailItem icon={CalendarDays} label="Nhận phòng" value={formatDate(room.checkInDate)} />
           <DetailItem icon={CalendarDays} label="Trả phòng" value={formatDate(room.checkOutDate)} />
           <DetailItem icon={Clock3} label="Số đêm" value={`${getRoomNights(room)} đêm`} />
-          <DetailItem icon={UsersRound} label="Khách dự kiến" value={`${room.guestCount} khách`} />
         </div>
-
-        <Separator />
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <DetailItem
-            icon={ReceiptText}
-            label="Chính sách hủy"
-            value={room.cancellationPolicyName ?? "Chưa có chính sách"}
-          />
-          <DetailItem
-            icon={CreditCard}
-            label="Hình thức thanh toán"
-            value={room.paymentOption === "PAY_AT_HOTEL" ? "Thanh toán tại khách sạn" : "Thanh toán trực tuyến"}
-          />
-        </div>
-
-        <Separator />
 
         <div className="flex flex-col gap-3">
           <p className="text-sm font-semibold">Giá từng đêm</p>
@@ -444,10 +505,6 @@ function PaymentSummaryCard({ detail }: { detail: BookingDetail }) {
         )}
         <Separator />
         <SummaryRow label="Tổng cộng" value={formatMoney(booking.totalAmount, booking.currency)} emphasized />
-        <SummaryRow
-          label={`Tiền cọc (${booking.depositPercentSnapshot}%)`}
-          value={formatMoney(booking.requiredDepositAmount, booking.currency)}
-        />
         <SummaryRow label="Đã thanh toán" value={formatMoney(detail.paidAmount, booking.currency)} />
         {detail.refundedAmount > 0 && (
           <SummaryRow label="Đã hoàn" value={formatMoney(detail.refundedAmount, booking.currency)} />
@@ -502,14 +559,6 @@ function BookingNotesCard({ detail }: { detail: BookingDetail }) {
           <span className="text-sm">{detail.specialRequests ?? "Không có yêu cầu đặc biệt"}</span>
         </div>
       </CardContent>
-      <CardFooter>
-        <Button asChild className="w-full">
-          <Link href="/booking">
-            <Hotel data-icon="inline-start" />
-            Đặt phòng mới
-          </Link>
-        </Button>
-      </CardFooter>
     </Card>
   )
 }

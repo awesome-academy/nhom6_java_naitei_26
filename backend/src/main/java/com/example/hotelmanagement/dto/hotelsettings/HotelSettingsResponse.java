@@ -25,9 +25,6 @@ public record HotelSettingsResponse(
         @Schema(example = "10.00")
         BigDecimal defaultRoomTaxPercent,
 
-        @Schema(example = "30.00")
-        BigDecimal defaultDepositPercent,
-
         @Schema(example = "100.00")
         BigDecimal defaultNoShowChargePercent
 ) {

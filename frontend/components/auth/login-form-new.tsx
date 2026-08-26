@@ -14,7 +14,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { toast } from "sonner"
 import { Loader2, Mail, Lock, Eye, EyeOff } from "lucide-react"
 import { login, getGoogleOAuthUrl } from "@/lib/api/auth"
-import { isAdminUser } from "@/lib/admin-auth"
+import { isBackOfficeUser } from "@/lib/admin-auth"
 import { useAuth } from "@/lib/auth-context"
 import type { LoginFormData } from "@/types/auth"
 
@@ -80,9 +80,9 @@ export function LoginFormNew() {
     try {
       const response = await login({ email: data.email, password: data.password })
 
-      if (isAdminUser(response.user)) {
+      if (isBackOfficeUser(response.user)) {
         clearAuth()
-        setError("Tài khoản quản trị cần đăng nhập tại trang /admin/login.")
+        setError("Tài khoản Manager cần đăng nhập tại trang /manager/login.")
         return
       }
 

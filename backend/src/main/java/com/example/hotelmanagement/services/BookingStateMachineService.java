@@ -1,21 +1,27 @@
 package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.booking.BookingResponse;
+import com.example.hotelmanagement.dto.booking.BookingBedSummaryResponse;
 import com.example.hotelmanagement.dto.booking.BookingRoomNightResponse;
 import com.example.hotelmanagement.dto.booking.BookingRoomResponse;
+import com.example.hotelmanagement.audit.AuditMutation;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.BookingRoom;
 import com.example.hotelmanagement.entity.BookingRoomNight;
 import com.example.hotelmanagement.entity.BookingStatusHistory;
 import com.example.hotelmanagement.entity.StaffProfile;
 import com.example.hotelmanagement.entity.enums.ActorType;
+import com.example.hotelmanagement.entity.enums.BedType;
 import com.example.hotelmanagement.entity.enums.BookingStatus;
 import com.example.hotelmanagement.entity.enums.StatusChangeSource;
+import com.example.hotelmanagement.entity.enums.PaymentStatus;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.BookingRepository;
 import com.example.hotelmanagement.repositories.StaffProfileRepository;
+import com.example.hotelmanagement.repositories.PaymentRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -25,6 +31,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Enforces the booking status transitions from DATABASE_DESIGN 8.1 (BR-010, BR-011) and BR-005
@@ -40,9 +50,27 @@ public class BookingStateMachineService {
 
     private final BookingRepository bookingRepository;
     private final StaffProfileRepository staffProfileRepository;
+    private final PaymentRepository paymentRepository;
     private final InvoiceService invoiceService;
     private final EmailService emailService;
     private final Clock clock;
+
+    @Autowired
+    public BookingStateMachineService(
+            BookingRepository bookingRepository,
+            StaffProfileRepository staffProfileRepository,
+            PaymentRepository paymentRepository,
+            InvoiceService invoiceService,
+            EmailService emailService,
+            Clock clock
+    ) {
+        this.bookingRepository = bookingRepository;
+        this.staffProfileRepository = staffProfileRepository;
+        this.paymentRepository = paymentRepository;
+        this.invoiceService = invoiceService;
+        this.emailService = emailService;
+        this.clock = clock;
+    }
 
     public BookingStateMachineService(
             BookingRepository bookingRepository,
@@ -51,14 +79,11 @@ public class BookingStateMachineService {
             EmailService emailService,
             Clock clock
     ) {
-        this.bookingRepository = bookingRepository;
-        this.staffProfileRepository = staffProfileRepository;
-        this.invoiceService = invoiceService;
-        this.emailService = emailService;
-        this.clock = clock;
+        this(bookingRepository, staffProfileRepository, null, invoiceService, emailService, clock);
     }
 
     @PreAuthorize(PermissionExpressions.BOOKING_CHECK_IN)
+    @AuditMutation(action = "BOOKING_CHECKED_IN", entityType = "booking", actorUserIdArgumentIndex = 1)
     public BookingResponse checkIn(String bookingPublicId, Long staffUserId) {
         Booking booking = getBookingForUpdate(bookingPublicId);
         StaffProfile staff = staffProfileRepository.findByUser_Id(staffUserId)
@@ -71,6 +96,7 @@ public class BookingStateMachineService {
     }
 
     @PreAuthorize(PermissionExpressions.BOOKING_CHECK_OUT)
+    @AuditMutation(action = "BOOKING_CHECKED_OUT", entityType = "booking", actorUserIdArgumentIndex = 1)
     public BookingResponse checkOut(String bookingPublicId, Long staffUserId) {
         Booking booking = getBookingForUpdate(bookingPublicId);
         StaffProfile staff = staffProfileRepository.findByUser_Id(staffUserId)
@@ -85,6 +111,7 @@ public class BookingStateMachineService {
     }
 
     @PreAuthorize(PermissionExpressions.BOOKING_CANCEL)
+    @AuditMutation(action = "BOOKING_CANCELLED", entityType = "booking", actorUserIdArgumentIndex = 1)
     public BookingResponse cancel(String bookingPublicId, Long actorUserId, String reason) {
         Booking booking = getBookingForUpdate(bookingPublicId);
         ensureCanCancel(booking, actorUserId);
@@ -101,6 +128,7 @@ public class BookingStateMachineService {
      * is verified (BR-012); there is no end-user permission for this yet, so it is intentionally
      * not wired to a controller endpoint.
      */
+    @AuditMutation(action = "BOOKING_CONFIRMED", entityType = "booking")
     public BookingResponse confirm(String bookingPublicId) {
         Booking booking = getBookingForUpdate(bookingPublicId);
         applyTransition(
@@ -115,11 +143,18 @@ public class BookingStateMachineService {
     /**
      * CONFIRMED -> NO_SHOW. Meant to be called by the end-of-day no-show job (BE-8.4).
      */
+    @AuditMutation(action = "BOOKING_NO_SHOW", entityType = "booking")
     public BookingResponse markNoShow(String bookingPublicId) {
+        return markNoShow(bookingPublicId, null);
+    }
+
+    /** Stores the immutable no-show calculation alongside the status transition. */
+    @AuditMutation(action = "BOOKING_NO_SHOW", entityType = "booking")
+    public BookingResponse markNoShow(String bookingPublicId, String metadata) {
         Booking booking = getBookingForUpdate(bookingPublicId);
         applyTransition(
                 booking, BookingStatus.NO_SHOW, ActorType.SYSTEM, null,
-                StatusChangeSource.NO_SHOW_JOB, "Guest did not check in"
+                StatusChangeSource.NO_SHOW_JOB, "Guest did not check in", metadata
         );
         return mapResponse(bookingRepository.saveAndFlush(booking));
     }
@@ -128,12 +163,19 @@ public class BookingStateMachineService {
      * PENDING -> EXPIRED. Meant to be called by the hold-expiry job (BE-8.4, QĐ-3) once
      * hold_expires_at has passed without payment.
      */
+    @AuditMutation(action = "BOOKING_EXPIRED", entityType = "booking")
     public BookingResponse expire(String bookingPublicId) {
         Booking booking = getBookingForUpdate(bookingPublicId);
         applyTransition(
                 booking, BookingStatus.EXPIRED, ActorType.SYSTEM, null,
                 StatusChangeSource.HOLD_EXPIRY_JOB, "Hold expired before payment"
         );
+        if (paymentRepository != null) {
+            paymentRepository.expireActivePaymentsByBookingId(
+                    booking.getId(),
+                    Set.of(PaymentStatus.PENDING, PaymentStatus.PROCESSING)
+            );
+        }
         return mapResponse(bookingRepository.saveAndFlush(booking));
     }
 
@@ -165,6 +207,18 @@ public class BookingStateMachineService {
             Long changedBy,
             StatusChangeSource source,
             String reason
+    ) {
+        applyTransition(booking, newStatus, actorType, changedBy, source, reason, null);
+    }
+
+    private void applyTransition(
+            Booking booking,
+            BookingStatus newStatus,
+            ActorType actorType,
+            Long changedBy,
+            StatusChangeSource source,
+            String reason,
+            String metadata
     ) {
         BookingStatus currentStatus = booking.getStatus();
         if (!isAllowedTransition(currentStatus, newStatus)) {
@@ -199,6 +253,7 @@ public class BookingStateMachineService {
                         .changedBy(historyChangedBy)
                         .source(source)
                         .reason(reason)
+                        .metadata(metadata)
                         .build()
         );
     }
@@ -243,10 +298,9 @@ public class BookingStateMachineService {
                 booking.getTaxTotal(),
                 booking.getRoomTaxPercentSnapshot(),
                 booking.getTotalAmount(),
-                booking.getDepositPercentSnapshot(),
-                booking.getRequiredDepositAmount(),
                 booking.getCurrency(),
                 booking.getHoldExpiresAt(),
+                buildBedSummaries(booking),
                 booking.getBookingRooms().stream().map(this::mapRoomResponse).toList(),
                 booking.getCreatedAt()
         );
@@ -272,7 +326,39 @@ public class BookingStateMachineService {
                 bookingRoom.getBookingRoomNights().stream()
                         .sorted(Comparator.comparing(BookingRoomNight::getStayDate))
                         .map(night -> new BookingRoomNightResponse(night.getStayDate(), night.getPrice()))
-                        .toList()
+                .toList()
         );
+    }
+
+    private List<BookingBedSummaryResponse> buildBedSummaries(Booking booking) {
+        record StateMachineBookingBedSummary(int quantity, java.math.BigDecimal totalAmount) {
+        }
+        Map<BedType, StateMachineBookingBedSummary> summaries = new EnumMap<>(BedType.class);
+        for (BookingRoom bookingRoom : booking.getBookingRooms()) {
+            if (bookingRoom.getRoomType() == null || bookingRoom.getRoomType().getBeds() == null) {
+                continue;
+            }
+            for (var bed : bookingRoom.getRoomType().getBeds()) {
+                StateMachineBookingBedSummary current = summaries.getOrDefault(
+                        bed.getBedType(),
+                        new StateMachineBookingBedSummary(0, java.math.BigDecimal.ZERO)
+                );
+                summaries.put(
+                        bed.getBedType(),
+                        new StateMachineBookingBedSummary(
+                                current.quantity() + bed.getQuantity(),
+                                current.totalAmount().add(bookingRoom.getRoomSubtotal())
+                        )
+                );
+            }
+        }
+        return summaries.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> new BookingBedSummaryResponse(
+                        entry.getKey(),
+                        entry.getValue().quantity(),
+                        entry.getValue().totalAmount().setScale(2, java.math.RoundingMode.HALF_UP)
+                ))
+                .toList();
     }
 }

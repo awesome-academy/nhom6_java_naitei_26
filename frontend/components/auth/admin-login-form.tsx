@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { login } from "@/lib/api/auth"
-import { isAdminUser } from "@/lib/admin-auth"
+import { isBackOfficeUser } from "@/lib/admin-auth"
 import { useAuth } from "@/lib/auth-context"
 import type { LoginFormData } from "@/types/auth"
 
@@ -27,8 +27,8 @@ const adminLoginSchema = z.object({
 type AdminLoginFormValues = z.infer<typeof adminLoginSchema>
 
 function getSafeRedirect(value: string | null): string {
-  if (!value || !value.startsWith("/admin") || value.startsWith("/admin/login")) {
-    return "/admin"
+  if (!value || (value !== "/manager" && !value.startsWith("/manager/")) || value.startsWith("/manager/login")) {
+    return "/manager"
   }
   return value
 }
@@ -38,7 +38,7 @@ function getErrorMessage(error: unknown): string {
   if (apiError.status === 401) return "Email hoặc mật khẩu không đúng"
   if (apiError.status === 423) return "Tài khoản đang bị khóa tạm thời. Vui lòng thử lại sau."
   if (apiError.status === 403) return "Tài khoản chưa sẵn sàng để đăng nhập."
-  return apiError.message || "Không thể đăng nhập quản trị. Vui lòng thử lại."
+  return apiError.message || "Không thể đăng nhập Manager. Vui lòng thử lại."
 }
 
 export function AdminLoginForm() {
@@ -50,10 +50,7 @@ export function AdminLoginForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isRedirecting, setIsRedirecting] = useState(false)
 
-  const redirectTo = useMemo(
-    () => getSafeRedirect(searchParams.get("redirect")),
-    [searchParams]
-  )
+  const requestedRedirect = useMemo(() => searchParams.get("redirect"), [searchParams])
   const wasForbidden = searchParams.get("reason") === "forbidden"
 
   const form = useForm<AdminLoginFormValues>({
@@ -65,10 +62,10 @@ export function AdminLoginForm() {
   })
 
   useEffect(() => {
-    if (!isAuthLoading && isAuthenticated && isAdminUser(user)) {
-      router.replace(redirectTo)
+    if (!isAuthLoading && isAuthenticated && isBackOfficeUser(user)) {
+      router.replace(getSafeRedirect(requestedRedirect))
     }
-  }, [isAuthLoading, isAuthenticated, redirectTo, router, user])
+  }, [isAuthLoading, isAuthenticated, requestedRedirect, router, user])
 
   async function submit(values: AdminLoginFormValues) {
     setIsSubmitting(true)
@@ -80,15 +77,15 @@ export function AdminLoginForm() {
         password: values.password,
       } satisfies LoginFormData)
 
-      if (!isAdminUser(response.user)) {
+      if (!isBackOfficeUser(response.user)) {
         clearAuth()
-        setError("Tài khoản này không có role ADMIN. Vui lòng dùng tài khoản quản trị.")
+        setError("Tài khoản này không có role STAFF hoặc ADMIN. Vui lòng dùng tài khoản Manager.")
         return
       }
 
       setAuth(response.user, response.accessToken, response.refreshToken)
       setIsRedirecting(true)
-      toast.success("Đăng nhập quản trị thành công")
+      toast.success("Đăng nhập Manager thành công")
     } catch (loginError) {
       setError(getErrorMessage(loginError))
       setIsRedirecting(false)
@@ -105,9 +102,9 @@ export function AdminLoginForm() {
             <ShieldCheck />
           </div>
           <div>
-            <CardTitle className="text-2xl">Đăng nhập quản trị</CardTitle>
+          <CardTitle className="text-2xl">Đăng nhập Manager</CardTitle>
             <CardDescription>
-              Chỉ tài khoản đã được gán role ADMIN trong database mới truy cập được khu quản trị.
+            Chỉ tài khoản đã được gán role STAFF hoặc ADMIN trong database mới truy cập được khu Manager.
             </CardDescription>
           </div>
         </CardHeader>
@@ -116,7 +113,7 @@ export function AdminLoginForm() {
             {(error || wasForbidden) && (
               <Alert variant="destructive">
                 <AlertDescription>
-                  {error ?? "Phiên hiện tại không có quyền ADMIN. Vui lòng đăng nhập tài khoản quản trị."}
+                  {error ?? "Phiên hiện tại không có quyền STAFF hoặc ADMIN. Vui lòng đăng nhập tài khoản Manager."}
                 </AlertDescription>
               </Alert>
             )}
@@ -128,14 +125,14 @@ export function AdminLoginForm() {
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Email quản trị</FormLabel>
+                      <FormLabel>Email Manager</FormLabel>
                       <FormControl>
                         <div className="relative">
                           <Mail className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                           <Input
                             type="email"
                             autoComplete="email"
-                            placeholder="admin@tripstay.com"
+                            placeholder="manager@tripstay.com"
                             className="pl-10"
                             {...field}
                           />
@@ -158,7 +155,7 @@ export function AdminLoginForm() {
                           <Input
                             type={showPassword ? "text" : "password"}
                             autoComplete="current-password"
-                            placeholder="Nhập mật khẩu quản trị"
+                            placeholder="Nhập mật khẩu Manager"
                             className="pl-10 pr-10"
                             {...field}
                           />
@@ -181,7 +178,7 @@ export function AdminLoginForm() {
 
                 <Button type="submit" className="w-full" disabled={isSubmitting || isRedirecting}>
                   {(isSubmitting || isRedirecting) && <Loader2 data-icon="inline-start" className="animate-spin" />}
-                  {isRedirecting ? "Đang vào khu quản trị..." : "Đăng nhập admin"}
+                  {isRedirecting ? "Đang vào khu Manager..." : "Đăng nhập Manager"}
                 </Button>
               </form>
             </Form>

@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.invoice.InvoiceAdjustmentRequest;
+import com.example.hotelmanagement.dto.invoice.InvoiceBuyerUpdateRequest;
 import com.example.hotelmanagement.dto.invoice.InvoiceResponse;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.BookingRoom;
@@ -40,6 +41,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -56,6 +58,7 @@ class InvoiceServiceTest {
     private static final String BOOKING_PUBLIC_ID = "11111111-1111-1111-1111-111111111111";
     private static final Long STAFF_USER_ID = 77L;
     private static final Long STAFF_PROFILE_ID = 5L;
+    private static final Long CUSTOMER_USER_ID = 88L;
     private static final Clock FIXED_CLOCK = Clock.fixed(
             Instant.parse("2026-08-23T09:00:00Z"),
             ZoneOffset.UTC
@@ -192,6 +195,44 @@ class InvoiceServiceTest {
                 .isInstanceOf(BusinessValidationException.class)
                 .hasMessageContaining("without booking room nights");
         verifyNoInteractions(folioChargeRepository);
+        verify(invoiceRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void updateBuyerNormalizesDraftBuyerFields() {
+        Invoice invoice = draftInvoiceWithRoomLine();
+        when(invoiceRepository.findForUpdateByPublicId(INVOICE_PUBLIC_ID))
+                .thenReturn(Optional.of(invoice));
+        when(invoiceRepository.saveAndFlush(invoice)).thenReturn(invoice);
+
+        InvoiceResponse response = invoiceService.updateBuyer(
+                INVOICE_PUBLIC_ID,
+                new InvoiceBuyerUpdateRequest(
+                        "  Nguyen Van B  ",
+                        "  123 Le Loi, Da Nang  ",
+                        "   ",
+                        "  buyer@example.com  "
+                )
+        );
+
+        assertThat(response.buyerName()).isEqualTo("Nguyen Van B");
+        assertThat(response.buyerAddress()).isEqualTo("123 Le Loi, Da Nang");
+        assertThat(response.buyerTaxCode()).isNull();
+        assertThat(response.buyerEmail()).isEqualTo("buyer@example.com");
+        verify(invoiceRepository).saveAndFlush(invoice);
+    }
+
+    @Test
+    void updateBuyerRejectsInvoiceThatIsNotDraft() {
+        Invoice invoice = issuedInvoiceWithRoomLine();
+        when(invoiceRepository.findForUpdateByPublicId(INVOICE_PUBLIC_ID))
+                .thenReturn(Optional.of(invoice));
+
+        assertThatThrownBy(() -> invoiceService.updateBuyer(
+                INVOICE_PUBLIC_ID,
+                new InvoiceBuyerUpdateRequest("Buyer", null, null, null)
+        )).isInstanceOf(BusinessValidationException.class)
+                .hasMessageContaining("DRAFT");
         verify(invoiceRepository, never()).saveAndFlush(any());
     }
 
@@ -479,6 +520,74 @@ class InvoiceServiceTest {
         verify(invoiceRepository, never()).saveAndFlush(any());
     }
 
+    @Test
+    void customerInvoicePrefersNewestIssuedInvoiceOverNewerVoidInvoice() {
+        Invoice voidInvoice = customerVisibleInvoice(
+                "33333333-3333-3333-3333-333333333333",
+                InvoiceStatus.VOID,
+                OffsetDateTime.now(FIXED_CLOCK)
+        );
+        Invoice issuedInvoice = customerVisibleInvoice(
+                INVOICE_PUBLIC_ID,
+                InvoiceStatus.ISSUED,
+                OffsetDateTime.now(FIXED_CLOCK).minusDays(1)
+        );
+        when(invoiceRepository.findCustomerVisibleInvoices(
+                BOOKING_PUBLIC_ID,
+                CUSTOMER_USER_ID,
+                Set.of(InvoiceStatus.ISSUED, InvoiceStatus.VOID)
+        )).thenReturn(List.of(voidInvoice, issuedInvoice));
+
+        InvoiceResponse response = invoiceService.getCustomerInvoice(
+                BOOKING_PUBLIC_ID,
+                CUSTOMER_USER_ID
+        );
+
+        assertThat(response.publicId()).isEqualTo(INVOICE_PUBLIC_ID);
+        assertThat(response.status()).isEqualTo(InvoiceStatus.ISSUED);
+    }
+
+    @Test
+    void customerInvoiceFallsBackToNewestVoidInvoice() {
+        Invoice newestVoid = customerVisibleInvoice(
+                INVOICE_PUBLIC_ID,
+                InvoiceStatus.VOID,
+                OffsetDateTime.now(FIXED_CLOCK)
+        );
+        Invoice olderVoid = customerVisibleInvoice(
+                "33333333-3333-3333-3333-333333333333",
+                InvoiceStatus.VOID,
+                OffsetDateTime.now(FIXED_CLOCK).minusDays(1)
+        );
+        when(invoiceRepository.findCustomerVisibleInvoices(
+                BOOKING_PUBLIC_ID,
+                CUSTOMER_USER_ID,
+                Set.of(InvoiceStatus.ISSUED, InvoiceStatus.VOID)
+        )).thenReturn(List.of(newestVoid, olderVoid));
+
+        InvoiceResponse response = invoiceService.getCustomerInvoice(
+                BOOKING_PUBLIC_ID,
+                CUSTOMER_USER_ID
+        );
+
+        assertThat(response.publicId()).isEqualTo(INVOICE_PUBLIC_ID);
+        assertThat(response.status()).isEqualTo(InvoiceStatus.VOID);
+    }
+
+    @Test
+    void customerInvoiceDoesNotExposeDraftOrUnownedInvoices() {
+        when(invoiceRepository.findCustomerVisibleInvoices(
+                BOOKING_PUBLIC_ID,
+                CUSTOMER_USER_ID,
+                Set.of(InvoiceStatus.ISSUED, InvoiceStatus.VOID)
+        )).thenReturn(List.of());
+
+        assertThatThrownBy(() -> invoiceService.getCustomerInvoice(
+                BOOKING_PUBLIC_ID,
+                CUSTOMER_USER_ID
+        )).isInstanceOf(ResourceNotFoundException.class);
+    }
+
     private Booking checkedOutBookingWithRoomNights() {
         Booking booking = checkedOutBooking();
         BookingRoom firstRoom = bookingRoom(booking);
@@ -578,6 +687,19 @@ class InvoiceServiceTest {
                 .build();
         roomItem.setId(50L);
         invoice.getItems().add(roomItem);
+        return invoice;
+    }
+
+    private Invoice customerVisibleInvoice(
+            String invoicePublicId,
+            InvoiceStatus status,
+            OffsetDateTime issuedAt
+    ) {
+        Invoice invoice = draftInvoiceWithRoomLine();
+        invoice.setPublicId(invoicePublicId);
+        invoice.setStatus(status);
+        invoice.setInvoiceNumber("INV-2026-000001");
+        invoice.setIssuedAt(issuedAt);
         return invoice;
     }
 

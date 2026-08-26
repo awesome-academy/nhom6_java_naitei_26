@@ -14,7 +14,7 @@ const TOKEN_KEYS: Record<AuthSessionScope, { accessToken: string; refreshToken: 
 }
 
 export function getAuthSessionScopeFromPathname(pathname: string): AuthSessionScope {
-  return pathname.startsWith("/admin") ? "admin" : "customer"
+  return pathname.startsWith("/manager") ? "admin" : "customer"
 }
 
 export function getCurrentAuthSessionScope(): AuthSessionScope {

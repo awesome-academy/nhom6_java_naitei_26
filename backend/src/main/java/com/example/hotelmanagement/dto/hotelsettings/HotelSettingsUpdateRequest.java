@@ -32,11 +32,6 @@ public record HotelSettingsUpdateRequest(
         @DecimalMax("100.00")
         BigDecimal defaultRoomTaxPercent,
 
-        @Schema(example = "30.00", nullable = true)
-        @DecimalMin("0.01")
-        @DecimalMax("100.00")
-        BigDecimal defaultDepositPercent,
-
         @Schema(example = "100.00", nullable = true)
         @DecimalMin("0.00")
         @DecimalMax("100.00")

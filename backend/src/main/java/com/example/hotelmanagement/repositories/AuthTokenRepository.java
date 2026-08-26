@@ -46,4 +46,11 @@ public interface AuthTokenRepository extends JpaRepository<AuthToken, Long> {
         @Param("tokenType") AuthTokenType tokenType,
         @Param("expiredAt") OffsetDateTime expiredAt
     );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+        delete from AuthToken token
+        where token.expiresAt < :cutoff
+        """)
+    int deleteExpiredBefore(@Param("cutoff") OffsetDateTime cutoff);
 }
