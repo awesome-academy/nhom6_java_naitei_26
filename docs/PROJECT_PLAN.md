@@ -152,7 +152,7 @@
   - `invoice:issue`, `invoice:void`
   - `review:moderate`, `email:send`
   - `staff:manage`, `shift:manage`, `audit:read`
-- Seed 3 roles (CUSTOMER/STAFF/ADMIN) + all permissions vào V1 migration
+- Seed 3 roles (CUSTOMER/STAFF/ADMIN) + all permissions vào V1 migration; mỗi User chỉ có một role hiện tại và đổi role là thay thế role cũ
 - Interceptor kiểm tra RBAC trước khi gọi service
 
 #### BE-2.4 | CustomerProfile & StaffProfile CRUD | Priority: Normal | 19/08 | Est: 4h
@@ -163,9 +163,11 @@
   - Cập nhật thông tin cá nhân
   - Deactivate (soft delete)
 - Staff-specific:
-  - Hire: tạo staff_profile + user nếu chưa có
-  - Edit
-  - Deactivate: set `terminated_at`, `employment_status=TERMINATED`
+  - Admin tạo User role `STAFF` + staff_profile độc lập, không dùng Customer và không tạo CustomerProfile
+  - Invitation email: User ở `PENDING_VERIFICATION`, Staff xác thực email và đặt mật khẩu mới qua link một lần
+  - Edit và Admin reset mật khẩu trực tiếp; reset thu hồi refresh token hiện tại
+  - Status: `ACTIVE`, `ON_LEAVE`, `TERMINATED`; chỉ Staff đã xác thực, User `ACTIVE` và employment `ACTIVE` được phân ca
+  - Terminate: set `terminated_at`, lưu email lịch sử, chuyển User sang `DEACTIVATED`, không khôi phục; tuyển lại tạo User/StaffProfile mới và cho phép tái sử dụng email bằng email lưu trữ hậu tố tăng dần
 - Additional fields:
   - `customer_profiles.loyalty_points`
   - `staff_profiles.base_salary` (chỉ ADMIN đọc)

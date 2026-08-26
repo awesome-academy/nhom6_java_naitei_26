@@ -50,9 +50,9 @@ Mỗi thực thể dưới đây tồn tại vì một câu trong tài liệu y�
 
 **Identity & Access**
 
-- **User** — chủ thể đăng nhập. Tách riêng khỏi Customer/Staff vì một người có thể vừa là nhân viên vừa là khách lưu trú, và vì OAuth (dòng 46-50) gắn với danh tính đăng nhập chứ không gắn với vai trò.
-- **Role, Permission** — dòng 159-161 nói "Admin có toàn bộ quyền của Staff cộng thêm quyền quản trị". Nếu dùng một cột `role VARCHAR` thì mỗi lần thêm quyền phải sửa code và deploy. Tách Role–Permission cho phép cấu hình bằng dữ liệu. Quan hệ User–Role là N–N để một người kiêm nhiệm được.
-- **CustomerProfile / StaffProfile** — hai vai trò có thuộc tính không giao nhau (khách cần địa chỉ, ngày sinh; nhân viên cần mã NV, ngày vào làm, phòng ban). Nhồi chung một bảng sẽ tạo hàng loạt cột NULL và không thể ràng buộc NOT NULL cho bên nào.
+- **User** — chủ thể đăng nhập. Tách riêng khỏi CustomerProfile/StaffProfile; Customer và Staff là hai loại tài khoản độc lập, không dùng chung một User và không có luồng chuyển Customer thành Staff.
+- **Role, Permission** — dòng 159-161 nói "Admin có toàn bộ quyền của Staff cộng thêm quyền quản trị". Tách Role–Permission cho phép cấu hình bằng dữ liệu. Mỗi User chỉ có một role hiện tại (`CUSTOMER`, `STAFF` hoặc `ADMIN`) để kiểm soát quyền rõ ràng; khi đổi vai trò, bản ghi role hiện tại được thay thế.
+- **CustomerProfile / StaffProfile** — hai loại tài khoản có thuộc tính không giao nhau. User role CUSTOMER chỉ có CustomerProfile; User role STAFF chỉ có StaffProfile. Staff được Admin tạo qua invitation, không tạo CustomerProfile.
 - **SocialAccount** — dòng 46-50, một User có thể liên kết Google + Facebook + X cùng lúc → quan hệ 1–N, không phải cột trên User.
 - **AuthToken** — dòng 42-45 và 179-184: token activation/reset "có thời hạn và chỉ dùng một lần". Đây là thực thể có vòng đời riêng (phát hành → hết hạn → đã dùng), không phải thuộc tính của User.
 
@@ -101,7 +101,7 @@ Mỗi thực thể dưới đây tồn tại vì một câu trong tài liệu y�
 ### 2.3. Quan hệ giữa các thực thể
 
 ```
-User 1─N UserRole N─1 Role N─N Permission
+User 1─1 UserRole N─1 Role N─N Permission
 User 1─1 CustomerProfile          User 1─1 StaffProfile
 User 1─N SocialAccount            User 1─N AuthToken
 
@@ -208,9 +208,9 @@ Tài khoản đăng nhập. Không chứa thuộc tính riêng của khách hay 
 | `roles`            | `id`, `code`, `name`, `description`, `is_system`  | `code` UNIQUE (`CUSTOMER`/`STAFF`/`ADMIN`). `is_system=true` chặn Admin xóa role gốc làm hỏng phân quyền |
 | `permissions`      | `id`, `code`, `resource`, `action`, `description` | `code` UNIQUE dạng `room:create`, `booking:cancel_any`, `staff:manage`. UNIQUE(`resource`,`action`)          |
 | `role_permissions` | `role_id`, `permission_id`                              | PK kép; FK`ON DELETE CASCADE` (xóa permission thì bỏ khỏi role là đúng)                                         |
-| `user_roles`       | `user_id`, `role_id`, `assigned_at`, `assigned_by`  | PK kép. N–N để một User kiêm nhiệm;`assigned_by` để audit ai cấp quyền                                       |
+| `user_roles`       | `user_id`, `role_id`, `assigned_at`, `assigned_by`  | PK kép và UNIQUE(`user_id`), bảo đảm một User chỉ có một role hiện tại;`assigned_by` để audit ai cấp quyền                                       |
 
-Vì sao không dùng `users.role VARCHAR`: dòng 160-161 mô tả Admin ⊃ Staff. Với enum một cột, mỗi lần thêm quyền cho Staff phải sửa code kiểm tra ở mọi endpoint. Với RBAC, thêm dòng vào `role_permissions` là xong.
+Role vẫn là bảng riêng thay vì enum trong `users` để quyền được cấu hình qua `role_permissions`; bảng nối chỉ còn giữ tương thích với RBAC hiện tại và bị giới hạn một dòng trên mỗi User.
 
 ### 3.3. `customer_profiles`
 
@@ -233,12 +233,15 @@ Vì sao không dùng `users.role VARCHAR`: dòng 160-161 mô tả Admin ⊃ Staf
 | `id`                | BIGINT            | PK                                   |                                                                                       |
 | `user_id`           | BIGINT            | NOT NULL, UNIQUE, FK→users RESTRICT | RESTRICT vì BR-008/dòng 167: Staff đã xử lý booking/invoice không được xóa |
 | `employee_code`     | VARCHAR(20)       | NOT NULL, UNIQUE                     | Mã nhân viên nội bộ                                                              |
-| `position`          | VARCHAR(80)       | NOT NULL                             | Receptionist, Housekeeping, Manager                                                   |
+| `position`          | VARCHAR(80)       | NULL                                 | Chức danh tùy chọn; chưa chuẩn hóa bằng bảng danh mục                                  |
 | `department`        | VARCHAR(80)       | NULL                                 |                                                                                       |
 | `hired_at`          | DATE              | NOT NULL                             |                                                                                       |
 | `terminated_at`     | DATE              | NULL, CHECK`>= hired_at`           | Dòng 165 "deactivate/fire" → ghi ngày, không xóa dòng                           |
+| `email_at_termination` | VARCHAR(255)   | NULL                              | Email đăng nhập trước khi tài khoản Staff bị lưu trữ để tuyển lại bằng email cũ |
 | `employment_status` | employment_status | NOT NULL default`ACTIVE`           | `ACTIVE / ON_LEAVE / TERMINATED`                                                    |
 | `base_salary`       | NUMERIC(14,2)     | NULL                                 | Nhạy cảm: chỉ Admin đọc, cần view riêng hoặc column-level grant               |
+
+Vòng đời Staff: invitation tạo User role `STAFF` ở `PENDING_VERIFICATION`; Staff phải mở link, xác thực email và đặt mật khẩu mới trước khi đăng nhập. Sau đó `ACTIVE ↔ ON_LEAVE`; chỉ `ACTIVE` và User `ACTIVE` đã xác thực được phân ca mới. `ACTIVE` hoặc `ON_LEAVE` có thể chuyển sang `TERMINATED`; đây là trạng thái cuối, User chuyển sang `DEACTIVATED` và StaffProfile không bị xóa hay khôi phục. Admin có thể reset mật khẩu trực tiếp mà không cần mật khẩu cũ.
 
 ### 3.5. `user_social_accounts`
 
@@ -263,7 +266,7 @@ Dùng chung cho activation (dòng 179-181) và reset password (dòng 42-45, 182-
 | ---------------- | --------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`           | BIGINT          | PK                              |                                                                                                                                                                                                                                       |
 | `user_id`      | BIGINT          | NOT NULL, FK→users CASCADE     |                                                                                                                                                                                                                                       |
-| `token_type`   | auth_token_type | NOT NULL                        | `EMAIL_VERIFICATION / PASSWORD_RESET / EMAIL_CHANGE`                                                                                                                                                                                |
+| `token_type`   | auth_token_type | NOT NULL                        | `EMAIL_VERIFICATION / STAFF_INVITATION / PASSWORD_RESET / EMAIL_CHANGE`                                                                                                                                                             |
 | `token_hash`   | CHAR(64)        | NOT NULL, UNIQUE                | **Lưu SHA-256 của token, không lưu token gốc.** Token là chuỗi random entropy cao nên SHA-256 ở đây là đủ (khác trường hợp CCCD ở mục 6.5). Nếu DB bị lộ, kẻ tấn công không dùng lại được token |
 | `expires_at`   | TIMESTAMPTZ     | NOT NULL, CHECK`> created_at` | "Đường dẫn có thời hạn" (dòng 45)                                                                                                                                                                                             |
 | `used_at`      | TIMESTAMPTZ     | NULL                            | "chỉ được sử dụng một lần" (dòng 45): hợp lệ khi`used_at IS NULL AND expires_at > now()`                                                                                                                                 |
@@ -1309,7 +1312,7 @@ Danh mục nội dung email có version hiện tại để hệ thống render r
 | Cột                           | Kiểu         | Ràng buộc                | Giải thích                                                                                                                                    |
 | ------------------------------ | ------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                         | BIGINT        | PK                         |                                                                                                                                                 |
-| `code`                       | VARCHAR(60)   | NOT NULL, UNIQUE           | `EMAIL_VERIFICATION / PASSWORD_RESET / BOOKING_CONFIRMED / PAYMENT_SUCCESS / BOOKING_CANCELLED / PAYMENT_REFUND / ACCOUNT_ACTIVATED` |
+| `code`                       | VARCHAR(60)   | NOT NULL, UNIQUE           | `EMAIL_VERIFICATION / STAFF_INVITATION / PASSWORD_RESET / BOOKING_CONFIRMED / PAYMENT_SUCCESS / BOOKING_CANCELLED / PAYMENT_REFUND / ACCOUNT_ACTIVATED` |
 | `name`                       | VARCHAR(120)  | NOT NULL                   | Tên quản trị                                                                                                                              |
 | `description`                | TEXT          | NULL                       |                                                                                                                                                 |
 | `subject`                    | VARCHAR(300)  | NOT NULL                   | Có thể chứa placeholder `{{variable_name}}`                                                                                             |

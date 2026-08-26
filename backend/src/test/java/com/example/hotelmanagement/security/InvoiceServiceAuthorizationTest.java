@@ -1,10 +1,12 @@
 package com.example.hotelmanagement.security;
 
+import com.example.hotelmanagement.dto.invoice.InvoiceBuyerUpdateRequest;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.FolioChargeRepository;
 import com.example.hotelmanagement.repositories.InvoiceItemRepository;
 import com.example.hotelmanagement.repositories.InvoiceRepository;
 import com.example.hotelmanagement.services.InvoiceService;
+import com.example.hotelmanagement.dto.invoice.InvoiceVoidRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -54,5 +56,40 @@ class InvoiceServiceAuthorizationTest {
         assertThatThrownBy(() -> invoiceService.getInvoice(INVOICE_PUBLIC_ID))
                 .isInstanceOf(ResourceNotFoundException.class);
         verify(invoiceRepository).findByPublicId(INVOICE_PUBLIC_ID);
+    }
+
+    @Test
+    @WithMockUser(authorities = "invoice:issue")
+    void issuePermissionCannotVoidInvoice() {
+        assertThatThrownBy(() -> invoiceService.voidInvoice(
+                INVOICE_PUBLIC_ID,
+                1L,
+                new InvoiceVoidRequest("Wrong invoice", false)
+        )).isInstanceOf(AccessDeniedException.class);
+        verifyNoInteractions(invoiceRepository, invoiceItemRepository, folioChargeRepository);
+    }
+
+    @Test
+    @WithMockUser(authorities = "booking:check_out")
+    void serviceRejectsBuyerUpdateWithoutInvoiceIssuePermission() {
+        assertThatThrownBy(() -> invoiceService.updateBuyer(
+                INVOICE_PUBLIC_ID,
+                new InvoiceBuyerUpdateRequest("Buyer", null, null, null)
+        )).isInstanceOf(AccessDeniedException.class);
+        verifyNoInteractions(invoiceRepository, invoiceItemRepository, folioChargeRepository);
+    }
+
+    @Test
+    @WithMockUser(authorities = "invoice:void")
+    void voidPermissionReachesInvoiceRepository() {
+        when(invoiceRepository.findForUpdateByPublicId(INVOICE_PUBLIC_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> invoiceService.voidInvoice(
+                INVOICE_PUBLIC_ID,
+                1L,
+                new InvoiceVoidRequest("Wrong invoice", false)
+        )).isInstanceOf(ResourceNotFoundException.class);
+        verify(invoiceRepository).findForUpdateByPublicId(INVOICE_PUBLIC_ID);
     }
 }

@@ -25,7 +25,7 @@ public class StaffProfile extends BaseEntity {
     @Column(name = "employee_code", nullable = false, unique = true, length = 20)
     private String employeeCode;
 
-    @Column(nullable = false, length = 80)
+    @Column(length = 80)
     private String position;
 
     @Column(length = 80)
@@ -36,6 +36,9 @@ public class StaffProfile extends BaseEntity {
 
     @Column(name = "terminated_at")
     private LocalDate terminatedAt;
+
+    @Column(name = "email_at_termination", length = 255)
+    private String emailAtTermination;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "employment_status", nullable = false)

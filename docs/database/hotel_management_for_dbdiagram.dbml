@@ -42,6 +42,7 @@ enum oauth_provider {
 
 enum auth_token_type {
   EMAIL_VERIFICATION
+  STAFF_INVITATION
   PASSWORD_RESET
   EMAIL_CHANGE
 }
@@ -244,7 +245,7 @@ Table users {
     status
     (status, deleted_at)
   }
-  note: 'Tài khoản đăng nhập. Tách khỏi profile vì 1 người có thể vừa là staff vừa là khách.'
+  note: 'Tài khoản đăng nhập. CUSTOMER và STAFF là hai loại tài khoản độc lập; Staff được tạo qua invitation và không có CustomerProfile.'
 }
 
 Table roles {
@@ -286,8 +287,9 @@ Table user_roles {
 
   indexes {
     (user_id, role_id) [pk]
+    (user_id) [unique]
   }
-  note: 'N-N để 1 user kiêm nhiệm nhiều vai trò. BR-014'
+  note: 'Mỗi user chỉ có một role hiện tại; role mới thay role cũ.'
 }
 
 Table customer_profiles {
@@ -310,10 +312,11 @@ Table staff_profiles {
   id bigint [pk, increment]
   user_id bigint [not null, unique]
   employee_code varchar(20) [not null, unique]
-  position varchar(80) [not null]
+  position varchar(80)
   department varchar(80)
   hired_at date [not null]
   terminated_at date [note: 'Fire = ghi ngày, không xóa dòng - BR-008']
+  email_at_termination varchar(255) [note: 'Email trước khi tài khoản Staff được lưu trữ']
   employment_status employment_status [not null, default: 'ACTIVE']
   base_salary decimal(14,2) [note: 'Nhạy cảm: chỉ Admin đọc']
   created_at timestamptz [not null, default: `now()`]

@@ -10,6 +10,7 @@ import com.example.hotelmanagement.entity.StaffProfile;
 import com.example.hotelmanagement.entity.User;
 import com.example.hotelmanagement.entity.enums.AssignmentStatus;
 import com.example.hotelmanagement.entity.enums.EmploymentStatus;
+import com.example.hotelmanagement.entity.enums.UserStatus;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.ShiftOverlapException;
 import com.example.hotelmanagement.repositories.ShiftAssignmentRepository;
@@ -264,7 +265,11 @@ class ShiftAssignmentServiceTest {
     }
 
     private StaffProfile createStaffProfile() {
-        User user = User.builder().fullName("Nguyen Van A").build();
+        User user = User.builder()
+                .fullName("Nguyen Van A")
+                .status(UserStatus.ACTIVE)
+                .emailVerifiedAt(OffsetDateTime.now())
+                .build();
         StaffProfile staff = StaffProfile.builder()
                 .user(user)
                 .employeeCode("NV001")

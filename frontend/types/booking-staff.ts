@@ -179,6 +179,7 @@ export interface PaymentResponse {
 
 export interface InvoiceItemResponse {
   id: number;
+  lineType: "ROOM" | "SERVICE" | "ADJUSTMENT" | "TAX" | "DISCOUNT";
   description: string;
   quantity: number;
   unitPrice: number;
@@ -187,14 +188,17 @@ export interface InvoiceItemResponse {
   taxPercent: number;
   taxAmount: number;
   lineTotal: number;
+  referenceType: string | null;
+  referenceId: number | null;
+  sortOrder: number;
 }
 
 export interface InvoiceResponse {
   publicId: string;
-  invoiceNumber: string;
+  invoiceNumber: string | null;
   bookingPublicId: string;
-  status: string;
-  paymentStatus: string;
+  status: "DRAFT" | "ISSUED" | "VOID";
+  paymentStatus: "UNPAID" | "PARTIALLY_PAID" | "PAID" | "REFUNDED";
   issuedAt: string | null;
   issuedBy: number | null;
   buyerName: string;

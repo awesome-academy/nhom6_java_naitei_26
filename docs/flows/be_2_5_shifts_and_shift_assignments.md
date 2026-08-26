@@ -8,6 +8,7 @@ BE-2.5 cung cấp API cho Admin định nghĩa ca trực và phân công Staff v
 - `shift_assignments` là snapshot lịch đã phân công, gồm thời điểm bắt đầu và kết thúc thực tế.
 - BR-014 yêu cầu người gọi có permission `shift:manage`.
 - BR-015 không cho một Staff có hai assignment hiệu lực bị overlap.
+- Chỉ Staff có role `STAFF`, User `ACTIVE`, email đã xác thực và employment status `ACTIVE` mới được phân ca.
 
 ## 2. API contract
 
@@ -27,6 +28,8 @@ Tất cả endpoint dưới đây cần access token hợp lệ và authority `s
 | `DELETE` | `/api/shift-assignments/{publicId}` | Set `status=CANCELLED`, trả `204 No Content` |
 
 `POST /api/shift-assignments` nhận `employeeCode`, `shiftCode`, `workDate` và `note`. Client không được truyền `assignedBy`; backend lấy user ID từ JWT principal.
+
+Staff chỉ được phân assignment khi `employment_status=ACTIVE`. Staff `ON_LEAVE` vẫn có thể đăng nhập nhưng bị từ chối assignment mới; Staff `TERMINATED` không thể đăng nhập, không thể khôi phục và chỉ còn dữ liệu lịch sử.
 
 ## 3. Flow quản lý Shift
 

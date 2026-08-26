@@ -350,8 +350,9 @@ public class BookingStaffService {
                 .toList();
 
         // Map invoices
-        List<InvoiceResponse> invoices = invoiceRepository.findAll().stream()
-                .filter(inv -> inv.getBooking().getId().equals(booking.getId()))
+        List<InvoiceResponse> invoices = invoiceRepository
+                .findAllByBooking_PublicIdOrderByCreatedAtAscIdAsc(booking.getPublicId())
+                .stream()
                 .map(this::mapToInvoiceResponse)
                 .toList();
 
@@ -531,6 +532,14 @@ public class BookingStaffService {
 
     private InvoiceResponse mapToInvoiceResponse(Invoice invoice) {
         List<InvoiceItemResponse> items = invoice.getItems().stream()
+                .sorted(Comparator.comparing(
+                                InvoiceItem::getSortOrder,
+                                Comparator.nullsLast(Integer::compareTo)
+                        )
+                        .thenComparing(
+                                InvoiceItem::getId,
+                                Comparator.nullsLast(Long::compareTo)
+                        ))
                 .map(item -> new InvoiceItemResponse(
                         item.getId(),
                         item.getLineType(),

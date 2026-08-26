@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -27,6 +28,9 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
             String bookingPublicId,
             InvoiceStatus status
     );
+
+    @EntityGraph(attributePaths = {"booking", "items"})
+    List<Invoice> findAllByBooking_PublicIdOrderByCreatedAtAscIdAsc(String bookingPublicId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT invoice FROM Invoice invoice WHERE invoice.publicId = :publicId")

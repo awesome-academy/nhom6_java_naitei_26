@@ -16,6 +16,7 @@ public record AuthProperties(
     @NotNull Duration emailVerificationTokenTtl,
     @NotNull Duration passwordResetTokenTtl,
     @NotBlank String frontendVerifyUrl,
-    @NotBlank String frontendResetUrl
+    @NotBlank String frontendResetUrl,
+    @NotBlank String frontendStaffInvitationUrl
 ) {
 }
