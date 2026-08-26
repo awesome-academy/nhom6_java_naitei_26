@@ -9,6 +9,7 @@ import type {
   AuthMessageResponse,
   AuthResponse,
   EmailVerificationRequest,
+  EmailVerificationResendRequest,
   LoginRequest,
   LogoutRequest,
   OAuthGoogleRequest,
@@ -45,6 +46,12 @@ export async function register(data: RegisterRequest): Promise<AuthMessageRespon
 
 export async function verifyEmail(data: EmailVerificationRequest): Promise<AuthMessageResponse> {
   return apiClient.post<AuthMessageResponse>("/api/auth/verify-email", data)
+}
+
+export async function resendEmailVerification(
+  data: EmailVerificationResendRequest
+): Promise<AuthMessageResponse> {
+  return apiClient.post<AuthMessageResponse>("/api/auth/verify-email/resend", data)
 }
 
 export async function requestPasswordReset(

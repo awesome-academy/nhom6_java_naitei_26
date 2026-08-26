@@ -47,6 +47,12 @@ public interface AuthTokenRepository extends JpaRepository<AuthToken, Long> {
         @Param("expiredAt") OffsetDateTime expiredAt
     );
 
+    boolean existsByUserAndTokenTypeAndCreatedAtAfter(
+        User user,
+        AuthTokenType tokenType,
+        OffsetDateTime createdAt
+    );
+
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
         delete from AuthToken token
