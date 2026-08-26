@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { login } from "@/lib/api/auth"
-import { isAdminUser } from "@/lib/admin-auth"
+import { isBackOfficeUser } from "@/lib/admin-auth"
 import { useAuth } from "@/lib/auth-context"
 import type { LoginFormData } from "@/types/auth"
 
@@ -65,7 +65,7 @@ export function AdminLoginForm() {
   })
 
   useEffect(() => {
-    if (!isAuthLoading && isAuthenticated && isAdminUser(user)) {
+    if (!isAuthLoading && isAuthenticated && isBackOfficeUser(user)) {
       router.replace(redirectTo)
     }
   }, [isAuthLoading, isAuthenticated, redirectTo, router, user])
@@ -80,9 +80,9 @@ export function AdminLoginForm() {
         password: values.password,
       } satisfies LoginFormData)
 
-      if (!isAdminUser(response.user)) {
+      if (!isBackOfficeUser(response.user)) {
         clearAuth()
-        setError("Tài khoản này không có role ADMIN. Vui lòng dùng tài khoản quản trị.")
+        setError("Tài khoản này không có role STAFF hoặc ADMIN. Vui lòng dùng tài khoản quản trị.")
         return
       }
 
@@ -107,7 +107,7 @@ export function AdminLoginForm() {
           <div>
             <CardTitle className="text-2xl">Đăng nhập quản trị</CardTitle>
             <CardDescription>
-              Chỉ tài khoản đã được gán role ADMIN trong database mới truy cập được khu quản trị.
+              Chỉ tài khoản đã được gán role STAFF hoặc ADMIN trong database mới truy cập được khu quản trị.
             </CardDescription>
           </div>
         </CardHeader>
@@ -116,7 +116,7 @@ export function AdminLoginForm() {
             {(error || wasForbidden) && (
               <Alert variant="destructive">
                 <AlertDescription>
-                  {error ?? "Phiên hiện tại không có quyền ADMIN. Vui lòng đăng nhập tài khoản quản trị."}
+                  {error ?? "Phiên hiện tại không có quyền STAFF hoặc ADMIN. Vui lòng đăng nhập tài khoản quản trị."}
                 </AlertDescription>
               </Alert>
             )}

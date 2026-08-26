@@ -40,6 +40,17 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
     @Query("""
             SELECT COALESCE(SUM(refund.amount), 0)
             FROM Refund refund
+            WHERE refund.payment.id = :paymentId
+              AND refund.status IN :statuses
+            """)
+    BigDecimal sumAmountsByPaymentIdAndStatuses(
+            @Param("paymentId") Long paymentId,
+            @Param("statuses") Collection<RefundStatus> statuses
+    );
+
+    @Query("""
+            SELECT COALESCE(SUM(refund.amount), 0)
+            FROM Refund refund
             WHERE refund.booking.id = :bookingId
               AND refund.status = :status
             """)
