@@ -47,6 +47,7 @@ import {
 import { toast } from "sonner"
 
 import { SiteHeader } from "@/components/auth/site-header"
+import { BookingPaymentStep } from "@/components/payment/booking-payment-step"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -859,30 +860,7 @@ export default function BookingPage() {
     return (
       <div className="min-h-screen bg-background">
         <SiteHeader />
-        <main className="mx-auto flex min-h-[70vh] max-w-2xl flex-col items-center justify-center gap-5 px-6 text-center">
-          <div className="flex size-16 items-center justify-center rounded-full bg-[var(--success)] text-white">
-            <Check />
-          </div>
-          <Badge variant="success">Thanh toán thành công</Badge>
-          <h1 className="font-serif text-4xl tracking-tight">Đặt phòng đã được ghi nhận.</h1>
-          <p className="text-muted-foreground">
-            Mã đặt phòng <span className="font-semibold text-foreground">{booking.bookingCode}</span>.
-            Tạm thời FE đang xác nhận thanh toán thành công sau khi tạo booking. Ở backend, phòng được giữ đến{" "}
-            <span className="font-semibold text-foreground">
-              {booking.holdExpiresAt
-                ? new Date(booking.holdExpiresAt).toLocaleString("vi-VN")
-                : "thời điểm được hệ thống xác nhận"}
-            </span>.
-          </p>
-          <div className="flex flex-wrap justify-center gap-3">
-            <Button asChild>
-              <Link href="/profile/bookings">Xem đơn đặt phòng</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/booking">Đặt thêm phòng</Link>
-            </Button>
-          </div>
-        </main>
+        <BookingPaymentStep booking={booking} />
       </div>
     )
   }
