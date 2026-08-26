@@ -27,6 +27,7 @@ import {
   UserCog,
   BarChart3,
   WalletCards,
+  MessageSquareText,
   Settings,
   Bell,
   Search,
@@ -48,6 +49,7 @@ const adminNav = [
   { href: "/admin/bookings", label: "Đặt phòng", icon: Calendar },
   { href: "/admin/shifts", label: "Ca trực", icon: CalendarClock },
   { href: "/admin/payments", label: "Thanh toán", icon: WalletCards },
+  { href: "/admin/reviews", label: "Đánh giá", icon: MessageSquareText },
   { href: "/admin/guests", label: "Khách hàng", icon: Users },
   { href: "/admin/staff", label: "Nhân viên", icon: UserCog },
   { href: "/admin/reports", label: "Báo cáo", icon: BarChart3 },
@@ -131,6 +133,20 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         </div>
 
         <nav className="space-y-1 p-3">
+          {user?.roles.includes("STAFF") && (
+            <Link
+              href="/staff/shifts"
+              className={cn(
+                "mb-2 flex items-center gap-3 rounded-lg border border-white/10 px-3 py-2.5 text-sm font-medium transition-colors",
+                pathname.startsWith("/staff")
+                  ? "bg-[var(--accent)] text-white"
+                  : "text-gray-400 hover:bg-white/10 hover:text-white"
+              )}
+            >
+              <CalendarClock className="h-5 w-5 shrink-0" />
+              {sidebarOpen && <span>Lịch ca của tôi</span>}
+            </Link>
+          )}
           {adminNav.map((item) => {
             const isActive = pathname === item.href
             return (

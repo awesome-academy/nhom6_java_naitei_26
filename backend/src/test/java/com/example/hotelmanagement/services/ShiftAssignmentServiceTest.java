@@ -25,6 +25,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -65,7 +67,8 @@ class ShiftAssignmentServiceTest {
                 shiftAssignmentRepository,
                 staffProfileRepository,
                 shiftRepository,
-                new HotelProperties(ZoneId.of("Asia/Ho_Chi_Minh"))
+                new HotelProperties(ZoneId.of("Asia/Ho_Chi_Minh")),
+                Clock.fixed(Instant.parse("2026-08-20T00:00:00Z"), ZoneId.of("UTC"))
         );
         staffProfile = createStaffProfile();
     }
@@ -256,6 +259,82 @@ class ShiftAssignmentServiceTest {
                 .findByStaffProfile_EmployeeCodeIgnoreCaseOrderByWorkDateAscShiftStartAtAsc(any());
     }
 
+    @Test
+    void getOwnShiftAssignmentsQueriesOnlyCurrentUserWithinDateRange() {
+        ShiftAssignment assignment = createAssignment(UUID.randomUUID());
+        when(shiftAssignmentRepository
+                .findByStaffProfile_User_IdAndWorkDateBetweenOrderByWorkDateAscShiftStartAtAsc(
+                        99L, WORK_DATE, WORK_DATE.plusDays(13)
+                )).thenReturn(List.of(assignment));
+
+        List<ShiftAssignmentResponse> responses = shiftAssignmentService.getOwnShiftAssignments(
+                99L, WORK_DATE, WORK_DATE.plusDays(13)
+        );
+
+        assertEquals(1, responses.size());
+        verify(shiftAssignmentRepository)
+                .findByStaffProfile_User_IdAndWorkDateBetweenOrderByWorkDateAscShiftStartAtAsc(
+                        99L, WORK_DATE, WORK_DATE.plusDays(13)
+                );
+    }
+
+    @Test
+    void completeOwnShiftAfterEndChangesStatus() {
+        UUID publicId = UUID.randomUUID();
+        ShiftAssignment assignment = createAssignment(publicId);
+        when(shiftAssignmentRepository.findByPublicId(publicId.toString()))
+                .thenReturn(Optional.of(assignment));
+        when(shiftAssignmentRepository.saveAndFlush(assignment)).thenReturn(assignment);
+
+        ShiftAssignmentResponse response = shiftAssignmentService.completeOwnShift(publicId, 99L);
+
+        assertEquals(AssignmentStatus.COMPLETED, response.status());
+        verify(shiftAssignmentRepository).saveAndFlush(assignment);
+    }
+
+    @Test
+    void completeOwnShiftBeforeEndIsRejected() {
+        UUID publicId = UUID.randomUUID();
+        ShiftAssignment assignment = createAssignment(publicId);
+        assignment.setShiftEndAt(OffsetDateTime.parse("2026-08-21T14:00:00+07:00"));
+        when(shiftAssignmentRepository.findByPublicId(publicId.toString()))
+                .thenReturn(Optional.of(assignment));
+
+        assertThrows(
+                BusinessValidationException.class,
+                () -> shiftAssignmentService.completeOwnShift(publicId, 99L)
+        );
+        verify(shiftAssignmentRepository, never()).saveAndFlush(any(ShiftAssignment.class));
+    }
+
+    @Test
+    void reportOwnAbsenceTrimsAndStoresNote() {
+        UUID publicId = UUID.randomUUID();
+        ShiftAssignment assignment = createAssignment(publicId);
+        when(shiftAssignmentRepository.findByPublicId(publicId.toString()))
+                .thenReturn(Optional.of(assignment));
+        when(shiftAssignmentRepository.saveAndFlush(assignment)).thenReturn(assignment);
+
+        ShiftAssignmentResponse response = shiftAssignmentService.reportOwnAbsence(publicId, 99L, "  Sick leave  ");
+
+        assertEquals(AssignmentStatus.ABSENT, response.status());
+        assertEquals("Sick leave", response.note());
+    }
+
+    @Test
+    void ownShiftCannotBeUpdatedByAnotherUser() {
+        UUID publicId = UUID.randomUUID();
+        ShiftAssignment assignment = createAssignment(publicId);
+        when(shiftAssignmentRepository.findByPublicId(publicId.toString()))
+                .thenReturn(Optional.of(assignment));
+
+        assertThrows(
+                com.example.hotelmanagement.exceptions.ResourceNotFoundException.class,
+                () -> shiftAssignmentService.completeOwnShift(publicId, 100L)
+        );
+        verify(shiftAssignmentRepository, never()).saveAndFlush(any(ShiftAssignment.class));
+    }
+
     private void stubAssignmentCreation(Shift shift) {
         when(staffProfileRepository.findByEmployeeCodeIgnoreCase("NV001"))
                 .thenReturn(Optional.of(staffProfile));
@@ -278,6 +357,7 @@ class ShiftAssignmentServiceTest {
                 .employmentStatus(EmploymentStatus.ACTIVE)
                 .build();
         staff.setId(10L);
+        user.setId(99L);
         return staff;
     }
 

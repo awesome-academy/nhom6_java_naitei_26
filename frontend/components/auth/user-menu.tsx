@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/DropdownMenu";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-import { isBackOfficeUser } from "@/lib/admin-auth";
+import { isBackOfficeUser, isStaffUser } from "@/lib/admin-auth";
 import { logout } from "@/lib/api/auth";
 import { getStoredTokens } from "@/lib/api/auth";
 import {
@@ -45,6 +45,7 @@ export function UserMenu() {
   if (!user) return null;
 
   const isAdmin = isBackOfficeUser(user);
+  const isStaff = isStaffUser(user);
 
   const handleLogout = async () => {
     setOpen(false);
@@ -126,6 +127,19 @@ export function UserMenu() {
         {isAdmin && (
           <>
             <DropdownMenuSeparator />
+            {isStaff && (
+              <DropdownMenuItem asChild>
+                <Link
+                  href="/staff/shifts"
+                  className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] group"
+                >
+                  <Calendar className="h-4 w-4 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" />
+                  <span className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]">
+                    Lịch ca của tôi
+                  </span>
+                </Link>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem asChild>
               <Link
                 href="/admin"
