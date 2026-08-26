@@ -1,6 +1,7 @@
 package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.refund.RefundCompleteRequest;
+import com.example.hotelmanagement.dto.refund.RefundPreviewResponse;
 import com.example.hotelmanagement.dto.refund.RefundResponse;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.BookingRoom;
@@ -326,6 +327,125 @@ class RefundServiceTest {
         assertThatThrownBy(() -> refundService.complete(BOOKING_PUBLIC_ID, 500L, null))
                 .isInstanceOf(BusinessValidationException.class);
         verify(paymentLedgerService, never()).synchronizeCompletedRefund(any());
+    }
+
+    @Test
+    void getLatestRefundReturnsMappedRefundForOwner() {
+        Booking booking = cancelledBooking(
+                new BigDecimal("1000000.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                FLEXIBLE_POLICY_JSON, OffsetDateTime.parse("2026-08-20T00:00:00Z"),
+                LocalDate.of(2026, 8, 23), true
+        );
+        when(bookingRepository.findByPublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(booking));
+        when(refundRepository.findFirstByBooking_PublicIdOrderByCreatedAtDesc(BOOKING_PUBLIC_ID))
+                .thenReturn(Optional.of(refund(RefundStatus.PROCESSING)));
+
+        Optional<RefundResponse> response = refundService.getLatestRefund(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID);
+
+        assertThat(response).isPresent();
+        assertThat(response.get().status()).isEqualTo(RefundStatus.PROCESSING);
+    }
+
+    @Test
+    void getLatestRefundReturnsEmptyWhenNoneExists() {
+        Booking booking = cancelledBooking(
+                new BigDecimal("1000000.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                FLEXIBLE_POLICY_JSON, OffsetDateTime.parse("2026-08-20T00:00:00Z"),
+                LocalDate.of(2026, 8, 23), true
+        );
+        when(bookingRepository.findByPublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(booking));
+        when(refundRepository.findFirstByBooking_PublicIdOrderByCreatedAtDesc(BOOKING_PUBLIC_ID))
+                .thenReturn(Optional.empty());
+
+        Optional<RefundResponse> response = refundService.getLatestRefund(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID);
+
+        assertThat(response).isEmpty();
+    }
+
+    @Test
+    void getLatestRefundRejectsNonOwnerWithoutRefundApprove() {
+        Booking booking = cancelledBooking(
+                new BigDecimal("1000000.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                FLEXIBLE_POLICY_JSON, OffsetDateTime.parse("2026-08-20T00:00:00Z"),
+                LocalDate.of(2026, 8, 23), true
+        );
+        when(bookingRepository.findByPublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(booking));
+        authenticateAs("booking:read_own");
+
+        assertThatThrownBy(() -> refundService.getLatestRefund(BOOKING_PUBLIC_ID, STAFF_USER_ID))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(refundRepository, never()).findFirstByBooking_PublicIdOrderByCreatedAtDesc(any());
+    }
+
+    @Test
+    void previewRefundReturnsEstimateForConfirmedBookingOwner() {
+        stubHotelSettings();
+        Booking booking = cancelledBooking(
+                new BigDecimal("1000000.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                FLEXIBLE_POLICY_JSON, OffsetDateTime.parse("2026-08-20T00:00:00Z"),
+                LocalDate.of(2026, 8, 28), true
+        );
+        booking.setStatus(BookingStatus.CONFIRMED);
+        when(bookingRepository.findByPublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(booking));
+        when(paymentRepository.findFirstByBooking_IdAndStatusInOrderByCreatedAtDesc(any(), any()))
+                .thenReturn(Optional.of(receivedPayment()));
+
+        RefundPreviewResponse response = refundService.previewRefund(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID);
+
+        // FIXED_CLOCK (2026-08-24T09:00Z) to scheduled 14:00 check-in on 2026-08-28 -> 94h before,
+        // matches the 72h/100% rule; no commission -> full room subtotal refunded.
+        assertThat(response.bookingPublicId()).isEqualTo(BOOKING_PUBLIC_ID);
+        assertThat(response.hasReceivedPayment()).isTrue();
+        assertThat(response.estimatedNetRefund()).isEqualByComparingTo("1000000.00");
+        assertThat(response.asOf()).isEqualTo(OffsetDateTime.now(FIXED_CLOCK));
+    }
+
+    @Test
+    void previewRefundReflectsNoReceivedPaymentWithoutThrowing() {
+        stubHotelSettings();
+        Booking booking = cancelledBooking(
+                new BigDecimal("1000000.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                FLEXIBLE_POLICY_JSON, OffsetDateTime.parse("2026-08-20T00:00:00Z"),
+                LocalDate.of(2026, 8, 28), true
+        );
+        booking.setStatus(BookingStatus.CONFIRMED);
+        when(bookingRepository.findByPublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(booking));
+        when(paymentRepository.findFirstByBooking_IdAndStatusInOrderByCreatedAtDesc(any(), any()))
+                .thenReturn(Optional.empty());
+
+        RefundPreviewResponse response = refundService.previewRefund(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID);
+
+        assertThat(response.hasReceivedPayment()).isFalse();
+        assertThat(response.estimatedNetRefund()).isEqualByComparingTo("1000000.00");
+    }
+
+    @Test
+    void previewRefundRejectsNonOwnerWithoutRefundApprove() {
+        Booking booking = cancelledBooking(
+                new BigDecimal("1000000.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                FLEXIBLE_POLICY_JSON, OffsetDateTime.parse("2026-08-20T00:00:00Z"),
+                LocalDate.of(2026, 8, 28), true
+        );
+        booking.setStatus(BookingStatus.CONFIRMED);
+        when(bookingRepository.findByPublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(booking));
+        authenticateAs("booking:read_own");
+
+        assertThatThrownBy(() -> refundService.previewRefund(BOOKING_PUBLIC_ID, STAFF_USER_ID))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void previewRefundRejectsBookingNotConfirmed() {
+        Booking booking = cancelledBooking(
+                new BigDecimal("1000000.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                FLEXIBLE_POLICY_JSON, OffsetDateTime.parse("2026-08-20T00:00:00Z"),
+                LocalDate.of(2026, 8, 28), true
+        );
+        when(bookingRepository.findByPublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(booking));
+
+        assertThatThrownBy(() -> refundService.previewRefund(BOOKING_PUBLIC_ID, CUSTOMER_USER_ID))
+                .isInstanceOf(BusinessValidationException.class);
+        verify(paymentRepository, never()).findFirstByBooking_IdAndStatusInOrderByCreatedAtDesc(any(), any());
     }
 
     private void stubHotelSettings() {

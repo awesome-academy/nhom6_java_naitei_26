@@ -22,6 +22,8 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
 
     boolean existsByBooking_IdAndStatusIn(Long bookingId, Collection<RefundStatus> statuses);
 
+    Optional<Refund> findFirstByBooking_PublicIdOrderByCreatedAtDesc(String bookingPublicId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT refund FROM Refund refund WHERE refund.id = :id")
     Optional<Refund> findForUpdateById(@Param("id") Long id);
