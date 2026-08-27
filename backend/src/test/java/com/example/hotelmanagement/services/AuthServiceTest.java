@@ -41,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -161,6 +162,31 @@ class AuthServiceTest {
         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
         assertThat(user.getEmailVerifiedAt()).isEqualTo(OffsetDateTime.now(FIXED_CLOCK));
         verify(emailService).sendAccountActivatedEmail(user);
+    }
+
+    @Test
+    void verifyEmailIsIdempotentForAnAlreadyActivatedUser() {
+        User user = User.builder()
+                .publicId("public-id")
+                .email("guest@example.com")
+                .fullName("Guest")
+                .status(UserStatus.ACTIVE)
+                .emailVerifiedAt(OffsetDateTime.now(FIXED_CLOCK).minusMinutes(1))
+                .build();
+        AuthToken token = AuthToken.builder()
+                .user(user)
+                .usedAt(OffsetDateTime.now(FIXED_CLOCK).minusSeconds(1))
+                .expiresAt(OffsetDateTime.now(FIXED_CLOCK).plusHours(1))
+                .build();
+        when(authTokenService.findTokenForVerification("verification-token"))
+                .thenReturn(Optional.of(token));
+
+        AuthMessageResponse response = authService.verifyEmail(
+                new EmailVerificationRequest("verification-token")
+        );
+
+        assertThat(response.message()).isEqualTo("Email đã được xác thực trước đó. Bạn có thể đăng nhập ngay.");
+        verify(emailService, never()).sendAccountActivatedEmail(any());
     }
 
     @Test

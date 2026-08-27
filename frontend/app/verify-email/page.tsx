@@ -1,45 +1,76 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { verifyEmail } from "@/lib/api/auth"
 import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
 
+type VerificationResult = {
+  token: string
+  status: "success" | "error"
+  message: string
+  isExpired?: boolean
+}
+
 function VerifyEmailContent() {
   const searchParams = useSearchParams()
   const token = searchParams.get("token")
-  const [status, setStatus] = useState<"loading" | "success" | "error">(
-    token ? "loading" : "error"
-  )
-  const [message, setMessage] = useState(
-    token ? "" : "Token xác thực không hợp lệ hoặc đã hết hạn."
-  )
-  const [isVerificationTokenExpired, setIsVerificationTokenExpired] = useState(false)
+  const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null)
+  const attemptedTokenRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!token) return
 
+    // Next/React development mode may run effects twice. A verification token is
+    // single-use, so keep one request per token to avoid a false error on the
+    // second invocation.
+    if (attemptedTokenRef.current === token) return
+    attemptedTokenRef.current = token
+
     const verify = async () => {
       try {
         const response = await verifyEmail({ token })
-        setStatus("success")
-        setMessage(response.message)
+        setVerificationResult({
+          token,
+          status: "success",
+          message: response.message,
+        })
       } catch (err: unknown) {
-        setStatus("error")
         const error = err as { status?: number; message?: string }
         if (error.status === 410) {
-          setIsVerificationTokenExpired(true)
-          setMessage("Link xác thực đã hết hạn. Vui lòng đăng nhập để gửi lại email xác thực.")
+          setVerificationResult({
+            token,
+            status: "error",
+            isExpired: true,
+            message: "Link xác thực đã hết hạn. Vui lòng đăng nhập để gửi lại email xác thực.",
+          })
         } else {
-          setMessage(error.message || "Đã xảy ra lỗi khi xác thực email.")
+          setVerificationResult({
+            token,
+            status: "error",
+            message: error.message || "Đã xảy ra lỗi khi xác thực email.",
+          })
         }
       }
     }
 
-    verify()
+    void verify()
   }, [token])
+
+  const hasResultForCurrentToken = token !== null && verificationResult?.token === token
+  const status: "loading" | "success" | "error" = !token
+    ? "error"
+    : hasResultForCurrentToken
+      ? verificationResult.status
+      : "loading"
+  const message = !token
+    ? "Token xác thực không hợp lệ hoặc đã hết hạn."
+    : hasResultForCurrentToken
+      ? verificationResult.message
+      : ""
+  const isVerificationTokenExpired = hasResultForCurrentToken && verificationResult.isExpired === true
 
   // Loading state
   if (status === "loading") {

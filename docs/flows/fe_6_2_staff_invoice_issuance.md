@@ -13,7 +13,7 @@ FE-6.2 gồm:
 - Phát hành invoice `DRAFT`, hiển thị invoice number và badge trạng thái.
 - Tải PDF bằng presigned URL.
 - Hủy invoice `ISSUED` với lý do, không tạo hóa đơn thay thế.
-- Phân tách quyền `invoice:issue` và `invoice:void`.
+- Phân tách quyền `invoice:issue` và `invoice:void` cho Staff/Admin. Actor được lưu ở `staff_profiles` khi có hồ sơ staff; Admin không có hồ sơ staff được lưu fallback bằng `users.id`.
 
 Task không hỗ trợ tạo DRAFT thủ công, sửa invoice đã phát hành, hóa đơn thay thế, thanh toán hoặc gửi hóa đơn qua email.
 

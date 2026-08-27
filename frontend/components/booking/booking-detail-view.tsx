@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   ArrowLeft,
+  Ban,
   CalendarDays,
   CheckCircle2,
   Clock3,
@@ -21,6 +22,7 @@ import {
 import { toast } from "sonner"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { ConfirmDialog } from "@/components/ui/action-dialog"
 import { Badge, getBookingStatusVariant, getPaymentStatusVariant } from "@/components/ui/badge"
 import {
   Breadcrumb,
@@ -190,6 +192,7 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
   const [isDeleting, setIsDeleting] = useState(false)
   const [refund, setRefund] = useState<RefundResponse | null>(null)
   const [isRequestingRefund, setIsRequestingRefund] = useState(false)
+  const [confirmation, setConfirmation] = useState<"delete" | "refund" | null>(null)
 
   const loadBookingDetail = useCallback(async () => {
     setError(null)
@@ -269,8 +272,13 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
 
   const { booking } = detail
 
-  async function removeBooking() {
-    if (isDeleting || !canDeleteBooking(booking) || !window.confirm("Xóa booking chờ thanh toán?")) return
+  function removeBooking() {
+    if (isDeleting || !canDeleteBooking(booking)) return
+    setConfirmation("delete")
+  }
+
+  async function confirmRemoveBooking() {
+    if (isDeleting || !canDeleteBooking(booking)) return
     setIsDeleting(true)
     try {
       await deletePendingBooking(booking.publicId)
@@ -286,18 +294,18 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
     await loadBookingDetail()
   }
 
-  async function requestRefundForBooking() {
-    if (
-      isRequestingRefund ||
-      !canRequestRefund(booking, refund) ||
-      !window.confirm("Gửi yêu cầu hoàn tiền cho booking này?")
-    ) {
-      return
-    }
+  function requestRefundForBooking() {
+    if (isRequestingRefund || !canRequestRefund(booking, refund)) return
+    setConfirmation("refund")
+  }
+
+  async function confirmRequestRefund() {
+    if (isRequestingRefund || !canRequestRefund(booking, refund)) return
     setIsRequestingRefund(true)
     try {
       const response = await requestBookingRefund(booking.publicId)
       setRefund(response)
+      setConfirmation(null)
       toast.success("Đã gửi yêu cầu hoàn tiền")
     } catch (refundError) {
       toast.error(refundError instanceof Error ? refundError.message : "Không thể gửi yêu cầu hoàn tiền.")
@@ -315,6 +323,21 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
         booking={booking}
         onOpenChange={setIsCancelDialogOpen}
         onCancelled={handleCancelled}
+      />
+
+      <ConfirmDialog
+        open={confirmation !== null}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting && !isRequestingRefund) setConfirmation(null)
+        }}
+        title={confirmation === "delete" ? "Xóa booking chờ thanh toán?" : "Gửi yêu cầu hoàn tiền?"}
+        description={confirmation === "delete"
+          ? "Booking chưa thanh toán sẽ bị xóa vĩnh viễn và phòng đang giữ sẽ được giải phóng."
+          : "Yêu cầu hoàn tiền sẽ được gửi đến khách sạn để xử lý theo chính sách hủy."}
+        confirmLabel={confirmation === "delete" ? "Xóa booking" : "Gửi yêu cầu"}
+        onConfirm={() => void (confirmation === "delete" ? confirmRemoveBooking() : confirmRequestRefund())}
+        isLoading={isDeleting || isRequestingRefund}
+        destructive={confirmation === "delete"}
       />
 
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
@@ -516,6 +539,13 @@ function RoomDetailCard({
           <DetailItem icon={CalendarDays} label="Nhận phòng" value={formatDate(room.checkInDate)} />
           <DetailItem icon={CalendarDays} label="Trả phòng" value={formatDate(room.checkOutDate)} />
           <DetailItem icon={Clock3} label="Số đêm" value={`${getRoomNights(room)} đêm`} />
+          <DetailItem
+            icon={Ban}
+            label="Chính sách hủy"
+            value={room.cancellationPolicyName
+              ? `${room.cancellationPolicyName}${room.cancellationPolicyCode ? ` (${room.cancellationPolicyCode})` : ""}`
+              : room.cancellationPolicyCode ?? "Chưa có thông tin"}
+          />
         </div>
 
         <div className="flex flex-col gap-3">

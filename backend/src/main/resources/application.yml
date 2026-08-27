@@ -94,7 +94,7 @@ app:
     time-zone: ${HOTEL_TIME_ZONE:Asia/Ho_Chi_Minh}
   email:
     worker-enabled: ${EMAIL_WORKER_ENABLED:true}
-    poll-interval: ${EMAIL_POLL_INTERVAL:30s}
+    poll-interval: ${EMAIL_POLL_INTERVAL:2s}
     retry-delay: ${EMAIL_RETRY_DELAY:30s}
     sending-timeout: ${EMAIL_SENDING_TIMEOUT:5m}
     max-attempts: ${EMAIL_MAX_ATTEMPTS:3}

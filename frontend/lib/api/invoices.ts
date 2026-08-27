@@ -26,6 +26,15 @@ export function addInvoiceAdjustment(
   return apiClient.post<InvoiceResponse>(`${invoicePath(invoicePublicId)}/adjustments`, request)
 }
 
+export function removeInvoiceAdjustment(
+  invoicePublicId: string,
+  itemId: number
+): Promise<InvoiceResponse> {
+  return apiClient.delete<InvoiceResponse>(
+    `${invoicePath(invoicePublicId)}/adjustments/${itemId}`
+  )
+}
+
 export function issueInvoice(invoicePublicId: string): Promise<InvoiceResponse> {
   return apiClient.post<InvoiceResponse>(`${invoicePath(invoicePublicId)}/issue`, {})
 }

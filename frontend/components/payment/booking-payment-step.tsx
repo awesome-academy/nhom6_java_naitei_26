@@ -156,9 +156,9 @@ export function BookingPaymentStep({
             </p>
           </div>
           <Button asChild variant="ghost" className="w-fit">
-            <Link href={booking ? `/profile/bookings/${booking.publicId}` : "/booking"}>
+            <Link href={booking ? `/profile/bookings/${booking.publicId}` : "/profile/bookings"}>
               <ArrowLeft data-icon="inline-start" />
-              Quay lại booking
+              {booking ? "Quay lại booking" : "Quay lại danh sách booking"}
             </Link>
           </Button>
         </div>

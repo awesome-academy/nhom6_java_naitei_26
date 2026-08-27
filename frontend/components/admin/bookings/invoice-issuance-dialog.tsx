@@ -9,6 +9,7 @@ import { z } from "zod"
 
 import { AddInvoiceAdjustmentDialog } from "@/components/admin/bookings/add-invoice-adjustment-dialog"
 import { InvoicePreview } from "@/components/invoice/invoice-preview"
+import { ConfirmDialog } from "@/components/ui/action-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -28,9 +29,9 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { issueInvoice, updateInvoiceBuyer } from "@/lib/api/invoices"
+import { issueInvoice, removeInvoiceAdjustment, updateInvoiceBuyer } from "@/lib/api/invoices"
 import type { BookingStaffDetail } from "@/types/booking-staff"
-import type { InvoiceResponse } from "@/types/invoice"
+import type { InvoiceItemResponse, InvoiceResponse } from "@/types/invoice"
 
 const optionalEmail = z.union([
   z.literal(""),
@@ -72,6 +73,17 @@ function getErrorMessage(error: unknown, buyerWasSaved: boolean): string {
   return `${prefix}không thể phát hành hóa đơn. Vui lòng thử lại.`
 }
 
+function getAdjustmentRemovalError(error: unknown): string {
+  const status = (error as { status?: number })?.status
+  if (status === 401) return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+  if (status === 403) return "Bạn không có quyền xóa dòng điều chỉnh."
+  if (status === 404) return "Không tìm thấy dòng điều chỉnh hoặc hóa đơn."
+  if (status === 409) return "Hóa đơn không còn ở trạng thái bản nháp."
+  if (status === 400) return "Dòng hóa đơn này không thể xóa."
+  if (error instanceof Error && error.message) return error.message
+  return "Không thể xóa dòng điều chỉnh. Vui lòng thử lại."
+}
+
 export function InvoiceIssuanceDialog({
   open,
   booking,
@@ -81,6 +93,8 @@ export function InvoiceIssuanceDialog({
 }: InvoiceIssuanceDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isAdjustmentOpen, setIsAdjustmentOpen] = useState(false)
+  const [adjustmentToRemove, setAdjustmentToRemove] = useState<InvoiceItemResponse | null>(null)
+  const [isRemovingAdjustment, setIsRemovingAdjustment] = useState(false)
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -133,10 +147,41 @@ export function InvoiceIssuanceDialog({
       toast.success(`Đã phát hành hóa đơn ${issued.invoiceNumber ?? ""}`.trim())
       onOpenChange(false)
     } catch (error) {
-      console.error("Failed to issue invoice", { invoicePublicId: invoice.publicId, error })
+      console.error("Failed to issue invoice", {
+        invoicePublicId: invoice.publicId,
+        error: error instanceof Error
+          ? {
+              message: error.message,
+              status: (error as Error & { status?: number }).status,
+            }
+          : error,
+      })
       form.setError("root", { message: getErrorMessage(error, buyerWasSaved) })
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  async function confirmRemoveAdjustment() {
+    if (!adjustmentToRemove || isRemovingAdjustment) return
+
+    setIsRemovingAdjustment(true)
+    try {
+      const updatedInvoice = await removeInvoiceAdjustment(invoice.publicId, adjustmentToRemove.id)
+      onChanged(updatedInvoice, true)
+      setAdjustmentToRemove(null)
+      toast.success("Đã xóa dòng điều chỉnh")
+    } catch (error) {
+      console.error("Failed to remove invoice adjustment", {
+        invoicePublicId: invoice.publicId,
+        invoiceItemId: adjustmentToRemove.id,
+        error: error instanceof Error
+          ? { message: error.message, status: (error as Error & { status?: number }).status }
+          : error,
+      })
+      form.setError("root", { message: getAdjustmentRemovalError(error) })
+    } finally {
+      setIsRemovingAdjustment(false)
     }
   }
 
@@ -214,6 +259,7 @@ export function InvoiceIssuanceDialog({
                   <InvoicePreview
                     invoice={invoice}
                     bookingCode={booking.bookingCode}
+                    onRemoveAdjustment={setAdjustmentToRemove}
                     buyer={{
                       buyerName: values.buyerName ?? "",
                       buyerAddress: values.buyerAddress ?? "",
@@ -237,6 +283,21 @@ export function InvoiceIssuanceDialog({
           </Form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={adjustmentToRemove !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !isRemovingAdjustment) setAdjustmentToRemove(null)
+        }}
+        title="Xóa dòng điều chỉnh?"
+        description={adjustmentToRemove
+          ? `Dòng “${adjustmentToRemove.description}” sẽ bị xóa khỏi hóa đơn nháp.`
+          : "Dòng điều chỉnh sẽ bị xóa khỏi hóa đơn nháp."}
+        confirmLabel="Xóa dòng"
+        onConfirm={() => void confirmRemoveAdjustment()}
+        isLoading={isRemovingAdjustment}
+        destructive
+      />
 
       <AddInvoiceAdjustmentDialog
         open={isAdjustmentOpen}

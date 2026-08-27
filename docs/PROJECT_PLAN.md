@@ -807,7 +807,7 @@
   - ACCOUNT_ACTIVATED
 - Template engine: thay biến (`{{booking_code}}`, `{{customer_name}}`, v.v.)
 - Queue: `email_messages` table
-  - Worker poll (interval 30s)
+  - Worker poll (interval 2s) để email xác thực được gửi gần như ngay sau khi đăng ký
   - Gửi → retry 3 lần nếu fail
 - Track: `sent_at`, `attempt_count`, `last_error`
 

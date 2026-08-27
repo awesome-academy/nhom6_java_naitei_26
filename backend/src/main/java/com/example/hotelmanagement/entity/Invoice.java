@@ -49,6 +49,9 @@ public class Invoice extends BaseEntity {
     @Column(name = "issued_by")
     private Long issuedBy;
 
+    @Column(name = "issued_by_user_id")
+    private Long issuedByUserId;
+
     @Column(name = "buyer_name", nullable = false, length = 150)
     private String buyerName;
 
@@ -104,6 +107,9 @@ public class Invoice extends BaseEntity {
 
     @Column(name = "voided_by")
     private Long voidedBy;
+
+    @Column(name = "voided_by_user_id")
+    private Long voidedByUserId;
 
     @Column(name = "void_reason", columnDefinition = "TEXT")
     private String voidReason;

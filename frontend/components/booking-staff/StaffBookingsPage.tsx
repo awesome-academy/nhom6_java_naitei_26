@@ -60,6 +60,7 @@ import {
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
 import { toast } from "sonner";
+import { ConfirmDialog, FeedbackDialog } from "@/components/ui/action-dialog";
 
 // Status labels
 const STATUS_LABELS: Record<string, string> = {
@@ -105,6 +106,10 @@ function formatDate(dateStr: string | null): string {
 function formatDateTime(dateStr: string | null): string {
   if (!dateStr) return "-";
   return format(new Date(dateStr), "dd/MM/yyyy HH:mm", { locale: vi });
+}
+
+function getActionErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 function groupGuestsByRoom(guests: BookingStaffDetail["guests"]) {
@@ -219,6 +224,8 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
   const [isCreateBookingOpen, setIsCreateBookingOpen] = useState(false);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [isCheckInDialogOpen, setIsCheckInDialogOpen] = useState(false);
+  const [confirmation, setConfirmation] = useState<"check-in" | "check-out" | null>(null);
+  const [feedback, setFeedback] = useState<{ title: string; message: string } | null>(null);
 
   useEffect(() => {
     if (isAuthLoading || !isAuthenticated) return;
@@ -430,45 +437,64 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
       await openBookingDetail(selectedBooking.publicId);
     } catch (error) {
       console.error("Failed to confirm booking:", error);
-      alert("Không thể xác nhận booking. Vui lòng thử lại.");
+      setFeedback({
+        title: "Không thể xác nhận booking",
+        message: getActionErrorMessage(error, "Vui lòng thử lại."),
+      });
     } finally {
       setIsActionLoading(false);
     }
   };
 
   // Check-in
-  const handleCheckIn = async () => {
+  const handleCheckIn = () => {
     if (!selectedBooking) return;
     if (selectedBooking.sourceCode !== "STAFF_MANUAL") {
       setIsCheckInDialogOpen(true);
       return;
     }
-    if (!confirm("Xác nhận check-in cho booking này?")) return;
+    setConfirmation("check-in");
+  };
+
+  const executeCheckIn = async () => {
+    if (!selectedBooking) return;
     setIsActionLoading(true);
     try {
       await checkInBooking(selectedBooking.publicId);
       await loadBookings();
       await openBookingDetail(selectedBooking.publicId);
+      setConfirmation(null);
     } catch (error) {
       console.error("Failed to check-in:", error);
-      alert("Không thể check-in. Vui lòng thử lại.");
+      setFeedback({
+        title: "Không thể check-in",
+        message: getActionErrorMessage(error, "Vui lòng thử lại."),
+      });
     } finally {
       setIsActionLoading(false);
     }
   };
 
   // Check-out
-  const handleCheckOut = async () => {
+  const handleCheckOut = () => {
     if (!selectedBooking) return;
-    if (!confirm("Xác nhận check-out cho booking này?")) return;
+    setConfirmation("check-out");
+  };
+
+  const executeCheckOut = async () => {
+    if (!selectedBooking) return;
     setIsActionLoading(true);
     try {
       await checkOutBooking(selectedBooking.publicId);
       await loadBookings();
       await openBookingDetail(selectedBooking.publicId);
+      setConfirmation(null);
     } catch (error) {
       console.error("Failed to check-out:", error);
-      alert("Không thể check-out. Vui lòng thử lại.");
+      setFeedback({
+        title: "Không thể check-out",
+        message: getActionErrorMessage(error, "Vui lòng thử lại."),
+      });
     } finally {
       setIsActionLoading(false);
     }
@@ -486,7 +512,10 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
       setCancelReason("");
     } catch (error) {
       console.error("Failed to cancel booking:", error);
-      alert("Không thể hủy booking. Vui lòng thử lại.");
+      setFeedback({
+        title: "Không thể hủy booking",
+        message: getActionErrorMessage(error, "Vui lòng thử lại."),
+      });
     } finally {
       setIsActionLoading(false);
     }
@@ -886,6 +915,14 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
                           </span>
                         </div>
                         <div className="text-sm">
+                          <span className="text-muted-foreground">Chính sách hủy: </span>
+                          <span>
+                            {room.cancellationPolicyName || room.cancellationPolicyCode
+                              ? `${room.cancellationPolicyName ?? room.cancellationPolicyCode}${room.cancellationPolicyName && room.cancellationPolicyCode ? ` (${room.cancellationPolicyCode})` : ""}`
+                              : "Chưa có thông tin"}
+                          </span>
+                        </div>
+                        <div className="text-sm">
                           <span className="text-muted-foreground">Giá: </span>
                           <span>{formatCurrency(room.roomSubtotal)}</span>
                         </div>
@@ -1168,6 +1205,32 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
           </div>
         </SheetContent>
       </Sheet>
+
+      <ConfirmDialog
+        open={confirmation !== null}
+        onOpenChange={(open) => {
+          if (!open && !isActionLoading) setConfirmation(null);
+        }}
+        title={confirmation === "check-in" ? "Xác nhận check-in?" : "Xác nhận check-out?"}
+        description={confirmation === "check-in"
+          ? "Booking sẽ được chuyển sang trạng thái đã nhận phòng. Bạn có muốn tiếp tục?"
+          : "Booking sẽ được chuyển sang trạng thái đã trả phòng. Bạn có muốn tiếp tục?"}
+        confirmLabel={confirmation === "check-in" ? "Xác nhận check-in" : "Xác nhận check-out"}
+        onConfirm={() => {
+          if (confirmation === "check-in") void executeCheckIn();
+          if (confirmation === "check-out") void executeCheckOut();
+        }}
+        isLoading={isActionLoading}
+      />
+
+      <FeedbackDialog
+        open={feedback !== null}
+        onOpenChange={(open) => {
+          if (!open) setFeedback(null);
+        }}
+        title={feedback?.title ?? "Không thể thực hiện thao tác"}
+        description={feedback?.message ?? "Vui lòng thử lại."}
+      />
       </>
       )}
     </div>

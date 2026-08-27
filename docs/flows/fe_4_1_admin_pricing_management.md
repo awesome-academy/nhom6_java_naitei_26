@@ -14,7 +14,7 @@ FE-4.1 gồm:
 - Side panel giải thích rule tạo nên giá của ô calendar.
 - Loading, empty, error/retry state và kiểm soát truy cập bằng `pricing:manage`.
 
-Task không triển khai edit/delete override. Mọi rule đều áp dụng ở cấp Room Type.
+Rate override được update bằng `PUT /api/rate-overrides/{id}` và ngừng áp dụng bằng `DELETE /api/rate-overrides/{id}`. DELETE là soft-delete (`is_active=false`), không xóa vật lý để giữ tham chiếu lịch sử giá. Mọi rule đều áp dụng ở cấp Room Type.
 
 ## 2. Route, API và permission
 
@@ -23,6 +23,8 @@ Task không triển khai edit/delete override. Mọi rule đều áp dụng ở 
 | Tải override active | `GET /api/rate-overrides` | `pricing:manage` |
 | Tải Room Type | `GET /api/room-types` | `room:read` |
 | Tạo override theo Room Type | `POST /api/rate-overrides/room-types/{roomTypeCode}` | `pricing:manage` |
+| Cập nhật override | `PUT /api/rate-overrides/{id}` | `pricing:manage` |
+| Ngừng áp dụng override | `DELETE /api/rate-overrides/{id}` | `pricing:manage` |
 
 Người chưa đăng nhập được chuyển tới `/login?redirect=%2Fadmin%2Fpricing`. Người đã đăng nhập nhưng thiếu `pricing:manage` thấy trạng thái không có quyền truy cập. Backend tiếp tục kiểm tra permission tại controller và service; việc ẩn/chặn action ở frontend không thay thế authorization phía server.
 
@@ -30,7 +32,7 @@ Theo giả định của task, Admin truy cập trang có cả `pricing:manage` 
 
 ## 3. Contract public của Rate Override
 
-Frontend không cần biết BIGINT của Room Type hoặc Room. Response dùng thông tin target public:
+Frontend không cần biết BIGINT của Room Type hoặc Room khi đọc danh sách. Response dùng thông tin target public; khi update, frontend ánh xạ `roomTypeCode` sang `roomTypeId` từ danh sách Room Type đã tải:
 
 ```json
 {

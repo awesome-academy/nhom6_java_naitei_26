@@ -18,7 +18,9 @@ import com.example.hotelmanagement.entity.Room;
 import com.example.hotelmanagement.entity.RoomType;
 import com.example.hotelmanagement.entity.User;
 import com.example.hotelmanagement.entity.enums.ActorType;
+import com.example.hotelmanagement.entity.enums.BookingPaymentOption;
 import com.example.hotelmanagement.entity.enums.BookingStatus;
+import com.example.hotelmanagement.entity.enums.RoomOperationalStatus;
 import com.example.hotelmanagement.entity.enums.StatusChangeSource;
 import com.example.hotelmanagement.entity.enums.UserStatus;
 import com.example.hotelmanagement.exceptions.BookingRoomConflictException;
@@ -83,6 +85,8 @@ class BookingServiceTest {
     private BookingCalculatorService bookingCalculatorService;
     @Mock
     private CancellationPolicyService cancellationPolicyService;
+    @Mock
+    private BookingOptionResolverService bookingOptionResolverService;
     @Mock
     private EmailService emailService;
 
@@ -231,6 +235,87 @@ class BookingServiceTest {
         assertThat(response.taxTotal()).isEqualByComparingTo("150000.00");
         assertThat(response.totalAmount()).isEqualByComparingTo("1650000.00");
         assertThat(response.rooms()).hasSize(2);
+    }
+
+    @Test
+    void createBookingAssignsDifferentRoomsWhenSameRoomTypeIsRequestedTwice() {
+        CustomerProfile customerProfile = createCustomerProfile();
+        BookingSource source = createSource();
+        Room roomA = createRoom(10L, "A101", "DLX", "Deluxe");
+        Room roomB = createRoom(20L, "A102", "DLX", "Deluxe");
+        roomB.setRoomType(roomA.getRoomType());
+        LocalDate checkIn = LocalDate.of(2026, 9, 1);
+        LocalDate checkOut = LocalDate.of(2026, 9, 3);
+        BookingPriceCalculationResponse priceCalculation = new BookingPriceCalculationResponse(
+                10L, roomA.getRoomType().getId(), checkIn, checkOut, 2,
+                1, 0,
+                List.of(
+                        new DailyRateResponse(checkIn, money("1000000.00")),
+                        new DailyRateResponse(checkIn.plusDays(1), money("1000000.00"))
+                ),
+                money("2000000.00"), money("10.00"), money("200000.00"),
+                money("2200000.00"), "VND"
+        );
+
+        bookingService = new BookingService(
+                bookingRepository,
+                bookingGuestRepository,
+                bookingRoomRepository,
+                bookingSourceRepository,
+                null,
+                null,
+                customerProfileRepository,
+                null,
+                null,
+                null,
+                roomRepository,
+                bookingCalculatorService,
+                cancellationPolicyService,
+                bookingOptionResolverService,
+                emailService,
+                FIXED_CLOCK,
+                null,
+                null,
+                null
+        );
+
+        when(customerProfileRepository.findByUser_Id(USER_ID)).thenReturn(Optional.of(customerProfile));
+        when(bookingSourceRepository.findByCodeIgnoreCaseAndIsActiveTrue("WEBSITE"))
+                .thenReturn(Optional.of(source));
+        when(bookingOptionResolverService.resolve("DLX", BookingPaymentOption.ONLINE, "FLEXIBLE"))
+                .thenReturn(new BookingOptionSelection(
+                        roomA.getRoomType(),
+                        BookingPaymentOption.ONLINE,
+                        roomA.getRoomType().getCancellationPolicy(),
+                        BigDecimal.ZERO
+                ));
+        when(roomRepository.findAvailableRoomsByTypeForUpdate(
+                eq("DLX"), eq(checkIn), eq(checkOut), eq(RoomOperationalStatus.ACTIVE), any()
+        )).thenReturn(List.of(roomA, roomB));
+        when(bookingCalculatorService.calculatePrice(any(BookingPriceCalculationRequest.class)))
+                .thenReturn(priceCalculation);
+        when(bookingRepository.existsByBookingCode(anyString())).thenReturn(false);
+        when(bookingRepository.saveAndFlush(any(Booking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        BookingCreateRequest request = new BookingCreateRequest(
+                null, null, null, null,
+                List.of(
+                        new BookingRoomCreateItem(
+                                "DLX", BookingPaymentOption.ONLINE, "FLEXIBLE",
+                                checkIn, checkOut, 1, 0, "Guest A"
+                        ),
+                        new BookingRoomCreateItem(
+                                "DLX", BookingPaymentOption.ONLINE, "FLEXIBLE",
+                                checkIn, checkOut, 1, 0, "Guest B"
+                        )
+                )
+        );
+
+        BookingResponse response = bookingService.createBooking(request, USER_ID);
+
+        assertThat(response.rooms()).extracting(room -> room.roomNumber())
+                .containsExactlyInAnyOrder("A101", "A102");
     }
 
     @Test

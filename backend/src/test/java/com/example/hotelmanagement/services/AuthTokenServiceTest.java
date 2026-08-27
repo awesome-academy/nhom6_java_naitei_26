@@ -112,6 +112,17 @@ class AuthTokenServiceTest {
     }
 
     @Test
+    void findTokenForVerificationUsesPessimisticLock() {
+        TokenFixture token = createPersistedToken(EMAIL_VERIFICATION, NOW.plusHours(1), null);
+        when(authTokenRepository.findByTokenHashForUpdate(token.getTokenHash())).thenReturn(Optional.of(token.authToken()));
+
+        Optional<AuthToken> foundToken = authTokenService.findTokenForVerification(token.rawToken());
+
+        assertThat(foundToken).containsSame(token.authToken());
+        verify(authTokenRepository).findByTokenHashForUpdate(token.getTokenHash());
+    }
+
+    @Test
     void consumeTokenMarksTokenUsed() {
         TokenFixture token = createPersistedToken(PASSWORD_RESET, NOW.plusMinutes(10), null);
         when(authTokenRepository.findByTokenHashForUpdate(token.getTokenHash())).thenReturn(Optional.of(token.authToken()));

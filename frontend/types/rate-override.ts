@@ -21,3 +21,7 @@ export interface RoomTypeRateOverrideCreateRequest {
   weekdays: number[] | null
   priority: number
 }
+
+export interface RateOverrideUpdateRequest extends RoomTypeRateOverrideCreateRequest {
+  roomTypeId: number
+}

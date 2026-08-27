@@ -86,7 +86,9 @@ export function VoidInvoiceDialog({ open, invoice, onOpenChange, onVoided }: Voi
         <DialogHeader className="border-b px-6 py-5">
           <DialogTitle>Hủy hóa đơn {invoice.invoiceNumber}</DialogTitle>
           <DialogDescription>
-            Hóa đơn sẽ chuyển sang trạng thái đã hủy và không tạo hóa đơn thay thế.
+            Thao tác này hủy hiệu lực hóa đơn, không xóa dữ liệu. Hóa đơn vẫn tải được
+            dưới dạng PDF có trạng thái VOID để lưu vết, nhưng không còn được sử dụng
+            như hóa đơn hợp lệ. Hệ thống cũng không tạo hóa đơn thay thế.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>

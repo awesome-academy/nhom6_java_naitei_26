@@ -67,6 +67,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -249,12 +250,13 @@ public class BookingService {
         String currency = null;
         int totalAdults = 0;
         int totalChildren = 0;
+        List<AssignedRoomStay> assignedRoomStays = new ArrayList<>();
 
         for (BookingRoomCreateItem item : request.rooms()) {
             if (item.paymentOption() == com.example.hotelmanagement.entity.enums.BookingPaymentOption.PAY_AT_HOTEL) {
                 throw new BusinessValidationException("Website bookings must use online payment");
             }
-            Room room = assignAvailableRoom(item);
+            Room room = assignAvailableRoom(item, assignedRoomStays);
             BookingOptionSelection optionSelection = resolveBookingOption(item, room);
             int adults = 1;
             int children = 0;
@@ -764,7 +766,10 @@ public class BookingService {
         booking.setTotalAmount(totalAmount);
     }
 
-    private Room assignAvailableRoom(BookingRoomCreateItem item) {
+    private Room assignAvailableRoom(
+            BookingRoomCreateItem item,
+            List<AssignedRoomStay> assignedRoomStays
+    ) {
         if (!item.checkOutDate().isAfter(item.checkInDate())) {
             throw new BusinessValidationException("Check-out date must be after check-in date");
         }
@@ -774,28 +779,61 @@ public class BookingService {
                 item.checkOutDate(),
                 RoomOperationalStatus.ACTIVE,
                 ACTIVE_BOOKING_STATUSES
-        ).stream().findFirst().orElse(null);
+        ).stream()
+                .filter(room -> !hasOverlappingAssignedStay(room.getId(), item, assignedRoomStays))
+                .findFirst()
+                .orElse(null);
         if (assignedRoom != null) {
+            rememberAssignedStay(assignedRoom, item, assignedRoomStays);
             return assignedRoom;
         }
         Long legacyRoomId = item.roomId();
         if (legacyRoomId != null) {
-            if (bookingRoomRepository != null && bookingRoomRepository.existsOverlappingBooking(
+            if (hasOverlappingAssignedStay(legacyRoomId, item, assignedRoomStays)
+                    || (bookingRoomRepository != null && bookingRoomRepository.existsOverlappingBooking(
                     legacyRoomId,
                     ACTIVE_BOOKING_STATUSES,
                     item.checkInDate(),
                     item.checkOutDate()
-            )) {
+            ))) {
                 throw new BookingRoomConflictException(
                         "Room " + legacyRoomId + " is not available for the requested dates"
                 );
             }
-            return roomRepository.findByIdAndDeletedAtIsNull(legacyRoomId)
+            Room legacyRoom = roomRepository.findByIdAndDeletedAtIsNull(legacyRoomId)
                     .orElseThrow(() -> new BookingRoomConflictException(
                             "No rooms are available for the requested room type and dates"
                     ));
+            rememberAssignedStay(legacyRoom, item, assignedRoomStays);
+            return legacyRoom;
         }
         throw new BookingRoomConflictException("No rooms are available for the requested room type and dates");
+    }
+
+    private boolean hasOverlappingAssignedStay(
+            Long roomId,
+            BookingRoomCreateItem item,
+            List<AssignedRoomStay> assignedRoomStays
+    ) {
+        return roomId != null && assignedRoomStays.stream()
+                .anyMatch(assignedStay -> assignedStay.roomId().equals(roomId)
+                        && item.checkInDate().isBefore(assignedStay.checkOutDate())
+                        && item.checkOutDate().isAfter(assignedStay.checkInDate()));
+    }
+
+    private void rememberAssignedStay(
+            Room room,
+            BookingRoomCreateItem item,
+            List<AssignedRoomStay> assignedRoomStays
+    ) {
+        assignedRoomStays.add(new AssignedRoomStay(
+                room.getId(),
+                item.checkInDate(),
+                item.checkOutDate()
+        ));
+    }
+
+    private record AssignedRoomStay(Long roomId, LocalDate checkInDate, LocalDate checkOutDate) {
     }
 
     private BookingOptionSelection resolveBookingOption(BookingRoomCreateItem item, Room room) {

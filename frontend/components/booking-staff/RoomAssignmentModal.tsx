@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { FeedbackDialog } from "@/components/ui/action-dialog";
 import {
   getAvailableRoomsForAssignment,
   getAvailableFloors,
@@ -84,6 +85,7 @@ export function RoomAssignmentModal({
   const [selectedRoom, setSelectedRoom] = useState<AvailableRoom | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
 
   // Filters
   const [selectedFloor, setSelectedFloor] = useState<string>("all");
@@ -163,7 +165,11 @@ export function RoomAssignmentModal({
       onClose();
     } catch (error) {
       console.error("Failed to assign room:", error);
-      alert("Không thể gán phòng. Vui lòng thử lại.");
+      setAssignmentError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Không thể gán phòng. Vui lòng thử lại."
+      );
     } finally {
       setIsAssigning(false);
     }
@@ -183,8 +189,9 @@ export function RoomAssignmentModal({
     .sort((a, b) => b - a);
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+    <>
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>
             Gán phòng - {bookingRoomType}
@@ -354,7 +361,17 @@ export function RoomAssignmentModal({
             </Button>
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      <FeedbackDialog
+        open={assignmentError !== null}
+        onOpenChange={(open) => {
+          if (!open) setAssignmentError(null);
+        }}
+        title="Không thể gán phòng"
+        description={assignmentError ?? "Vui lòng thử lại."}
+      />
+    </>
   );
 }

@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { format, parseISO, startOfMonth } from "date-fns"
 import { vi } from "date-fns/locale"
-import { BadgeDollarSign, CalendarDays, List, Plus, RefreshCw, Search } from "lucide-react"
+import { BadgeDollarSign, CalendarDays, List, Loader2, Plus, RefreshCw, Search, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
 import { PricingCalendar } from "@/components/admin/pricing/pricing-calendar"
 import { RateOverrideDetailSheet } from "@/components/admin/pricing/rate-override-detail-sheet"
@@ -14,11 +15,19 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { DataTable } from "@/components/ui/dataTable"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getActiveRateOverrides } from "@/lib/api/rate-overrides"
+import { deleteRateOverride, getActiveRateOverrides } from "@/lib/api/rate-overrides"
 import { getRoomTypes } from "@/lib/api/room-types"
 import { useAuth } from "@/lib/auth-context"
 import type { RateOverride } from "@/types/rate-override"
@@ -45,7 +54,10 @@ export default function AdminPricingPage() {
   const [activeTab, setActiveTab] = useState("list")
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()))
   const [formOpen, setFormOpen] = useState(false)
+  const [editingOverride, setEditingOverride] = useState<RateOverride | null>(null)
   const [selectedOverride, setSelectedOverride] = useState<RateOverride | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<RateOverride | null>(null)
+  const [mutation, setMutation] = useState<"delete" | null>(null)
 
   const permissions = user?.permissions ?? []
   const canManagePricing = permissions.includes("pricing:manage")
@@ -119,6 +131,46 @@ export default function AdminPricingPage() {
     await loadData()
   }
 
+  async function handleSaved(saved: RateOverride) {
+    const wasEditing = editingOverride !== null
+    setCurrentMonth(startOfMonth(parseISO(saved.startDate)))
+    await loadData()
+    setEditingOverride(null)
+    if (wasEditing) setSelectedOverride(saved)
+  }
+
+  function openCreateForm() {
+    setEditingOverride(null)
+    setFormOpen(true)
+  }
+
+  function openEditForm() {
+    if (!selectedOverride) return
+    setEditingOverride(selectedOverride)
+    setSelectedOverride(null)
+    setFormOpen(true)
+  }
+
+  function requestDelete() {
+    if (selectedOverride) setDeleteTarget(selectedOverride)
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    setMutation("delete")
+    try {
+      await deleteRateOverride(deleteTarget.id)
+      await loadData()
+      setDeleteTarget(null)
+      setSelectedOverride(null)
+      toast.success("Đã xóa rule giá")
+    } catch (deleteError) {
+      toast.error(getErrorMessage(deleteError))
+    } finally {
+      setMutation(null)
+    }
+  }
+
   if (isAuthLoading || (!isAuthenticated && !user)) return <PageSkeleton />
 
   if (!canManagePricing) {
@@ -144,7 +196,7 @@ export default function AdminPricingPage() {
             Thiết lập rate override theo loại phòng và xem giá hiệu lực từng ngày.
           </p>
         </div>
-        <Button onClick={() => setFormOpen(true)} disabled={roomTypes.length === 0}>
+        <Button onClick={openCreateForm} disabled={roomTypes.length === 0}>
           <Plus className="mr-2 h-4 w-4" /> Tạo rate override
         </Button>
       </div>
@@ -212,8 +264,48 @@ export default function AdminPricingPage() {
         </Tabs>
       )}
 
-      <RateOverrideFormDialog open={formOpen} roomTypes={roomTypes} activeOverrides={overrides} onOpenChange={setFormOpen} onCreated={handleCreated} />
-      <RateOverrideDetailSheet override={selectedOverride} onOpenChange={(open) => !open && setSelectedOverride(null)} />
+      <RateOverrideFormDialog
+        open={formOpen}
+        override={editingOverride}
+        roomTypes={roomTypes}
+        activeOverrides={overrides}
+        onOpenChange={(open) => {
+          setFormOpen(open)
+          if (!open) setEditingOverride(null)
+        }}
+        onSaved={editingOverride ? handleSaved : handleCreated}
+      />
+      <RateOverrideDetailSheet
+        override={selectedOverride}
+        onOpenChange={(open) => !open && setSelectedOverride(null)}
+        onEdit={openEditForm}
+        onDelete={requestDelete}
+        isDeleting={mutation === "delete"}
+      />
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && mutation === null) setDeleteTarget(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Xóa rate override?</DialogTitle>
+            <DialogDescription>
+              Rule “{deleteTarget?.name}” sẽ được ngừng áp dụng và không còn xuất hiện trong danh sách active.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={mutation !== null}>
+              Hủy
+            </Button>
+            <Button variant="destructive" onClick={() => void confirmDelete()} disabled={mutation !== null}>
+              {mutation === "delete" ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Trash2 data-icon="inline-start" />}
+              Xóa rule
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

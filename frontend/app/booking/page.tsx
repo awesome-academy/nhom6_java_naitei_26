@@ -279,9 +279,14 @@ function getEffectiveNightlyPrice(calculation: PriceCalculation) {
   return roundMoney(Number(calculation.roomsTotal) / Math.max(1, calculation.nights))
 }
 
-function hasMeaningfulDiscount(priceDifference: number, currency: string) {
+function getMeaningfulDiscountAmount(
+  actualPrice: number,
+  basePrice: number,
+  currency: string
+) {
   const minimumVisibleDifference = currency === "VND" ? 1 : 0.01
-  return priceDifference <= -minimumVisibleDifference
+  const discountAmount = roundMoney(basePrice - actualPrice)
+  return discountAmount >= minimumVisibleDifference ? discountAmount : 0
 }
 
 async function calculateRoomTypePrices(roomTypes: RoomType[], search: SearchState) {
@@ -1451,9 +1456,9 @@ function RoomChoiceCard({
   const unitPrice = calculation
     ? getEffectiveNightlyPrice(calculation)
     : getBookingOptionUnitPrice(roomType, option)
-  const baseOptionPrice = getBookingOptionUnitPrice(roomType, option)
-  const priceDifference = roundMoney(unitPrice - baseOptionPrice)
-  const hasDiscount = hasMeaningfulDiscount(priceDifference, roomType.currency)
+  const policyBasePrice = getBookingOptionUnitPrice(roomType, option)
+  const discountAmount = getMeaningfulDiscountAmount(unitPrice, policyBasePrice, roomType.currency)
+  const hasDiscount = discountAmount > 0
   const displayRoomCount = Math.max(1, selectedCount)
   const totalPrice = calculation
     ? Number(calculation.totalAmount) * displayRoomCount
@@ -1490,7 +1495,7 @@ function RoomChoiceCard({
           {hasDiscount && (
             <>
               <Badge className="rounded-md border-0 bg-rose-600 px-2 py-1 text-sm font-bold text-white">
-                {money(priceDifference, roomType.currency)}
+                -{money(discountAmount, roomType.currency)}
               </Badge>
               <Badge className="rounded-md border-0 bg-rose-50 px-2 py-1 text-sm font-medium text-rose-600">
                 Giảm Giá Đặc Biệt
@@ -1505,7 +1510,7 @@ function RoomChoiceCard({
           <span className="text-sm text-muted-foreground">/đêm trung bình</span>
           {hasDiscount && (
             <div className="relative text-lg leading-none text-muted-foreground">
-              <span>{money(baseOptionPrice, roomType.currency)}</span>
+              <span>{money(policyBasePrice, roomType.currency)}</span>
               <span className="absolute left-0 top-1/2 h-0.5 w-full -translate-y-1/2 rotate-[-8deg] bg-rose-600" />
             </div>
           )}

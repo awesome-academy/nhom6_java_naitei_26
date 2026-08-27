@@ -25,7 +25,7 @@ public class EmailQueueWorker {
 
     @Scheduled(
             fixedDelayString = "#{T(org.springframework.boot.convert.DurationStyle)"
-                    + ".detectAndParse('${app.email.poll-interval:30s}').toMillis()}"
+                    + ".detectAndParse('${app.email.poll-interval:2s}').toMillis()}"
     )
     public void dispatchQueuedEmails() {
         List<Long> messageIds = queuedEmailService.claimDueMessages();
