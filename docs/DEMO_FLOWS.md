@@ -143,6 +143,12 @@ Sau đó hệ thống cộng giá từng đêm và tính tax theo cấu hình kh
 
 Backend có lọc inventory theo view, tầng và tiện nghi, nhưng màn hình `/booking` hiện chưa có đầy đủ bộ lọc riêng cho số giường/loại giường, điều hòa và view. Customer chỉ đang lọc được ngày và số người lớn; trẻ em chưa có control trong flow này.
 
+### Xem đánh giá khách — ✅
+
+Ngay sau danh sách chọn phòng trên `/booking`, Customer xem điểm tổng, điểm theo các tiêu chí có dữ liệu và các review đã được duyệt. Danh sách tải theo trang, có thể xem phản hồi của khách sạn nếu review có staff reply; khi chưa có review, giao diện hiển thị empty state thay vì dữ liệu mẫu.
+
+API: `GET /api/reviews/published?page=0&size=5` (yêu cầu `room:read`). Backend chỉ trả review `PUBLISHED`; tổng số và các điểm trung bình được tính trên toàn bộ review đã được duyệt, độc lập với trang hiện tại. Response public không chứa email, booking identifier, moderation reason hoặc staff actor ID.
+
 ---
 
 ## 6. Luồng 3 — Customer tạo booking và thanh toán
@@ -476,6 +482,7 @@ Permission seed hiện tại cấp `revenue:read` cho Admin. Staff xem được 
 | Thanh toán booking                 |        ✅        |       ✅       |        ✅        |
 | Xem/hủy booking của mình         |        ✅        |       —       |        —        |
 | Xem/xử lý booking                 |        —        |       ✅       |        ✅        |
+| Xem review đã được duyệt          |        ✅        |       —        |        —        |
 | Gán/đổi phòng, check-in/out     |        —        |       ✅       |        ✅        |
 | Guest và giấy tờ lưu trú       |        —        |       ✅       |        ✅        |
 | Folio/invoice                       |    Xem invoice    |       ✅       |        ✅        |

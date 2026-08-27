@@ -6,7 +6,10 @@ import type {
   ReviewModerationRequest,
   ReviewReplyRequest,
   ReviewStatus,
+  PublishedReviewListResponse,
 } from "@/types/review"
+
+const PUBLISHED_REVIEWS_PAGE_SIZE = 5
 
 function reviewPath(bookingPublicId: string) {
   return `/api/bookings/${encodeURIComponent(bookingPublicId)}/review`
@@ -14,6 +17,14 @@ function reviewPath(bookingPublicId: string) {
 
 export function getBookingReview(bookingPublicId: string) {
   return apiClient.get<Review>(reviewPath(bookingPublicId))
+}
+
+export function getPublishedReviews(
+  page = 0,
+  size = PUBLISHED_REVIEWS_PAGE_SIZE,
+): Promise<PublishedReviewListResponse> {
+  const params = new URLSearchParams({ page: String(page), size: String(size) })
+  return apiClient.get<PublishedReviewListResponse>(`/api/reviews/published?${params.toString()}`)
 }
 
 export function createBookingReview(
