@@ -4,6 +4,7 @@ import {
   useEffect,
   useCallback,
   useMemo,
+  useRef,
   useState,
   type ComponentType,
   type ReactNode,
@@ -25,6 +26,8 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   CreditCard,
   Heart,
   ImageIcon,
@@ -1336,7 +1339,7 @@ function RoomTypeList({
 
               <div className="relative min-w-0 overflow-hidden">
                 {availableCount > 0 && sortedBookingOptions.length > 0 ? (
-                  <div className="flex h-full min-w-0 overflow-x-auto scroll-smooth">
+                  <RoomOptionScroller optionCount={sortedBookingOptions.length}>
                     {sortedBookingOptions.map((bookingOption) => (
                       <RoomChoiceCard
                         key={bookingOption.optionKey}
@@ -1351,7 +1354,7 @@ function RoomTypeList({
                         onRemove={() => onRemoveOption(roomType, bookingOption)}
                       />
                     ))}
-                  </div>
+                  </RoomOptionScroller>
                 ) : (
                   <div className="flex h-full min-h-[260px] items-center justify-center p-6 text-center text-muted-foreground">
                     {availableCount === 0
@@ -1364,6 +1367,53 @@ function RoomTypeList({
           </Card>
         )
       })}
+    </div>
+  )
+}
+
+function RoomOptionScroller({ optionCount, children }: { optionCount: number; children: ReactNode }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const hasMultipleOptions = optionCount > 1
+
+  function scrollByCard(direction: 1 | -1) {
+    const container = scrollRef.current
+    if (!container) return
+    const card = container.firstElementChild as HTMLElement | null
+    container.scrollBy({ left: (card?.offsetWidth ?? 360) * direction, behavior: "smooth" })
+  }
+
+  return (
+    <div className="relative h-full">
+      {hasMultipleOptions && (
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center">
+          <span className="pointer-events-auto rounded-full border bg-background/95 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm">
+            {optionCount} lựa chọn chính sách hủy — cuộn ngang để xem
+          </span>
+        </div>
+      )}
+      <div ref={scrollRef} className="flex h-full min-w-0 overflow-x-auto scroll-smooth">
+        {children}
+      </div>
+      {hasMultipleOptions && (
+        <>
+          <button
+            type="button"
+            onClick={() => scrollByCard(-1)}
+            aria-label="Xem lựa chọn chính sách trước đó"
+            className="absolute left-2 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border bg-background/90 text-foreground shadow-md transition hover:bg-background"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollByCard(1)}
+            aria-label="Xem lựa chọn chính sách khác"
+            className="absolute right-2 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border bg-background/90 text-foreground shadow-md transition hover:bg-background"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </>
+      )}
     </div>
   )
 }
