@@ -4,18 +4,15 @@ import com.example.hotelmanagement.dto.payment.PaymentCashVerificationRequest;
 import com.example.hotelmanagement.dto.payment.PaymentDetailResponse;
 import com.example.hotelmanagement.dto.payment.PaymentListItemResponse;
 import com.example.hotelmanagement.dto.payment.PaymentListResponse;
-import com.example.hotelmanagement.dto.payment.PaymentRefundRequest;
 import com.example.hotelmanagement.entity.Payment;
 import com.example.hotelmanagement.entity.Refund;
 import com.example.hotelmanagement.entity.enums.PaymentMethod;
 import com.example.hotelmanagement.entity.enums.PaymentStatus;
-import com.example.hotelmanagement.entity.enums.RefundStatus;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.PaymentRepository;
 import com.example.hotelmanagement.repositories.PaymentSpecifications;
-import com.example.hotelmanagement.repositories.RefundRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -29,28 +26,15 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.EnumSet;
 import java.util.List;
-import java.util.Set;
 
 @Service
 @Transactional
 public class PaymentManagementService {
 
     private static final ZoneId HOTEL_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
-    private static final Set<PaymentStatus> RECEIVED_STATUSES = Set.of(
-            PaymentStatus.SUCCEEDED,
-            PaymentStatus.PARTIALLY_REFUNDED,
-            PaymentStatus.REFUNDED
-    );
-    private static final Set<RefundStatus> COMMITTED_REFUND_STATUSES = EnumSet.of(
-            RefundStatus.PENDING,
-            RefundStatus.PROCESSING,
-            RefundStatus.COMPLETED
-    );
 
     private final PaymentRepository paymentRepository;
-    private final RefundRepository refundRepository;
     private final PaymentLedgerService paymentLedgerService;
     private final BookingStateMachineService bookingStateMachineService;
     private final EmailService emailService;
@@ -58,14 +42,12 @@ public class PaymentManagementService {
 
     public PaymentManagementService(
             PaymentRepository paymentRepository,
-            RefundRepository refundRepository,
             PaymentLedgerService paymentLedgerService,
             BookingStateMachineService bookingStateMachineService,
             EmailService emailService,
             Clock clock
     ) {
         this.paymentRepository = paymentRepository;
-        this.refundRepository = refundRepository;
         this.paymentLedgerService = paymentLedgerService;
         this.bookingStateMachineService = bookingStateMachineService;
         this.emailService = emailService;
@@ -152,47 +134,6 @@ public class PaymentManagementService {
             bookingStateMachineService.confirm(ledgerResult.bookingPublicId());
         }
         return mapDetail(saved);
-    }
-
-    @PreAuthorize(PermissionExpressions.PAYMENT_MANAGE)
-    public PaymentDetailResponse requestRefund(
-            String paymentCode,
-            PaymentRefundRequest request,
-            Long actorUserId
-    ) {
-        if (request == null || request.amount() == null || request.reason() == null) {
-            throw new BusinessValidationException("Refund amount and reason are required");
-        }
-        Payment payment = findPaymentForUpdate(paymentCode);
-        if (!RECEIVED_STATUSES.contains(payment.getStatus())) {
-            throw new BusinessValidationException("Only received payments can be refunded");
-        }
-
-        BigDecimal amount = money(request.amount());
-        if (amount.signum() <= 0) {
-            throw new BusinessValidationException("Refund amount must be greater than zero");
-        }
-        BigDecimal committedRefunds = money(refundRepository.sumAmountsByPaymentIdAndStatuses(
-                payment.getId(),
-                COMMITTED_REFUND_STATUSES
-        ));
-        BigDecimal available = money(payment.getAmount().subtract(committedRefunds));
-        if (amount.compareTo(available) > 0) {
-            throw new BusinessValidationException(
-                    "Refund amount cannot exceed the remaining refundable amount of " + available
-            );
-        }
-
-        Refund refund = Refund.builder()
-                .payment(payment)
-                .booking(payment.getBooking())
-                .amount(amount)
-                .reason(request.reason())
-                .status(RefundStatus.PENDING)
-                .requestedBy(actorUserId)
-                .build();
-        refundRepository.saveAndFlush(refund);
-        return mapDetail(payment);
     }
 
     private Payment findPayment(String paymentCode) {

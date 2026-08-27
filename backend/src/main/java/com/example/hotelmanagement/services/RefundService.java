@@ -67,6 +67,9 @@ public class RefundService {
     private static final Set<RefundStatus> ACTIVE_REFUND_STATUSES = Set.of(
             RefundStatus.PENDING, RefundStatus.PROCESSING
     );
+    private static final Set<RefundStatus> COMMITTED_REFUND_STATUSES = Set.of(
+            RefundStatus.PENDING, RefundStatus.PROCESSING, RefundStatus.COMPLETED
+    );
     private static final Set<PaymentStatus> RECEIVED_PAYMENT_STATUSES = Set.of(
             PaymentStatus.SUCCEEDED, PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.REFUNDED
     );
@@ -196,6 +199,62 @@ public class RefundService {
                 .build();
 
         return mapResponse(refundRepository.save(refund));
+    }
+
+    /**
+     * Staff-initiated refund with no customer request and no booking cancellation required
+     * (e.g. goodwill gesture, overcharge correction, no-show adjustment) — the entry point used by
+     * the admin Payment Management page. Shares {@link #ACTIVE_REFUND_STATUSES} dedup and the
+     * payment-amount cap with {@link #requestRefund} so a customer-initiated and a manual refund
+     * can never both be in flight for the same booking, and this can never overdraw the payment.
+     * Unlike {@link #requestRefund}, {@code policyApplied} stays null: there is no cancellation
+     * policy snapshot to compute from since the amount/reason are chosen by staff, not derived.
+     */
+    @PreAuthorize(PermissionExpressions.PAYMENT_MANAGE)
+    public RefundResponse requestManualRefund(
+            String paymentCode,
+            BigDecimal amount,
+            RefundReason reason,
+            Long actorUserId
+    ) {
+        if (amount == null || amount.signum() <= 0) {
+            throw new BusinessValidationException("Refund amount must be greater than zero");
+        }
+        if (reason == null) {
+            throw new BusinessValidationException("Refund reason is required");
+        }
+
+        Payment payment = getExistingPaymentForUpdate(paymentCode);
+        if (!RECEIVED_PAYMENT_STATUSES.contains(payment.getStatus())) {
+            throw new BusinessValidationException("Only received payments can be refunded");
+        }
+
+        Booking booking = payment.getBooking();
+        if (refundRepository.existsByBooking_IdAndStatusIn(booking.getId(), ACTIVE_REFUND_STATUSES)) {
+            throw new DuplicateResourceException("Refund", "booking id", booking.getId().toString());
+        }
+
+        BigDecimal normalizedAmount = normalize(amount);
+        BigDecimal committedRefunds = normalize(
+                refundRepository.sumAmountsByPaymentIdAndStatuses(payment.getId(), COMMITTED_REFUND_STATUSES)
+        );
+        BigDecimal available = normalize(payment.getAmount().subtract(committedRefunds));
+        if (normalizedAmount.compareTo(available) > 0) {
+            throw new BusinessValidationException(
+                    "Refund amount cannot exceed the remaining refundable amount of " + available
+            );
+        }
+
+        Refund refund = Refund.builder()
+                .payment(payment)
+                .booking(booking)
+                .amount(normalizedAmount)
+                .reason(reason)
+                .status(RefundStatus.PENDING)
+                .requestedBy(actorUserId)
+                .build();
+
+        return mapResponse(refundRepository.saveAndFlush(refund));
     }
 
     /** PENDING -> PROCESSING. See the class-level note about the requested APPROVED status. */
@@ -394,6 +453,14 @@ public class RefundService {
         }
         return bookingRepository.findByPublicId(bookingPublicId.strip())
                 .orElseThrow(() -> new ResourceNotFoundException("Booking", bookingPublicId));
+    }
+
+    private Payment getExistingPaymentForUpdate(String paymentCode) {
+        if (paymentCode == null || paymentCode.isBlank()) {
+            throw new BusinessValidationException("Payment code cannot be blank");
+        }
+        return paymentRepository.findForManagementByPaymentCode(paymentCode.strip())
+                .orElseThrow(() -> new ResourceNotFoundException("Payment", paymentCode));
     }
 
     private Refund getRefundForUpdate(String bookingPublicId, Long refundId) {

@@ -1,3 +1,7 @@
+import type { RefundReason, RefundStatus } from "@/types/refund"
+
+export type { RefundReason, RefundStatus }
+
 export type PaymentMethod =
   | "INTERNET_BANKING"
   | "CARD"
@@ -14,15 +18,6 @@ export type PaymentStatus =
   | "EXPIRED"
   | "REFUNDED"
   | "PARTIALLY_REFUNDED"
-
-export type RefundReason =
-  | "CUSTOMER_CANCEL"
-  | "HOTEL_CANCEL"
-  | "OVERCHARGE"
-  | "NO_SHOW_ADJUST"
-  | "OTHER"
-
-export type RefundStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "REJECTED"
 
 export interface PaymentListItem {
   paymentCode: string

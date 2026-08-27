@@ -34,7 +34,7 @@ import {
   cancelBooking,
 } from "@/lib/api/booking-staff-api";
 import { getActiveServiceItems } from "@/lib/api/folio";
-import { approveRefund, completeRefund, getLatestRefund } from "@/lib/api/refund";
+import { getLatestRefund } from "@/lib/api/refund";
 import type { RefundResponse } from "@/types/refund";
 import {
   BookingListItem,
@@ -228,10 +228,9 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
     return () => window.clearTimeout(timer);
   }, [isAuthLoading, isAuthenticated, refreshUser]);
 
-  // Refund
+  // Refund (read-only status here — request/approve/complete now live in Payment Management)
   const [refund, setRefund] = useState<RefundResponse | null>(null);
   const [isLoadingRefund, setIsLoadingRefund] = useState(false);
-  const [isRefundActionLoading, setIsRefundActionLoading] = useState(false);
 
   // Load bookings
   const loadBookings = useCallback(async () => {
@@ -340,28 +339,6 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
       setIsLoadingDetail(false);
     }
   };
-
-  async function handleCompleteRefund() {
-    if (!selectedBooking || !refund) return;
-    setIsRefundActionLoading(true);
-    try {
-      let current = refund;
-      if (current.status === "PENDING") {
-        current = await approveRefund(selectedBooking.publicId, current.id);
-      }
-      if (current.status === "PROCESSING") {
-        current = await completeRefund(selectedBooking.publicId, current.id, {});
-      }
-      setRefund(current);
-      await loadBookings();
-      toast.success("Đã xác nhận hoàn tiền");
-    } catch (error) {
-      console.error("Failed to complete refund:", error);
-      toast.error("Không thể xác nhận hoàn tiền. Vui lòng thử lại.");
-    } finally {
-      setIsRefundActionLoading(false);
-    }
-  }
 
   const refreshFolioAfterMutation = useCallback(async (bookingPublicId: string) => {
     const [detailResult, listResult] = await Promise.allSettled([
@@ -1038,20 +1015,17 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
                                   : null}
                               </p>
                             </div>
-                            {(refund.status === "PENDING" || refund.status === "PROCESSING") && (
-                              <Button
-                                size="sm"
-                                onClick={handleCompleteRefund}
-                                disabled={isRefundActionLoading}
-                              >
-                                {isRefundActionLoading ? (
-                                  <Loader2 data-icon="inline-start" className="animate-spin" />
-                                ) : (
-                                  <CheckCircle2 data-icon="inline-start" />
-                                )}
-                                Xác nhận đã hoàn tiền
-                              </Button>
-                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                router.push(
+                                  `/manager/payments?booking=${encodeURIComponent(selectedBooking.bookingCode)}`
+                                )
+                              }
+                            >
+                              Xử lý tại Quản lý thanh toán
+                            </Button>
                           </CardContent>
                         </Card>
                       ) : (
