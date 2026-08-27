@@ -12,7 +12,6 @@ import {
   CircleDollarSign,
   Loader2,
   RefreshCw,
-  UserPlus,
 } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -128,7 +127,6 @@ export function DashboardOverviewPage({ portal = "/manager" }: { portal?: "/mana
             <ArrivalsCard arrivals={overview.arrivals} portal={portal} />
             <OccupancyCard overview={overview} portal={portal} />
           </div>
-          <QuickActions portal={portal} />
         </>
       ) : null}
     </div>
@@ -289,34 +287,6 @@ function OccupancyCard({ overview, portal }: { overview: DashboardOverview; port
           <span>Hôm nay còn {overview.roomSummary.availableRooms} phòng trống</span>
           <Link href={`${portal}/rooms`} className="font-medium text-primary hover:underline">Quản lý phòng</Link>
         </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function QuickActions({ portal }: { portal: "/manager" }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Thao tác nhanh</CardTitle>
-        <CardDescription>Mở đúng màn hình để tiếp tục xử lý booking.</CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 sm:grid-cols-3">
-        <Button variant="outline" className="justify-start" asChild>
-          <Link href={`${portal}/bookings`}>
-            <ArrowDownToLine data-icon="inline-start" /> Check-in
-          </Link>
-        </Button>
-        <Button variant="outline" className="justify-start" asChild>
-          <Link href={`${portal}/bookings`}>
-            <ArrowUpFromLine data-icon="inline-start" /> Check-out
-          </Link>
-        </Button>
-        <Button className="justify-start" asChild>
-          <Link href="/booking">
-            <UserPlus data-icon="inline-start" /> Tạo booking
-          </Link>
-        </Button>
       </CardContent>
     </Card>
   )
