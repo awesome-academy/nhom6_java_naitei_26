@@ -24,6 +24,7 @@ import {
 
 import {
   Avatar,
+  AvatarImage,
   AvatarFallback,
   Button,
   Dialog,
@@ -195,6 +196,7 @@ export function ManagerLayout({ children }: ManagerLayoutProps) {
         <div className="flex flex-col gap-3 border-t border-white/10 p-3">
           <div className={cn("flex items-center gap-3", !sidebarOpen && "justify-center")}>
             <Avatar className="size-9">
+              {user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.fullName ?? user.email} />}
               <AvatarFallback className="bg-[var(--accent)] text-sm text-white">{initials}</AvatarFallback>
             </Avatar>
             {sidebarOpen && (

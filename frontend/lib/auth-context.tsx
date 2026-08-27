@@ -28,6 +28,7 @@ interface AuthContextValue {
   isAuthenticated: boolean
   isLoading: boolean
   setAuth: (user: UserSummary, accessToken: string, refreshToken: string) => void
+  updateAvatar: (avatarUrl: string | null) => void
   clearAuth: () => void
   refreshUser: () => Promise<void>
 }
@@ -114,6 +115,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false)
   }, [scope])
 
+  const updateAvatar = useCallback(
+    (avatarUrl: string | null) => {
+      setUser((currentUser) => {
+        if (!currentUser) return currentUser
+        const updatedUser = { ...currentUser, avatarUrl }
+        persistUser(updatedUser, scope)
+        return updatedUser
+      })
+    },
+    [scope]
+  )
+
   const refreshUser = useCallback(async () => {
     const { accessToken } = getStoredTokens(scope)
     if (!accessToken) return
@@ -148,6 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!scopedUser,
         isLoading: isSessionLoading,
         setAuth,
+        updateAvatar,
         clearAuth,
         refreshUser,
       }}

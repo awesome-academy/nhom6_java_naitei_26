@@ -76,6 +76,26 @@ class UserAvatarServiceTest {
     }
 
     @Test
+    void createCustomerUploadUrlUsesAuthenticatedUserScopedObjectKey() {
+        User user = user("user-public-id", 7L);
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+        when(avatarStorage.createUploadUrl(startsWith("avatars/users/7/"), eq("image/jpeg")))
+                .thenReturn(new RoomImageStorage.PresignedUrl(
+                        "https://upload.example",
+                        java.util.Map.of("Content-Type", "image/jpeg"),
+                        OffsetDateTime.now().plusHours(1)
+                ));
+
+        var response = service.createCustomerUploadUrl(
+                7L,
+                new AvatarUploadUrlRequest("avatar.jpg", "image/jpeg", 1024)
+        );
+
+        assertThat(response.uploadUrl()).isEqualTo("https://upload.example");
+        verify(avatarStorage).createUploadUrl(startsWith("avatars/users/7/"), eq("image/jpeg"));
+    }
+
+    @Test
     void confirmUploadReplacesAvatarAndCleansPreviousObject() {
         UUID uploadId = UUID.randomUUID();
         User user = user("user-public-id", 7L);
