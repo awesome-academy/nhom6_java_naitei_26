@@ -17,6 +17,7 @@ interface DataTableProps<T> {
   onRowClick?: (row: T) => void
   emptyMessage?: string
   isLoading?: boolean
+  tableWrapperClassName?: string
   pagination?: {
     // Support both 0-indexed and 1-indexed page
     page: number
@@ -43,6 +44,7 @@ export function DataTable<T>({
   emptyMessage = "Không có dữ liệu",
   pagination,
   actions,
+  tableWrapperClassName,
 }: DataTableProps<T>) {
   const safeData = data ?? []
   // Handle both old format (1-indexed: pageSize, total) and new format (0-indexed: size, totalItems)
@@ -59,7 +61,7 @@ export function DataTable<T>({
 
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-      <div className="overflow-x-auto">
+      <div className={cn("overflow-x-auto", tableWrapperClassName)}>
         <table className="w-full">
           <thead>
             <tr className="border-b border-[var(--border)] bg-[var(--muted)]/50">

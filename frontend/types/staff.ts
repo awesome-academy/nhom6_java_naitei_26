@@ -11,10 +11,12 @@ export interface StaffListItem {
 }
 export interface StaffManagementListItem extends StaffListItem {
   email: string
+  phone: string | null
   accountStatus: UserStatus
   emailVerifiedAt: string | null
   hiredAt: string
   terminatedAt: string | null
+  baseSalary: number | string | null
 }
 export interface StaffProfile {
   employeeCode: string
@@ -32,6 +34,18 @@ export interface StaffProfile {
   createdAt: string
   updatedAt: string
 }
+
+export interface StaffOwnProfile {
+  employeeCode: string
+  fullName: string
+  email: string
+  phone: string | null
+  avatarUrl: string | null
+  position: string | null
+  department: string | null
+  hiredAt: string
+  employmentStatus: EmploymentStatus
+}
 export interface StaffHireRequest {
   email: string
   fullName: string
@@ -48,4 +62,5 @@ export interface StaffProfileUpdateRequest {
   department?: string | null
   baseSalary?: number | null
 }
+export interface StaffOwnProfileUpdateRequest { phone: string }
 export interface StaffEmploymentStatusUpdateRequest { employmentStatus: EmploymentStatus }

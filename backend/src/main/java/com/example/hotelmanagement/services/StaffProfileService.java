@@ -7,6 +7,8 @@ import com.example.hotelmanagement.dto.staffprofile.StaffPasswordUpdateRequest;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffListResponse;
 import com.example.hotelmanagement.dto.staffprofile.StaffProfileUpdateRequest;
+import com.example.hotelmanagement.dto.staffprofile.StaffOwnProfileResponse;
+import com.example.hotelmanagement.dto.staffprofile.StaffOwnProfileUpdateRequest;
 import com.example.hotelmanagement.entity.Role;
 import com.example.hotelmanagement.entity.AuthToken;
 import com.example.hotelmanagement.entity.StaffProfile;
@@ -179,6 +181,23 @@ public class StaffProfileService {
         return profiles.stream().map(this::mapManagementListResponse).toList();
     }
 
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('STAFF')")
+    public StaffOwnProfileResponse getOwnProfile(Long userId) {
+        return mapOwnProfileResponse(getExistingProfileByUserId(userId));
+    }
+
+    @PreAuthorize("hasRole('STAFF')")
+    public StaffOwnProfileResponse updateOwnProfile(Long userId, @Valid StaffOwnProfileUpdateRequest request) {
+        StaffProfile profile = getExistingProfileByUserId(userId);
+        User user = profile.getUser();
+        String normalizedPhone = normalizeOptionalText(request.phone());
+        ensurePhoneIsAvailable(normalizedPhone, user);
+        user.setPhone(normalizedPhone);
+        userRepository.save(user);
+        return mapOwnProfileResponse(profile);
+    }
+
     @PreAuthorize(PermissionExpressions.STAFF_MANAGE)
     public StaffProfileResponse editStaff(String employeeCode, @Valid StaffProfileUpdateRequest request) {
         StaffProfile profile = getExistingProfile(employeeCode);
@@ -283,12 +302,28 @@ public class StaffProfileService {
                 .orElseThrow(() -> new ResourceNotFoundException("StaffProfile", normalizedEmployeeCode));
     }
 
+    private StaffProfile getExistingProfileByUserId(Long userId) {
+        return staffProfileRepository.findByUser_Id(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("StaffProfile", userId.toString()));
+    }
+
     private String normalizeEmail(String email) {
         return email.strip().toLowerCase(Locale.ROOT);
     }
 
     private boolean isAssignableStaff(User user) {
         return user.getStatus() == UserStatus.ACTIVE && user.getEmailVerifiedAt() != null;
+    }
+
+    private void ensurePhoneIsAvailable(String phone, User user) {
+        if (phone == null || phone.equals(user.getPhone())) {
+            return;
+        }
+        userRepository.findByPhoneAndDeletedAtIsNull(phone)
+                .filter(existingUser -> !existingUser.getId().equals(user.getId()))
+                .ifPresent(existingUser -> {
+                    throw new DuplicateResourceException("User", "phone", phone);
+                });
     }
 
     private String normalizeUpper(String value, String fieldName) {
@@ -343,13 +378,30 @@ public class StaffProfileService {
                 profile.getEmployeeCode(),
                 user.getFullName(),
                 user.getEmail(),
+                user.getPhone(),
                 profile.getPosition(),
                 profile.getDepartment(),
                 profile.getEmploymentStatus(),
                 user.getStatus(),
                 user.getEmailVerifiedAt(),
                 profile.getHiredAt(),
-                profile.getTerminatedAt()
+                profile.getTerminatedAt(),
+                profile.getBaseSalary()
+        );
+    }
+
+    private StaffOwnProfileResponse mapOwnProfileResponse(StaffProfile profile) {
+        User user = profile.getUser();
+        return new StaffOwnProfileResponse(
+                profile.getEmployeeCode(),
+                user.getFullName(),
+                user.getEmail(),
+                user.getPhone(),
+                user.getAvatarUrl(),
+                profile.getPosition(),
+                profile.getDepartment(),
+                profile.getHiredAt(),
+                profile.getEmploymentStatus()
         );
     }
 }

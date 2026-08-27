@@ -218,8 +218,8 @@ export default function ManagerMaintenancePage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="min-w-0 space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Lịch bảo trì phòng</h1>
           <p className="text-sm text-[var(--muted-foreground)]">

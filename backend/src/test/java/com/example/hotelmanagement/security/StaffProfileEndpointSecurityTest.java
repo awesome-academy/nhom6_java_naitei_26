@@ -1,7 +1,13 @@
 package com.example.hotelmanagement.security;
 
 import com.example.hotelmanagement.services.StaffProfileService;
+import com.example.hotelmanagement.dto.staffprofile.StaffOwnProfileResponse;
+import com.example.hotelmanagement.entity.Role;
+import com.example.hotelmanagement.entity.User;
+import com.example.hotelmanagement.entity.UserRole;
 import com.example.hotelmanagement.entity.enums.EmploymentStatus;
+import com.example.hotelmanagement.entity.enums.UserStatus;
+import com.example.hotelmanagement.security.UserPrincipal;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -16,6 +22,7 @@ import java.util.List;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -88,5 +95,66 @@ class StaffProfileEndpointSecurityTest {
                 .andExpect(status().isOk());
 
         verify(staffProfileService).updateEmploymentStatus("EMP-0001", EmploymentStatus.ON_LEAVE);
+    }
+
+    @Test
+    @WithMockUser(roles = "CUSTOMER")
+    void ownProfileRejectsCustomerRole() throws Exception {
+        mockMvc.perform(get("/api/staff-profiles/me"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403));
+
+        verifyNoInteractions(staffProfileService);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void ownProfileRejectsAdminRole() throws Exception {
+        mockMvc.perform(get("/api/staff-profiles/me"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403));
+
+        verifyNoInteractions(staffProfileService);
+    }
+
+    @Test
+    void ownProfileUsesAuthenticatedStaffIdentity() throws Exception {
+        when(staffProfileService.getOwnProfile(42L)).thenReturn(new StaffOwnProfileResponse(
+                "EMP-0042", "Staff Member", "staff@example.com", null, null,
+                "Receptionist", "Front Office", java.time.LocalDate.of(2026, 1, 1), EmploymentStatus.ACTIVE
+        ));
+
+        mockMvc.perform(get("/api/staff-profiles/me").with(user(staffPrincipal(42L))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.employeeCode").value("EMP-0042"))
+                .andExpect(jsonPath("$.baseSalary").doesNotExist());
+
+        verify(staffProfileService).getOwnProfile(42L);
+    }
+
+    @Test
+    void ownProfileUpdateRequiresPhoneProperty() throws Exception {
+        mockMvc.perform(patch("/api/staff-profiles/me")
+                        .with(user(staffPrincipal(42L)))
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+
+        verifyNoInteractions(staffProfileService);
+    }
+
+    private UserPrincipal staffPrincipal(Long userId) {
+        Role role = Role.builder().code("STAFF").build();
+        User user = User.builder()
+                .publicId("staff-public-id")
+                .email("staff@example.com")
+                .passwordHash("hash")
+                .fullName("Staff Member")
+                .status(UserStatus.ACTIVE)
+                .build();
+        user.setId(userId);
+        user.getUserRoles().add(UserRole.builder().user(user).role(role).build());
+        return UserPrincipal.from(user);
     }
 }

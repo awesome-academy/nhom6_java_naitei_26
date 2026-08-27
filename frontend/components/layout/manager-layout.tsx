@@ -7,32 +7,32 @@ import {
   BadgeDollarSign,
   BarChart3,
   BedDouble,
-  Bell,
   Calendar,
   CalendarClock,
-  ChevronDown,
   Hotel,
   LayoutDashboard,
   LogOut,
-  Menu,
   MessageSquareText,
-  Search,
+  PanelLeftClose,
+  PanelLeftOpen,
   ShieldCheck,
   UserCog,
+  UserRound,
   Users,
   WalletCards,
   Wrench,
-  X,
 } from "lucide-react"
 
-import { Avatar, AvatarFallback, Button } from "@/components/ui"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  Avatar,
+  AvatarFallback,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui"
 import { isAdminUser, isBackOfficeUser, isStaffUser } from "@/lib/admin-auth"
 import { useAuth } from "@/lib/auth-context"
@@ -62,6 +62,7 @@ export function ManagerLayout({ children }: ManagerLayoutProps) {
   const router = useRouter()
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false)
   const { user, isAuthenticated, isLoading, clearAuth } = useAuth()
   const isManagerLoginPage = pathname === "/manager/login"
   const isAdmin = isAdminUser(user)
@@ -83,7 +84,7 @@ export function ManagerLayout({ children }: ManagerLayoutProps) {
   ].filter((item) => item.visible), [user?.permissions])
   const navigation = isAdmin ? adminNavigation : staffNavigation
   const defaultPath = isAdmin ? "/manager" : staffNavigation[0]?.href ?? "/manager/login"
-  const hasAllowedStaffRoute = staffNavigation.some(
+  const hasAllowedStaffRoute = pathname === "/manager/profile" || staffNavigation.some(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
   )
   const initials = user?.fullName
@@ -130,28 +131,38 @@ export function ManagerLayout({ children }: ManagerLayoutProps) {
     <div className="flex min-h-screen bg-[var(--background)]">
       <aside
         className={cn(
-          "fixed left-0 top-0 z-40 h-screen bg-[#232323] transition-all duration-300",
+          "fixed left-0 top-0 z-40 flex h-screen flex-col bg-[#232323] transition-all duration-300",
           sidebarOpen ? "w-64" : "w-20",
         )}
       >
-        <div className="flex h-16 items-center justify-between border-b border-white/10 px-4">
-          <Link href={defaultPath} className="flex items-center gap-2">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-[var(--accent)]">
-              <span className="text-sm font-bold text-white">TS</span>
-            </div>
-            {sidebarOpen && <span className="text-lg font-bold text-white">TripStay</span>}
-          </Link>
-          <button
+        <div
+          className={cn(
+            "flex h-16 items-center border-b border-white/10",
+            sidebarOpen ? "justify-between px-4" : "justify-center px-3",
+          )}
+        >
+          {sidebarOpen && (
+            <Link href={defaultPath} className="flex items-center gap-2">
+              <div className="flex size-8 items-center justify-center rounded-lg bg-[var(--accent)]">
+                <span className="text-sm font-bold text-white">TS</span>
+              </div>
+              <span className="text-lg font-bold text-white">TripStay</span>
+            </Link>
+          )}
+          <Button
             type="button"
-            aria-label={sidebarOpen ? "Thu gọn thanh điều hướng" : "Mở thanh điều hướng"}
+            variant="ghost"
+            size="icon"
+            aria-label={sidebarOpen ? "Thu gọn thanh điều hướng" : "Mở rộng thanh điều hướng"}
+            title={sidebarOpen ? "Thu gọn thanh điều hướng" : "Mở rộng thanh điều hướng"}
             onClick={() => setSidebarOpen((current) => !current)}
-            className="rounded-md p-1.5 text-gray-400 hover:bg-white/10 hover:text-white"
+            className="shrink-0 text-gray-400 hover:bg-white/10 hover:text-white"
           >
-            {sidebarOpen ? <X className="size-5" /> : <Menu className="size-5" />}
-          </button>
+            {sidebarOpen ? <PanelLeftClose data-icon="inline-start" /> : <PanelLeftOpen data-icon="inline-start" />}
+          </Button>
         </div>
 
-        <nav className="flex flex-col gap-1 p-3">
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
           {navigation.map((item) => {
             const isActive = pathname === item.href || (item.href !== "/manager" && pathname.startsWith(`${item.href}/`))
             return (
@@ -159,7 +170,8 @@ export function ManagerLayout({ children }: ManagerLayoutProps) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                  "flex items-center rounded-lg text-sm font-medium transition-colors",
+                  sidebarOpen ? "w-full gap-3 px-3 py-2.5" : "mx-auto size-10 justify-center",
                   isActive ? "bg-[var(--accent)] text-white" : "text-gray-400 hover:bg-white/10 hover:text-white",
                 )}
               >
@@ -168,9 +180,22 @@ export function ManagerLayout({ children }: ManagerLayoutProps) {
               </Link>
             )
           })}
+          <Link
+            href="/manager/profile"
+            className={cn(
+              "flex items-center rounded-lg text-sm font-medium transition-colors",
+              sidebarOpen ? "w-full gap-3 px-3 py-2.5" : "mx-auto size-10 justify-center",
+              pathname === "/manager/profile"
+                ? "bg-[var(--accent)] text-white"
+                : "text-gray-400 hover:bg-white/10 hover:text-white",
+            )}
+          >
+            <UserRound className="size-5 shrink-0" />
+            {sidebarOpen && <span>Hồ sơ</span>}
+          </Link>
         </nav>
 
-        <div className="absolute bottom-0 left-0 right-0 border-t border-white/10 p-3">
+        <div className="flex flex-col gap-3 border-t border-white/10 p-3">
           <div className={cn("flex items-center gap-3", !sidebarOpen && "justify-center")}>
             <Avatar className="size-9">
               <AvatarFallback className="bg-[var(--accent)] text-sm text-white">{initials}</AvatarFallback>
@@ -182,62 +207,51 @@ export function ManagerLayout({ children }: ManagerLayoutProps) {
               </div>
             )}
           </div>
+          <button
+            type="button"
+            onClick={() => setIsLogoutDialogOpen(true)}
+            aria-label="Đăng xuất"
+            className={cn(
+              "flex items-center rounded-lg border border-red-400/30 bg-red-500/15 text-sm font-semibold text-red-100 transition-colors hover:bg-red-500/25 hover:text-white",
+              sidebarOpen ? "w-full justify-center gap-2 px-3 py-2.5" : "mx-auto size-10 justify-center",
+            )}
+          >
+            <LogOut className="size-5 shrink-0" />
+            {sidebarOpen && <span>Đăng xuất</span>}
+          </button>
         </div>
       </aside>
 
-      <div className={cn("flex-1 transition-all duration-300", sidebarOpen ? "ml-64" : "ml-20")}>
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--border)] bg-[var(--card)] px-6">
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              aria-label="Mở thanh điều hướng"
-              onClick={() => setSidebarOpen(true)}
-              className="rounded-md p-1.5 text-[var(--muted-foreground)] hover:bg-[var(--muted)] lg:hidden"
-            >
-              <Menu className="size-5" />
-            </button>
-            <div className="relative hidden md:block">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
-              <input
-                type="search"
-                placeholder="Tìm kiếm..."
-                className="h-9 w-64 rounded-md border border-[var(--border)] bg-[var(--background)] pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell />
-              <span className="absolute right-1 top-1 size-2 rounded-full bg-[var(--destructive)]" />
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center gap-2">
-                  <Avatar className="size-8">
-                    <AvatarFallback className="bg-[var(--accent)] text-xs text-white">{initials}</AvatarFallback>
-                  </Avatar>
-                  <span className="hidden text-sm font-medium md:inline">{user?.fullName ?? "Quản lý"}</span>
-                  <ChevronDown className="size-4 text-[var(--muted-foreground)]" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>Tài khoản của tôi</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/profile">Hồ sơ</Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-[var(--destructive)]" onClick={handleLogout}>
-                  <LogOut data-icon="inline-start" />
-                  Đăng xuất
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </header>
-        <main className="p-6">{children}</main>
+      <div className={cn("min-w-0 flex-1 transition-all duration-300", sidebarOpen ? "ml-64" : "ml-20")}>
+        <main className="min-w-0 p-6">{children}</main>
       </div>
+
+      <Dialog open={isLogoutDialogOpen} onOpenChange={setIsLogoutDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Xác nhận đăng xuất</DialogTitle>
+            <DialogDescription>
+              Bạn có chắc muốn đăng xuất khỏi khu vực quản lý không?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsLogoutDialogOpen(false)}>
+              Ở lại
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                setIsLogoutDialogOpen(false)
+                handleLogout()
+              }}
+            >
+              <LogOut data-icon="inline-start" />
+              Đăng xuất
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -371,7 +371,7 @@ export default function ShiftManagementPage() {
       onDragEnd={(event) => void handleDragEnd(event)}
     >
       <div className="space-y-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">Quản lý ca trực</h1>
             <p className="text-sm text-[var(--muted-foreground)]">

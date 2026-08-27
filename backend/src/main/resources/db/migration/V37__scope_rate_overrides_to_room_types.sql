@@ -19,10 +19,15 @@ BEGIN
 
     ALTER TABLE rate_overrides
         DROP FOREIGN KEY fk_rate_room,
+        DROP FOREIGN KEY fk_rate_room_type,
         DROP INDEX idx_rate_room_dates,
-        DROP CHECK chk_rate_one_target,
+        DROP CHECK chk_rate_one_target;
+
+    ALTER TABLE rate_overrides
         MODIFY room_type_id BIGINT NOT NULL,
-        DROP COLUMN room_id;
+        DROP COLUMN room_id,
+        ADD CONSTRAINT fk_rate_room_type
+            FOREIGN KEY (room_type_id) REFERENCES room_types (id) ON DELETE CASCADE;
 END//
 
 DELIMITER ;

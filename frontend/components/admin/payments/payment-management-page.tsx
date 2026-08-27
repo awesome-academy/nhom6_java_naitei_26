@@ -302,9 +302,9 @@ export function PaymentManagementPage({ portal = "/manager" }: { portal?: "/mana
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
+        <div>
           <h1 className="text-2xl font-bold">Quản lý thanh toán</h1>
-          <p className="text-sm text-muted-foreground">Theo dõi payment, xác minh tiền mặt và tạo yêu cầu hoàn tiền.</p>
+          <p className="text-sm text-[var(--muted-foreground)]">Theo dõi payment, xác minh tiền mặt và tạo yêu cầu hoàn tiền.</p>
         </div>
         <Button variant="outline" onClick={() => void loadPayments()} disabled={isLoading}>
           <RefreshCw data-icon="inline-start" className={isLoading ? "animate-spin" : undefined} /> Làm mới
