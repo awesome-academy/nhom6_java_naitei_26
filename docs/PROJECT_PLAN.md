@@ -242,7 +242,7 @@
 - Cập nhật `housekeeping_status`:
   - CLEAN → DIRTY (sau checkout)
   - DIRTY → CLEANING → CLEAN
-- `RoomImageService`: upload/sort ảnh → MinIO bucket `room-images`
+- `RoomImageService`: ảnh phòng vật lý là legacy/out-of-scope trong local stack; bucket `room-images` không được provision
 - Endpoints:
   - "Danh sách phòng theo loại"
   - "Lọc theo view, tầng, tiện nghi"
@@ -276,7 +276,7 @@
     - Form với beds config
     - Amenities multi-select
     - Giá, mô tả
-  - Upload ảnh loại phòng (MinIO)
+  - Upload ảnh loại phòng (MinIO bucket `room-type-images`)
   - Soft delete với confirm dialog
 
 #### FE-3.2 | Admin — Rooms Management + Floor Map | Priority: Urgent | 20/08 | Est: 5h
@@ -935,14 +935,15 @@
 
 ## MinIO Integration Points
 
-- Room images
 - Room type images
 - Invoice PDFs
 - User avatars
 
+Physical room images are not provisioned by the standard local stack because customers
+book by Room Type. The legacy `RoomImageService` remains out of scope for this flow.
+
 **Bucket naming:**
 
-- `room-images`
 - `room-type-images`
 - `invoices`
 - `avatars`

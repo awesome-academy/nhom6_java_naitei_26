@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
@@ -30,6 +30,7 @@ import {
 } from "@/components/ui"
 import { isAdminUser, isStaffUser } from "@/lib/admin-auth"
 import { useAuth } from "@/lib/auth-context"
+import { uploadOwnStaffAvatar } from "@/lib/api/avatar"
 import { getOwnStaffProfile, updateOwnStaffProfile } from "@/lib/api/staff"
 import type { EmploymentStatus, StaffOwnProfile } from "@/types/staff"
 
@@ -92,6 +93,8 @@ export function ManagerProfilePage() {
   const [isFetching, setIsFetching] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
   const form = useForm<PhoneFormData>({
     resolver: zodResolver(phoneSchema),
     defaultValues: { phone: "" },
@@ -139,6 +142,31 @@ export function ManagerProfilePage() {
     }
   }
 
+  async function onAvatarSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file) return
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      toast.error("Avatar chỉ hỗ trợ JPG, PNG hoặc WebP")
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Avatar không được vượt quá 10 MB")
+      return
+    }
+    setIsUploadingAvatar(true)
+    try {
+      const response = await uploadOwnStaffAvatar(file)
+      setProfile((current) => current ? { ...current, avatarUrl: response.avatarUrl } : current)
+      toast.success("Đã cập nhật ảnh đại diện")
+    } catch (error) {
+      console.error("Failed to upload staff avatar", error)
+      toast.error("Không thể cập nhật ảnh đại diện")
+    } finally {
+      setIsUploadingAvatar(false)
+    }
+  }
+
   if (isStaff && isFetching && !profile) return <StaffProfileSkeleton />
 
   if (isStaff && loadError && !profile) {
@@ -182,6 +210,27 @@ export function ManagerProfilePage() {
               <p className="text-lg font-semibold text-foreground">{fullName}</p>
               <p className="text-sm text-muted-foreground">{email}</p>
               <Badge variant="secondary" className="w-fit">{isStaff ? "Nhân viên" : "Quản trị viên"}</Badge>
+              {isStaff && (
+                <>
+                  <Input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={onAvatarSelected}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2 w-fit"
+                    disabled={isUploadingAvatar}
+                    onClick={() => avatarInputRef.current?.click()}
+                  >
+                    {isUploadingAvatar ? "Đang tải lên..." : "Đổi ảnh đại diện"}
+                  </Button>
+                </>
+              )}
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">

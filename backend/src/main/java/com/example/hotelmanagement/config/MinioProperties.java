@@ -16,6 +16,8 @@ public record MinioProperties(
         @NotBlank String accessKey,
         @NotBlank String secretKey,
         @NotBlank String roomImagesBucket,
+        @NotBlank String roomTypeImagesBucket,
+        @NotBlank String avatarsBucket,
         @NotNull Duration uploadUrlTtl,
         @NotNull Duration downloadUrlTtl,
         @Positive long maxImageSizeBytes,

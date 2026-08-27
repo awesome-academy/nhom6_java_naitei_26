@@ -1,10 +1,11 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, CalendarDays, Loader2, Mail, MapPin, Phone, UserRound, UserRoundCheck, UserRoundX } from "lucide-react"
 import { toast } from "sonner"
 
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge, getBookingStatusVariant, getPaymentStatusVariant, getUserStatusVariant } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,6 +19,8 @@ import {
 } from "@/components/ui/dialog"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Input } from "@/components/ui/input"
+import { uploadCustomerAvatar } from "@/lib/api/avatar"
 import { getCustomer, getCustomerBookings, updateCustomerStatus } from "@/lib/api/admin-customers"
 import type { CustomerAccountStatus, CustomerBooking, CustomerDetailResponse } from "@/types/admin-customer"
 
@@ -92,7 +95,9 @@ export function CustomerDetail({ publicId }: { publicId: string }) {
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const [confirmDeactivate, setConfirmDeactivate] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
 
   const loadDetail = useCallback(async () => {
     setIsLoading(true)
@@ -134,6 +139,35 @@ export function CustomerDetail({ publicId }: { publicId: string }) {
       toast.error(getErrorMessage(error))
     } finally {
       setIsUpdating(false)
+    }
+  }
+
+  async function onAvatarSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file) return
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      toast.error("Avatar chỉ hỗ trợ JPG, PNG hoặc WebP")
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Avatar không được vượt quá 10 MB")
+      return
+    }
+    setIsUploadingAvatar(true)
+    try {
+      const response = await uploadCustomerAvatar(publicId, file)
+      setDetail((current) => current ? {
+        ...current,
+        account: { ...current.account, avatarUrl: response.avatarUrl },
+        profile: current.profile ? { ...current.profile, avatarUrl: response.avatarUrl } : current.profile,
+      } : current)
+      toast.success("Đã cập nhật avatar khách hàng")
+    } catch (error) {
+      console.error("Failed to upload customer avatar", error)
+      toast.error("Không thể cập nhật avatar khách hàng")
+    } finally {
+      setIsUploadingAvatar(false)
     }
   }
 
@@ -191,15 +225,33 @@ export function CustomerDetail({ publicId }: { publicId: string }) {
         <CardHeader>
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                <UserRound />
-              </div>
+              <Avatar className="size-14">
+                {account.avatarUrl && <AvatarImage src={account.avatarUrl} alt={account.fullName} />}
+                <AvatarFallback className="bg-muted text-muted-foreground"><UserRound /></AvatarFallback>
+              </Avatar>
               <div className="flex flex-col gap-2">
                 <CardTitle>{account.fullName}</CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant={getUserStatusVariant(account.status)}>{statusLabels[account.status]}</Badge>
                   <span className="text-sm text-muted-foreground">Tham gia {formatDate(account.createdAt)}</span>
                 </div>
+                <Input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={onAvatarSelected}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-fit"
+                  disabled={isUploadingAvatar}
+                  onClick={() => avatarInputRef.current?.click()}
+                >
+                  {isUploadingAvatar ? "Đang tải lên..." : "Đổi avatar"}
+                </Button>
               </div>
             </div>
           </div>

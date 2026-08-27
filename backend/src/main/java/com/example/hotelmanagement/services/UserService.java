@@ -21,6 +21,7 @@ import com.example.hotelmanagement.repositories.BookingRepository;
 import com.example.hotelmanagement.repositories.CustomerProfileRepository;
 import com.example.hotelmanagement.repositories.UserRepository;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -48,22 +49,25 @@ public class UserService {
     private final Clock clock;
     private final CustomerProfileRepository customerProfileRepository;
     private final BookingRepository bookingRepository;
+    private final AvatarUrlResolver avatarUrlResolver;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     public UserService(
             UserRepository userRepository,
             Clock clock,
             CustomerProfileRepository customerProfileRepository,
-            BookingRepository bookingRepository
+            BookingRepository bookingRepository,
+            AvatarUrlResolver avatarUrlResolver
     ) {
         this.userRepository = userRepository;
         this.clock = clock;
         this.customerProfileRepository = customerProfileRepository;
         this.bookingRepository = bookingRepository;
+        this.avatarUrlResolver = avatarUrlResolver;
     }
 
     public UserService(UserRepository userRepository, Clock clock) {
-        this(userRepository, clock, null, null);
+        this(userRepository, clock, null, null, null);
     }
 
     @Transactional(readOnly = true)
@@ -284,7 +288,7 @@ public class UserService {
             user.getEmailVerifiedAt(),
             user.getPhone(),
             user.getFullName(),
-            user.getAvatarUrl(),
+            avatarUrlResolver == null ? user.getAvatarUrl() : avatarUrlResolver.resolve(user),
             user.getStatus(),
             collectRoles(user),
             user.getCreatedAt(),

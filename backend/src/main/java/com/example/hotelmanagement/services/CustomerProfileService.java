@@ -12,6 +12,7 @@ import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.CustomerProfileRepository;
 import com.example.hotelmanagement.repositories.UserRepository;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,15 +29,27 @@ public class CustomerProfileService {
     private final CustomerProfileRepository customerProfileRepository;
     private final UserRepository userRepository;
     private final Clock clock;
+    private final AvatarUrlResolver avatarUrlResolver;
+
+    @Autowired
+    public CustomerProfileService(
+            CustomerProfileRepository customerProfileRepository,
+            UserRepository userRepository,
+            Clock clock,
+            AvatarUrlResolver avatarUrlResolver
+    ) {
+        this.customerProfileRepository = customerProfileRepository;
+        this.userRepository = userRepository;
+        this.clock = clock;
+        this.avatarUrlResolver = avatarUrlResolver;
+    }
 
     public CustomerProfileService(
             CustomerProfileRepository customerProfileRepository,
             UserRepository userRepository,
             Clock clock
     ) {
-        this.customerProfileRepository = customerProfileRepository;
-        this.userRepository = userRepository;
-        this.clock = clock;
+        this(customerProfileRepository, userRepository, clock, null);
     }
 
     public CustomerProfileResponse createOwnProfile(Long userId, @Valid CustomerProfileCreateRequest request) {
@@ -150,7 +163,7 @@ public class CustomerProfileService {
                 profile.getProvince(),
                 profile.getAddressLine(),
                 profile.getCountry(),
-                user.getAvatarUrl(),
+                avatarUrlResolver == null ? user.getAvatarUrl() : avatarUrlResolver.resolve(user),
                 user.getEmailVerifiedAt() != null,
                 user.getCreatedAt(),
                 profile.getLoyaltyPoints(),
