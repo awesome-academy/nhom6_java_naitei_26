@@ -2,11 +2,13 @@
 
 import { format } from "date-fns"
 import { vi } from "date-fns/locale"
+import { Trash2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
-import type { InvoiceResponse } from "@/types/invoice"
+import type { InvoiceItemResponse, InvoiceResponse } from "@/types/invoice"
 
 export interface InvoiceBuyerPreview {
   buyerName: string
@@ -20,6 +22,7 @@ interface InvoicePreviewProps {
   buyer?: InvoiceBuyerPreview
   bookingCode?: string
   className?: string
+  onRemoveAdjustment?: (item: InvoiceItemResponse) => void
 }
 
 const lineTypeLabels: Record<InvoiceResponse["items"][number]["lineType"], string> = {
@@ -40,7 +43,13 @@ function formatIssuedAt(value: string | null): string {
   return value ? format(new Date(value), "dd/MM/yyyy HH:mm", { locale: vi }) : "Chưa phát hành"
 }
 
-export function InvoicePreview({ invoice, buyer, bookingCode, className }: InvoicePreviewProps) {
+export function InvoicePreview({
+  invoice,
+  buyer,
+  bookingCode,
+  className,
+  onRemoveAdjustment,
+}: InvoicePreviewProps) {
   const shownBuyer = buyer ?? {
     buyerName: invoice.buyerName,
     buyerAddress: invoice.buyerAddress ?? "",
@@ -98,7 +107,7 @@ export function InvoicePreview({ invoice, buyer, bookingCode, className }: Invoi
       </section>
 
       <div className="mt-6 overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[640px] text-sm">
+        <table className="w-full min-w-[680px] text-sm">
           <thead className="bg-muted/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-4 py-3">Nội dung</th>
@@ -106,6 +115,7 @@ export function InvoicePreview({ invoice, buyer, bookingCode, className }: Invoi
               <th className="px-3 py-3 text-right">Đơn giá</th>
               <th className="px-3 py-3 text-right">Thuế</th>
               <th className="px-4 py-3 text-right">Thành tiền</th>
+              {onRemoveAdjustment && <th className="w-12 px-2 py-3" aria-label="Thao tác" />}
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -127,11 +137,28 @@ export function InvoicePreview({ invoice, buyer, bookingCode, className }: Invoi
                 <td className="px-4 py-3 text-right font-medium tabular-nums">
                   {formatMoney(item.lineTotal, invoice.currency)}
                 </td>
+                {onRemoveAdjustment && (
+                  <td className="px-2 py-3 text-right">
+                    {item.lineType === "ADJUSTMENT" && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => onRemoveAdjustment(item)}
+                        aria-label={`Xóa dòng điều chỉnh ${item.description}`}
+                        title="Xóa dòng điều chỉnh"
+                      >
+                        <Trash2 data-icon="inline-start" />
+                      </Button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
             {invoice.items.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
+                <td colSpan={onRemoveAdjustment ? 6 : 5} className="px-4 py-10 text-center text-muted-foreground">
                   Hóa đơn chưa có dòng chi tiết.
                 </td>
               </tr>

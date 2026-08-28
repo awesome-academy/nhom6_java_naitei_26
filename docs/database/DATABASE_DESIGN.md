@@ -1126,6 +1126,7 @@ Hai trạng thái này biến đổi độc lập: một hóa đơn `ISSUED` có
 | `payment_status`                | invoice_payment_status | NOT NULL default`UNPAID`               | `UNPAID / PARTIALLY_PAID / PAID / PARTIALLY_REFUNDED / REFUNDED`                                                                                                                                                                                            |
 | `issued_at`                     | TIMESTAMPTZ            | NULL                                     |                                                                                                                                                                                                                                                               |
 | `issued_by`                     | BIGINT                 | NULL, FK→staff_profiles RESTRICT        |                                                                                                                                                                                                                                                               |
+| `issued_by_user_id`             | BIGINT                 | NULL, FK→users RESTRICT                 | User actor fallback khi Admin phát hành hóa đơn mà không có `staff_profiles`; chỉ một trong hai cột actor được ghi                                                                                                                                             |
 | `buyer_name`                    | VARCHAR(150)           | NOT NULL                                 | Snapshot — sửa profile khách không đổi hóa đơn đã in                                                                                                                                                                                               |
 | `buyer_address`                 | TEXT                   | NULL                                     |                                                                                                                                                                                                                                                               |
 | `buyer_tax_code`                | VARCHAR(20)            | NULL                                     | Khách công ty cần hóa đơn VAT                                                                                                                                                                                                                           |
@@ -1141,6 +1142,7 @@ Hai trạng thái này biến đổi độc lập: một hóa đơn `ISSUED` có
 | `replaces_invoice_id`           | BIGINT                 | NULL, FK→invoices RESTRICT              | Hóa đơn này thay thế hóa đơn nào (sau VOID)                                                                                                                                                                                                          |
 | `voided_at`                     | TIMESTAMPTZ            | NULL                                     |                                                                                                                                                                                                                                                               |
 | `voided_by`                     | BIGINT                 | NULL, FK→staff_profiles RESTRICT        |                                                                                                                                                                                                                                                               |
+| `voided_by_user_id`             | BIGINT                 | NULL, FK→users RESTRICT                 | User actor fallback khi Admin hủy hóa đơn mà không có `staff_profiles`; chỉ một trong hai cột actor được ghi                                                                                                                                                   |
 | `void_reason`                   | TEXT                   | NULL                                     |                                                                                                                                                                                                                                                               |
 | `created_at` / `updated_at`   | TIMESTAMPTZ            | NOT NULL default now()                   |                                                                                                                                                                                                                                                               |
 
@@ -1148,12 +1150,12 @@ Hai trạng thái này biến đổi độc lập: một hóa đơn `ISSUED` có
 CHECK (total_amount = subtotal - discount_total + tax_total)
 CHECK (refunded_amount <= paid_amount)
 CHECK (status <> 'ISSUED' OR (invoice_number IS NOT NULL AND issued_at IS NOT NULL
-                              AND issued_by IS NOT NULL))
+                              AND (issued_by IS NOT NULL OR issued_by_user_id IS NOT NULL)))
 CHECK (status <> 'DRAFT'  OR (invoice_number IS NULL AND issued_at IS NULL))
 CHECK (status <> 'VOID'   OR (voided_at IS NOT NULL AND void_reason IS NOT NULL))
 ```
 
-**Trigger bảo vệ tính bất biến (BR-013):** sau khi `status = 'ISSUED'`, chặn UPDATE lên `invoice_number`, `booking_id`, `buyer_*`, `subtotal`, `discount_total`, `tax_total`, `total_amount`, `issued_at`. Chỉ cho phép đổi `payment_status`, `paid_amount`, `refunded_amount`, `pdf_*`, và bộ `void*` khi chuyển sang VOID. Chặn DELETE ở mọi trạng thái khác `DRAFT`.
+**Trigger bảo vệ tính bất biến (BR-013):** sau khi `status = 'ISSUED'`, chặn UPDATE lên `invoice_number`, `booking_id`, `buyer_*`, `subtotal`, `discount_total`, `tax_total`, `total_amount`, `issued_at` và actor phát hành. Chỉ cho phép đổi `payment_status`, `paid_amount`, `refunded_amount`, `pdf_*`, và bộ `void*` khi chuyển sang VOID. Chặn DELETE ở mọi trạng thái khác `DRAFT`.
 
 Index: `(booking_id)`, `(status, issued_at)`, `(payment_status)`, unique `(invoice_number)` khi không NULL.
 
@@ -2058,6 +2060,6 @@ Tôi thêm `bookings.room_tax_percent_snapshot` để dòng ROOM trên hóa đơ
 
 **C-4. Giờ nhận phòng chuẩn — cần cho phép tính hoàn tiền.**
 Rule hủy tính theo "số giờ trước check-in" (5.3), nên cần biết giờ nhận phòng chuẩn. Query 9.6 tạm dùng `14:00 Asia/Ho_Chi_Minh`. Spec không nêu con số này. Nên đưa vào một bảng cấu hình khách sạn (`hotel_settings`) cùng với mức no-show chung nếu C-1 dẫn tới việc lập bảng đó — tôi **không** thêm bảng này vào schema vì nằm ngoài phạm vi sửa consistency/snapshot lần này.
-### Staff invitation credential policy (V40)
+### Staff invitation credential policy (V42)
 
 Admin nhập mật khẩu tạm khi tạo hoặc gửi lại invitation Staff. Password được hash trong `users.password_hash`; email `STAFF_INVITATION` chứa email đăng nhập, mật khẩu tạm và link kích hoạt. Link chỉ dùng để chuyển User từ `PENDING_VERIFICATION` sang `ACTIVE`; Staff đăng nhập trực tiếp bằng mật khẩu đã nhận và không bị bắt buộc đổi ở lần đầu. Do email queue lưu snapshot để retry, plaintext password tồn tại trong `email_messages.body_html/body_text`; ứng dụng không log hoặc trả nội dung này qua API. Resend luôn yêu cầu mật khẩu mới và vô hiệu token cũ.

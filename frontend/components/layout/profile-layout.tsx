@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui"
 import { SiteHeader } from "@/components/auth/site-header"
 import { toast } from "sonner"
@@ -70,6 +70,7 @@ export function ProfileLayout({ children }: ProfileLayoutProps) {
             <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-6">
               <div className="flex flex-col items-center text-center">
                 <Avatar className="h-20 w-20">
+                  {user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.fullName || user.email} />}
                   <AvatarFallback className="bg-[var(--accent)] text-white text-2xl font-medium">
                     {getInitials(user?.fullName || user?.email || "U")}
                   </AvatarFallback>

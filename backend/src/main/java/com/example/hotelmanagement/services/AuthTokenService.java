@@ -89,14 +89,16 @@ public class AuthTokenService {
     }
 
     /**
-     * Find token by raw value, returns Optional.
-     * Does not throw exceptions - returns empty if token is invalid.
+     * Finds an email verification token while holding a row lock for the
+     * surrounding verification transaction. This keeps repeated link opens
+     * idempotent instead of allowing concurrent requests to race.
+     * Does not throw exceptions - returns empty if the token is invalid.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public Optional<AuthToken> findTokenForVerification(String rawToken) {
         try {
             String tokenHash = hashToken(requireTokenValue(rawToken));
-            return authTokenRepository.findByTokenHash(tokenHash)
+            return authTokenRepository.findByTokenHashForUpdate(tokenHash)
                 .filter(token -> token.getTokenType() == AuthTokenType.EMAIL_VERIFICATION);
         } catch (AuthException e) {
             return Optional.empty();

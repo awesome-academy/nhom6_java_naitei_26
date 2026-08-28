@@ -51,6 +51,7 @@ import { toast } from "sonner"
 
 import { SiteHeader } from "@/components/auth/site-header"
 import { BookingPaymentStep } from "@/components/payment/booking-payment-step"
+import { PublishedReviews } from "@/components/review/published-reviews"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -279,9 +280,14 @@ function getEffectiveNightlyPrice(calculation: PriceCalculation) {
   return roundMoney(Number(calculation.roomsTotal) / Math.max(1, calculation.nights))
 }
 
-function hasMeaningfulDiscount(priceDifference: number, currency: string) {
+function getMeaningfulDiscountAmount(
+  actualPrice: number,
+  basePrice: number,
+  currency: string
+) {
   const minimumVisibleDifference = currency === "VND" ? 1 : 0.01
-  return priceDifference <= -minimumVisibleDifference
+  const discountAmount = roundMoney(basePrice - actualPrice)
+  return discountAmount >= minimumVisibleDifference ? discountAmount : 0
 }
 
 async function calculateRoomTypePrices(roomTypes: RoomType[], search: SearchState) {
@@ -791,6 +797,8 @@ export default function BookingPage() {
             onRemoveOption={removeSelectedOption}
           />
         </section>
+
+        <PublishedReviews />
       </main>
 
       {selectedCount > 0 && (
@@ -934,21 +942,6 @@ function HotelDetails({
           <FeatureIcon icon={Users} label="Phòng gia đình" />
           <FeatureIcon icon={Wifi} label="Wi‑Fi miễn phí trong phòng" />
           <FeatureIcon icon={Info} label="+2 mục khác" />
-        </div>
-
-        <Separator />
-
-        <div className="grid gap-8 md:grid-cols-[360px_1fr]">
-          <div className="flex items-center gap-5">
-            <div className="text-5xl font-bold text-primary">8,4</div>
-            <div>
-              <div className="text-xl font-semibold text-primary">Rất tốt</div>
-              <div className="underline underline-offset-4">Tất cả 1.448 đánh giá</div>
-            </div>
-          </div>
-          <p className="text-base font-medium leading-relaxed">
-            Mỗi lần về VN là tôi sẽ ở khách sạn này. Vừa tiện vì gần sân bay, xung quanh đều có các quán ăn.
-          </p>
         </div>
 
         <Separator />
@@ -1451,9 +1444,9 @@ function RoomChoiceCard({
   const unitPrice = calculation
     ? getEffectiveNightlyPrice(calculation)
     : getBookingOptionUnitPrice(roomType, option)
-  const baseOptionPrice = getBookingOptionUnitPrice(roomType, option)
-  const priceDifference = roundMoney(unitPrice - baseOptionPrice)
-  const hasDiscount = hasMeaningfulDiscount(priceDifference, roomType.currency)
+  const policyBasePrice = getBookingOptionUnitPrice(roomType, option)
+  const discountAmount = getMeaningfulDiscountAmount(unitPrice, policyBasePrice, roomType.currency)
+  const hasDiscount = discountAmount > 0
   const displayRoomCount = Math.max(1, selectedCount)
   const totalPrice = calculation
     ? Number(calculation.totalAmount) * displayRoomCount
@@ -1490,7 +1483,7 @@ function RoomChoiceCard({
           {hasDiscount && (
             <>
               <Badge className="rounded-md border-0 bg-rose-600 px-2 py-1 text-sm font-bold text-white">
-                {money(priceDifference, roomType.currency)}
+                -{money(discountAmount, roomType.currency)}
               </Badge>
               <Badge className="rounded-md border-0 bg-rose-50 px-2 py-1 text-sm font-medium text-rose-600">
                 Giảm Giá Đặc Biệt
@@ -1505,7 +1498,7 @@ function RoomChoiceCard({
           <span className="text-sm text-muted-foreground">/đêm trung bình</span>
           {hasDiscount && (
             <div className="relative text-lg leading-none text-muted-foreground">
-              <span>{money(baseOptionPrice, roomType.currency)}</span>
+              <span>{money(policyBasePrice, roomType.currency)}</span>
               <span className="absolute left-0 top-1/2 h-0.5 w-full -translate-y-1/2 rotate-[-8deg] bg-rose-600" />
             </div>
           )}

@@ -257,9 +257,9 @@ export function PaymentResultView({
             )}
             {(result === "failed" || result === "cancelled") && (
               <Button asChild variant="outline">
-                <Link href="/booking">
+                <Link href="/profile/bookings">
                   <RotateCcw data-icon="inline-start" />
-                  Quay lại đặt phòng
+                  Quay lại danh sách booking
                 </Link>
               </Button>
             )}

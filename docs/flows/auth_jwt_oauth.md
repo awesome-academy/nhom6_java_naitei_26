@@ -757,6 +757,6 @@ const accessToken = response.accessToken;
 | Email verify | Cần verify riêng | Google đã verify |
 | Password | User tạo | Không có |
 | Trust | Trust app | Trust Google |
-### Thay đổi Staff invitation (V40)
+### Thay đổi Staff invitation (V42)
 
 Theo flow hiện tại, Admin nhập mật khẩu tạm khi tạo Staff. Mật khẩu được lưu trong `users.password_hash` và được snapshot vào nội dung email queue `STAFF_INVITATION` để worker gửi/retry; không log hoặc trả qua API. Link invitation chỉ xác thực email và kích hoạt User, không đổi mật khẩu. Sau khi kích hoạt, Staff đăng nhập trực tiếp tại `/manager/login` bằng email và mật khẩu trong email. Gửi lại invitation bắt buộc Admin nhập mật khẩu tạm mới; token cũ bị vô hiệu hóa.

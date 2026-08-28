@@ -72,6 +72,23 @@ public class UserAvatarService {
     }
 
     @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public AvatarUploadUrlResponse createCustomerUploadUrl(
+            Long userId,
+            @Valid AvatarUploadUrlRequest request
+    ) {
+        return createUploadUrl(getExistingUser(userId), request, "users");
+    }
+
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public AvatarResponse confirmCustomerUpload(
+            Long userId,
+            @Valid AvatarConfirmRequest request
+    ) {
+        return confirmUpload(getExistingUser(userId), request, "users");
+    }
+
+    @Transactional(readOnly = true)
     @PreAuthorize("hasRole('STAFF')")
     public AvatarUploadUrlResponse createStaffUploadUrl(
             Long userId,
@@ -144,6 +161,12 @@ public class UserAvatarService {
     private User getExistingUser(String publicId) {
         return userRepository.findByPublicIdAndDeletedAtIsNull(publicId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", publicId));
+    }
+
+    private User getExistingUser(Long userId) {
+        return userRepository.findById(userId)
+                .filter(candidate -> candidate.getDeletedAt() == null)
+                .orElseThrow(() -> new ResourceNotFoundException("User", userId.toString()));
     }
 
     private User getExistingStaff(Long userId) {

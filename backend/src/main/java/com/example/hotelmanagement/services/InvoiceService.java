@@ -28,6 +28,8 @@ import com.example.hotelmanagement.repositories.StaffProfileRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -239,7 +241,8 @@ public class InvoiceService {
 
         invoice.setInvoiceNumber(generateInvoiceNumber());
         invoice.setIssuedAt(OffsetDateTime.now(clock));
-        invoice.setIssuedBy(staff.getId());
+        invoice.setIssuedBy(staff == null ? null : staff.getId());
+        invoice.setIssuedByUserId(staff == null ? actorUserId : null);
         invoice.setStatus(InvoiceStatus.ISSUED);
 
         return mapResponse(invoiceRepository.saveAndFlush(invoice));
@@ -266,7 +269,8 @@ public class InvoiceService {
         String reason = normalizeRequiredText(request.reason(), "Void reason", 2000);
 
         invoice.setVoidedAt(OffsetDateTime.now(clock));
-        invoice.setVoidedBy(staff.getId());
+        invoice.setVoidedBy(staff == null ? null : staff.getId());
+        invoice.setVoidedByUserId(staff == null ? actorUserId : null);
         invoice.setVoidReason(reason);
         invoice.setStatus(InvoiceStatus.VOID);
         Invoice voidedInvoice = invoiceRepository.saveAndFlush(invoice);
@@ -325,10 +329,21 @@ public class InvoiceService {
     }
 
     private StaffProfile getActingStaff(Long actorUserId, String action) {
-        return staffProfileRepository.findByUser_Id(actorUserId)
-                .orElseThrow(() -> new BusinessValidationException(
-                        "Only staff can " + action + " an invoice"
-                ));
+        StaffProfile staff = staffProfileRepository.findByUser_Id(actorUserId).orElse(null);
+        if (staff != null) {
+            return staff;
+        }
+        if (hasAdminRole()) {
+            return null;
+        }
+        throw new BusinessValidationException("Only staff can " + action + " an invoice");
+    }
+
+    private boolean hasAdminRole() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null
+                && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
     }
 
     private String generateInvoiceNumber() {

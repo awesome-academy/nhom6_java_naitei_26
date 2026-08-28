@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { createRoomTypeRateOverride } from "@/lib/api/rate-overrides"
+import { createRoomTypeRateOverride, updateRateOverride } from "@/lib/api/rate-overrides"
 import type { RateOverride } from "@/types/rate-override"
 import type { RoomType } from "@/types/room-type"
 
@@ -70,10 +70,11 @@ type FormValues = z.infer<typeof formSchema>
 
 interface RateOverrideFormDialogProps {
   open: boolean
+  override: RateOverride | null
   roomTypes: RoomType[]
   activeOverrides: RateOverride[]
   onOpenChange: (open: boolean) => void
-  onCreated: (override: RateOverride) => Promise<void>
+  onSaved: (override: RateOverride) => Promise<void>
 }
 
 function defaultValues(roomTypes: RoomType[]): FormValues {
@@ -89,21 +90,35 @@ function defaultValues(roomTypes: RoomType[]): FormValues {
   }
 }
 
+function valuesFromOverride(override: RateOverride): FormValues {
+  return {
+    name: override.name,
+    roomTypeCode: override.roomTypeCode,
+    startDate: override.startDate,
+    endDate: override.endDate,
+    price: String(override.price),
+    priority: String(override.priority),
+    weekdays: override.weekdays ?? weekdayOptions.map((day) => day.value),
+  }
+}
+
 function getErrorMessage(error: unknown): string {
   if ((error as { status?: number })?.status === 409) {
     return "Đã có rule cùng loại phòng, priority và ngày áp dụng trong khoảng này."
   }
   if (error instanceof Error && error.message) return error.message
-  return "Không thể tạo rule giá. Vui lòng thử lại."
+  return "Không thể lưu rule giá. Vui lòng thử lại."
 }
 
 export function RateOverrideFormDialog({
   open,
+  override,
   roomTypes,
   activeOverrides,
   onOpenChange,
-  onCreated,
+  onSaved,
 }: RateOverrideFormDialogProps) {
+  const isEditMode = override !== null
   const [isSubmitting, setIsSubmitting] = useState(false)
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -114,9 +129,11 @@ export function RateOverrideFormDialog({
 
   useEffect(() => {
     if (!open) return
-    const timer = window.setTimeout(() => form.reset(defaultValues(roomTypes)), 0)
+    const timer = window.setTimeout(() => {
+      form.reset(override ? valuesFromOverride(override) : defaultValues(roomTypes))
+    }, 0)
     return () => window.clearTimeout(timer)
-  }, [form, open, roomTypes])
+  }, [form, open, override, roomTypes])
 
   function toggleWeekday(weekday: number, checked: boolean) {
     const next = checked
@@ -137,23 +154,34 @@ export function RateOverrideFormDialog({
         weekdays,
         priority: Number(values.priority),
       }
-      if (activeOverrides.some((rule) => hasApplicableDateConflict(candidate, rule))) {
+      if (activeOverrides.some((rule) => (
+        rule.id !== override?.id && hasApplicableDateConflict(candidate, rule)
+      ))) {
         form.setError("root", {
           message: "Rule bị trùng ngày áp dụng với một rule cùng priority của loại phòng này.",
         })
         return
       }
 
-      const created = await createRoomTypeRateOverride(values.roomTypeCode, {
+      const roomType = roomTypes.find((item) => item.code === values.roomTypeCode)
+      if (!roomType) {
+        form.setError("root", { message: "Không tìm thấy loại phòng đã chọn." })
+        return
+      }
+
+      const request = {
         name: values.name.trim(),
         startDate: values.startDate,
         endDate: values.endDate,
         price: Number(values.price),
         weekdays,
         priority: Number(values.priority),
-      })
-      await onCreated(created)
-      toast.success("Đã tạo rule giá")
+      }
+      const saved = override
+        ? await updateRateOverride(override.id, { ...request, roomTypeId: roomType.roomTypeId })
+        : await createRoomTypeRateOverride(values.roomTypeCode, request)
+      await onSaved(saved)
+      toast.success(isEditMode ? "Đã cập nhật rule giá" : "Đã tạo rule giá")
       onOpenChange(false)
     } catch (error) {
       form.setError("root", { message: getErrorMessage(error) })
@@ -166,7 +194,7 @@ export function RateOverrideFormDialog({
     <Dialog open={open} onOpenChange={(next) => !isSubmitting && onOpenChange(next)}>
       <DialogContent className="max-w-2xl p-0">
         <DialogHeader className="border-b px-6 py-5">
-          <DialogTitle>Tạo rate override</DialogTitle>
+          <DialogTitle>{isEditMode ? "Chỉnh sửa rate override" : "Tạo rate override"}</DialogTitle>
           <DialogDescription>
             Rule dùng khoảng ngày nửa mở: ngày kết thúc không được áp dụng giá.
           </DialogDescription>
@@ -247,7 +275,7 @@ export function RateOverrideFormDialog({
             </Button>
             <Button type="submit" disabled={isSubmitting || roomTypes.length === 0}>
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Tạo rule
+              {isEditMode ? "Lưu thay đổi" : "Tạo rule"}
             </Button>
           </DialogFooter>
         </form>

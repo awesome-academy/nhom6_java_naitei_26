@@ -47,6 +47,14 @@ export function uploadCustomerAvatar(publicId: string, file: File): Promise<Avat
   )
 }
 
+export function uploadOwnCustomerAvatar(file: File): Promise<AvatarResponse> {
+  return uploadAvatar(
+    "/api/customer-profiles/me/avatar/upload-url",
+    "/api/customer-profiles/me/avatar/confirm",
+    file,
+  )
+}
+
 export function uploadOwnStaffAvatar(file: File): Promise<AvatarResponse> {
   return uploadAvatar(
     "/api/staff-profiles/me/avatar/upload-url",

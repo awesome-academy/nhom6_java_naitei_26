@@ -4,6 +4,7 @@ export interface UserSummary {
   publicId: string
   email: string
   fullName: string
+  avatarUrl?: string | null
   status: UserStatus
   emailVerifiedAt: string | null
   roles: string[]

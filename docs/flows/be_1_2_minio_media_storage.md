@@ -41,6 +41,13 @@ Admin uploads a selected User's avatar with:
 | `POST` | `/api/users/{publicId}/avatar/upload-url` | `ADMIN` |
 | `POST` | `/api/users/{publicId}/avatar/confirm` | `ADMIN` |
 
+Customers change their own avatar with:
+
+| Method | Endpoint | Permission |
+| --- | --- | --- |
+| `POST` | `/api/customer-profiles/me/avatar/upload-url` | `CUSTOMER` |
+| `POST` | `/api/customer-profiles/me/avatar/confirm` | `CUSTOMER` |
+
 Staff changes only their own avatar with:
 
 | Method | Endpoint | Permission |

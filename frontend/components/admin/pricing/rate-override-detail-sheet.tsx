@@ -1,6 +1,7 @@
 "use client"
 
 import { format, parseISO } from "date-fns"
+import { Loader2, Pencil, Trash2 } from "lucide-react"
 import { vi } from "date-fns/locale"
 
 import {
@@ -8,10 +9,12 @@ import {
   formatWeekdays,
 } from "@/components/admin/pricing/pricing-utils"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Sheet,
   SheetContent,
   SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
@@ -20,11 +23,17 @@ import type { RateOverride } from "@/types/rate-override"
 interface RateOverrideDetailSheetProps {
   override: RateOverride | null
   onOpenChange: (open: boolean) => void
+  onEdit: () => void
+  onDelete: () => void
+  isDeleting: boolean
 }
 
 export function RateOverrideDetailSheet({
   override,
   onOpenChange,
+  onEdit,
+  onDelete,
+  isDeleting,
 }: RateOverrideDetailSheetProps) {
   return (
     <Sheet open={override !== null} onOpenChange={onOpenChange}>
@@ -51,6 +60,16 @@ export function RateOverrideDetailSheet({
               <Detail label="Ngày áp dụng" value={formatWeekdays(override.weekdays)} />
               <Detail label="Giá" value={formatMoney(override.price)} />
             </dl>
+
+            <SheetFooter className="border-t px-6 py-4">
+              <Button variant="outline" onClick={onEdit} disabled={isDeleting}>
+                <Pencil data-icon="inline-start" /> Sửa
+              </Button>
+              <Button variant="destructive" onClick={onDelete} disabled={isDeleting}>
+                {isDeleting ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Trash2 data-icon="inline-start" />}
+                Xóa rule
+              </Button>
+            </SheetFooter>
           </div>
         )}
       </SheetContent>

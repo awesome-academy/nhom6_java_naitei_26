@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
+import type { ChangeEvent } from "react"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -11,7 +12,7 @@ import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
 import { Camera, Save, ShieldCheck, Globe } from "lucide-react"
@@ -23,7 +24,9 @@ import {
   type CustomerProfile,
   type Province,
 } from "@/lib/api/customer-profile"
+import { uploadOwnCustomerAvatar } from "@/lib/api/avatar"
 import { getStoredTokens } from "@/lib/api/auth"
+import { useAuth } from "@/lib/auth-context"
 
 const profileSchema = z.object({
   fullName: z.string().min(2, "Họ tên phải có ít nhất 2 ký tự"),
@@ -40,6 +43,7 @@ const profileSchema = z.object({
 type ProfileFormData = z.infer<typeof profileSchema>
 
 export default function ProfilePage() {
+  const { updateAvatar } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
   const [isFetching, setIsFetching] = useState(true)
   const [notifications, setNotifications] = useState({
@@ -48,6 +52,8 @@ export default function ProfilePage() {
   })
   const [profile, setProfile] = useState<CustomerProfile | null>(null)
   const [provinces, setProvinces] = useState<Province[]>([])
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
 
   const {
     register,
@@ -94,6 +100,7 @@ export default function ProfilePage() {
       try {
         const data = await getCustomerProfile()
         setProfile(data)
+        updateAvatar(data.avatarUrl)
         reset({
           fullName: data.fullName || "",
           email: data.email || "",
@@ -125,7 +132,7 @@ export default function ProfilePage() {
       }
     }
     fetchProfile()
-  }, [reset])
+  }, [reset, updateAvatar])
 
   const onSubmit = async (data: ProfileFormData) => {
     setIsLoading(true)
@@ -139,6 +146,7 @@ export default function ProfilePage() {
         country: data.country || null,
       })
       setProfile(updated)
+      updateAvatar(updated.avatarUrl)
       reset({
         fullName: updated.fullName || "",
         email: updated.email || "",
@@ -155,6 +163,36 @@ export default function ProfilePage() {
       toast.error("Cập nhật hồ sơ thất bại")
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const onAvatarSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file) return
+
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      toast.error("Avatar chỉ hỗ trợ JPG, PNG hoặc WebP")
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Avatar không được vượt quá 10 MB")
+      return
+    }
+
+    setIsUploadingAvatar(true)
+    try {
+      const response = await uploadOwnCustomerAvatar(file)
+      setProfile((current) => current ? { ...current, avatarUrl: response.avatarUrl } : current)
+      updateAvatar(response.avatarUrl)
+      toast.success("Đã cập nhật ảnh đại diện")
+    } catch (error) {
+      console.error("Failed to upload own customer avatar", error)
+      toast.error(error instanceof Error && error.message
+        ? error.message
+        : "Không thể cập nhật ảnh đại diện")
+    } finally {
+      setIsUploadingAvatar(false)
     }
   }
 
@@ -202,13 +240,17 @@ export default function ProfilePage() {
             <div className="flex items-center gap-6">
               <div className="relative">
                 <Avatar className="h-24 w-24">
+                  {profile?.avatarUrl && <AvatarImage src={profile.avatarUrl} alt={profile.fullName} />}
                   <AvatarFallback className="bg-[var(--accent)] text-white text-3xl font-medium">
                     {profile?.fullName ? getInitials(profile.fullName) : "U"}
                   </AvatarFallback>
                 </Avatar>
                 <button
                   type="button"
-                  className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent)] text-white shadow-lg hover:bg-[var(--accent)]/90 transition-colors"
+                  className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent)] text-white shadow-lg transition-colors hover:bg-[var(--accent)]/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={isUploadingAvatar}
+                  aria-label="Chọn ảnh đại diện"
                 >
                   <Camera className="h-4 w-4" />
                 </button>
@@ -216,10 +258,25 @@ export default function ProfilePage() {
               <div>
                 <p className="text-sm font-medium text-[var(--foreground)]">Ảnh đại diện</p>
                 <p className="text-xs text-[var(--muted-foreground)]">
-                  JPG, PNG hoặc GIF. Kích thước tối đa 2MB.
+                  JPG, PNG hoặc WebP. Kích thước tối đa 10MB.
                 </p>
-                <Button variant="outline" size="sm" className="mt-2 h-9 border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white">
-                  Tải ảnh lên
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="sr-only"
+                  onChange={onAvatarSelected}
+                  disabled={isUploadingAvatar}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2 h-9 border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={isUploadingAvatar}
+                >
+                  {isUploadingAvatar ? "Đang tải lên..." : "Tải ảnh lên"}
                 </Button>
               </div>
             </div>

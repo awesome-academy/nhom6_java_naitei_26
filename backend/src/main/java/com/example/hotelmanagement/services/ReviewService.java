@@ -5,6 +5,9 @@ import com.example.hotelmanagement.dto.review.ReviewListResponse;
 import com.example.hotelmanagement.dto.review.ReviewModerationRequest;
 import com.example.hotelmanagement.dto.review.ReviewReplyRequest;
 import com.example.hotelmanagement.dto.review.ReviewResponse;
+import com.example.hotelmanagement.dto.review.PublishedReviewListResponse;
+import com.example.hotelmanagement.dto.review.PublishedReviewResponse;
+import com.example.hotelmanagement.dto.review.PublishedReviewSummaryResponse;
 import com.example.hotelmanagement.dto.review.StaffReviewListResponse;
 import com.example.hotelmanagement.dto.review.StaffReviewResponse;
 import com.example.hotelmanagement.entity.Booking;
@@ -20,6 +23,7 @@ import com.example.hotelmanagement.exceptions.BusinessValidationException;
 import com.example.hotelmanagement.exceptions.DuplicateResourceException;
 import com.example.hotelmanagement.exceptions.ResourceNotFoundException;
 import com.example.hotelmanagement.repositories.BookingRepository;
+import com.example.hotelmanagement.repositories.PublishedReviewAggregateProjection;
 import com.example.hotelmanagement.repositories.ReviewRepository;
 import com.example.hotelmanagement.repositories.StaffProfileRepository;
 import com.example.hotelmanagement.security.PermissionExpressions;
@@ -175,6 +179,37 @@ public class ReviewService {
         );
     }
 
+    /** Returns only approved reviews; category aggregates cover all published reviews. */
+    @Transactional(readOnly = true)
+    @PreAuthorize(PermissionExpressions.ROOM_READ)
+    public PublishedReviewListResponse listPublishedReviews(Integer page, Integer size) {
+        int normalizedPage = page == null || page < 0 ? 0 : page;
+        int normalizedSize = size == null || size <= 0 ? 5 : Math.min(size, 50);
+        PageRequest pageable = PageRequest.of(normalizedPage, normalizedSize);
+
+        Page<Review> reviews = reviewRepository.findAllPublished(ReviewStatus.PUBLISHED, pageable);
+        PublishedReviewAggregateProjection aggregate = reviewRepository.aggregatePublishedReviews(
+                ReviewStatus.PUBLISHED
+        );
+        PublishedReviewSummaryResponse summary = new PublishedReviewSummaryResponse(
+                valueOrZero(aggregate.getTotalReviews()),
+                aggregate.getAverageOverallRating(),
+                aggregate.getAverageRoomRating(),
+                aggregate.getAverageCleanlinessRating(),
+                aggregate.getAverageServiceRating(),
+                aggregate.getAverageValueRating()
+        );
+
+        return new PublishedReviewListResponse(
+                reviews.getContent().stream().map(this::mapPublishedResponse).toList(),
+                summary,
+                reviews.getNumber(),
+                reviews.getSize(),
+                reviews.getTotalElements(),
+                reviews.getTotalPages()
+        );
+    }
+
     /** Admin approve/reject: PENDING (or an already-moderated review) -> PUBLISHED/HIDDEN/REJECTED. */
     @PreAuthorize(PermissionExpressions.REVIEW_MODERATE)
     public ReviewResponse moderate(String bookingPublicId, ReviewModerationRequest request) {
@@ -256,6 +291,32 @@ public class ReviewService {
                 review.getCreatedAt(),
                 review.getUpdatedAt()
         );
+    }
+
+    private PublishedReviewResponse mapPublishedResponse(Review review) {
+        CustomerProfile customerProfile = review.getCustomerProfile();
+        RoomType roomType = review.getRoomType();
+        String customerName = customerProfile != null && customerProfile.getUser() != null
+                ? customerProfile.getUser().getFullName() : null;
+
+        return new PublishedReviewResponse(
+                customerName,
+                roomType != null ? roomType.getName() : null,
+                review.getOverallRating(),
+                review.getRoomRating(),
+                review.getCleanlinessRating(),
+                review.getServiceRating(),
+                review.getValueRating(),
+                review.getTitle(),
+                review.getComment(),
+                review.getStaffReply(),
+                review.getStaffRepliedAt(),
+                review.getCreatedAt()
+        );
+    }
+
+    private long valueOrZero(Long value) {
+        return value == null ? 0L : value;
     }
 
     private StaffReviewResponse mapStaffResponse(Review review) {

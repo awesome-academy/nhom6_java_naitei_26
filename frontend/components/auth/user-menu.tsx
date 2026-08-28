@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,6 +72,7 @@ export function UserMenu() {
           className="h-10 gap-3 rounded-full px-2 hover:bg-[var(--muted)]"
         >
           <Avatar className="h-8 w-8">
+            {user.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.fullName || user.email} />}
             <AvatarFallback className="bg-[var(--accent)] text-white text-sm font-semibold">
               {getInitials(user.fullName || user.email)}
             </AvatarFallback>

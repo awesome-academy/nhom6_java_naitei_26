@@ -63,6 +63,6 @@ class EmailQueueWorkerTest {
 
     @Test
     void pollIntervalAcceptsHumanReadableDuration() {
-        assertThat(DurationStyle.detectAndParse("30s")).isEqualTo(Duration.ofSeconds(30));
+        assertThat(DurationStyle.detectAndParse("2s")).isEqualTo(Duration.ofSeconds(2));
     }
 }

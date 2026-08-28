@@ -5,6 +5,7 @@ import com.example.hotelmanagement.dto.review.ReviewModerationRequest;
 import com.example.hotelmanagement.dto.review.ReviewReplyRequest;
 import com.example.hotelmanagement.dto.review.ReviewListResponse;
 import com.example.hotelmanagement.dto.review.ReviewResponse;
+import com.example.hotelmanagement.repositories.PublishedReviewAggregateProjection;
 import com.example.hotelmanagement.entity.Booking;
 import com.example.hotelmanagement.entity.BookingRoom;
 import com.example.hotelmanagement.entity.CustomerProfile;
@@ -60,6 +61,8 @@ class ReviewServiceTest {
     private BookingRepository bookingRepository;
     @Mock
     private StaffProfileRepository staffProfileRepository;
+    @Mock
+    private PublishedReviewAggregateProjection publishedReviewAggregate;
 
     private ReviewService reviewService;
 
@@ -210,6 +213,42 @@ class ReviewServiceTest {
     }
 
     @Test
+    void listPublishedReviewsUsesPublishedPageAndAllPublishedAggregates() {
+        Review review = publishedReview();
+        org.springframework.data.domain.PageRequest pageRequest =
+                org.springframework.data.domain.PageRequest.of(1, 5);
+        when(reviewRepository.findAllPublished(ReviewStatus.PUBLISHED, pageRequest))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(
+                        java.util.List.of(review), pageRequest, 6
+                ));
+        when(reviewRepository.aggregatePublishedReviews(ReviewStatus.PUBLISHED))
+                .thenReturn(publishedReviewAggregate);
+        when(publishedReviewAggregate.getTotalReviews()).thenReturn(6L);
+        when(publishedReviewAggregate.getAverageOverallRating()).thenReturn(4.5);
+        when(publishedReviewAggregate.getAverageRoomRating()).thenReturn(4.25);
+        when(publishedReviewAggregate.getAverageCleanlinessRating()).thenReturn(4.75);
+        when(publishedReviewAggregate.getAverageServiceRating()).thenReturn(4.0);
+        when(publishedReviewAggregate.getAverageValueRating()).thenReturn(null);
+
+        var response = reviewService.listPublishedReviews(1, 5);
+
+        assertThat(response.page()).isEqualTo(1);
+        assertThat(response.size()).isEqualTo(5);
+        assertThat(response.totalItems()).isEqualTo(6);
+        assertThat(response.totalPages()).isEqualTo(2);
+        assertThat(response.summary().totalReviews()).isEqualTo(6);
+        assertThat(response.summary().averageOverallRating()).isEqualTo(4.5);
+        assertThat(response.summary().averageValueRating()).isNull();
+        assertThat(response.items()).singleElement().satisfies(item -> {
+            assertThat(item.customerName()).isEqualTo("Nguyen Van A");
+            assertThat(item.roomTypeName()).isEqualTo("Deluxe");
+            assertThat(item.staffReply()).isEqualTo("Thank you");
+        });
+        verify(reviewRepository).findAllPublished(ReviewStatus.PUBLISHED, pageRequest);
+        verify(reviewRepository).aggregatePublishedReviews(ReviewStatus.PUBLISHED);
+    }
+
+    @Test
     void moderateTransitionsPendingToPublished() {
         Review review = pendingReview();
         when(reviewRepository.findForUpdateByBooking_PublicId(BOOKING_PUBLIC_ID)).thenReturn(Optional.of(review));
@@ -348,5 +387,26 @@ class ReviewServiceTest {
                 .build();
         review.setId(500L);
         return review;
+    }
+
+    private Review publishedReview() {
+        User user = User.builder()
+                .fullName("Nguyen Van A")
+                .email("private@example.com")
+                .build();
+        CustomerProfile customerProfile = CustomerProfile.builder().user(user).build();
+        RoomType roomType = RoomType.builder().name("Deluxe").code("DLX").build();
+        return Review.builder()
+                .customerProfile(customerProfile)
+                .roomType(roomType)
+                .overallRating(5)
+                .roomRating(4)
+                .cleanlinessRating(5)
+                .serviceRating(4)
+                .title("Great stay")
+                .comment("Loved it")
+                .staffReply("Thank you")
+                .status(ReviewStatus.PUBLISHED)
+                .build();
     }
 }

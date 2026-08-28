@@ -86,7 +86,7 @@ function StaffProfileSkeleton() {
 }
 
 export function ManagerProfilePage() {
-  const { user } = useAuth()
+  const { user, updateAvatar } = useAuth()
   const isAdmin = isAdminUser(user)
   const isStaff = isStaffUser(user) && !isAdmin
   const [profile, setProfile] = useState<StaffOwnProfile | null>(null)
@@ -108,6 +108,7 @@ export function ManagerProfilePage() {
     try {
       const response = await getOwnStaffProfile()
       setProfile(response)
+      updateAvatar(response.avatarUrl)
       form.reset({ phone: response.phone ?? "" })
     } catch (error) {
       console.error("Failed to load own staff profile", error)
@@ -116,7 +117,7 @@ export function ManagerProfilePage() {
     } finally {
       setIsFetching(false)
     }
-  }, [form, isStaff])
+  }, [form, isStaff, updateAvatar])
 
   useEffect(() => {
     if (!isStaff) return
@@ -158,6 +159,7 @@ export function ManagerProfilePage() {
     try {
       const response = await uploadOwnStaffAvatar(file)
       setProfile((current) => current ? { ...current, avatarUrl: response.avatarUrl } : current)
+      updateAvatar(response.avatarUrl)
       toast.success("Đã cập nhật ảnh đại diện")
     } catch (error) {
       console.error("Failed to upload staff avatar", error)

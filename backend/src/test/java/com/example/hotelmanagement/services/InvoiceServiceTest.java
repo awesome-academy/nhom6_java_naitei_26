@@ -32,6 +32,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -375,6 +378,33 @@ class InvoiceServiceTest {
         assertThatThrownBy(() -> invoiceService.issue(INVOICE_PUBLIC_ID, STAFF_USER_ID))
                 .isInstanceOf(BusinessValidationException.class);
         verify(invoiceRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void issueAllowsAdminWithoutStaffProfileAndStoresUserActor() {
+        Invoice invoice = draftInvoiceWithRoomLine();
+        when(invoiceRepository.findForUpdateByPublicId(INVOICE_PUBLIC_ID))
+                .thenReturn(Optional.of(invoice));
+        when(staffProfileRepository.findByUser_Id(STAFF_USER_ID)).thenReturn(Optional.empty());
+        when(invoiceRepository.existsByInvoiceNumber(any())).thenReturn(false);
+        when(invoiceRepository.saveAndFlush(invoice)).thenReturn(invoice);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "admin",
+                        null,
+                        List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+                )
+        );
+
+        try {
+            InvoiceResponse response = invoiceService.issue(INVOICE_PUBLIC_ID, STAFF_USER_ID);
+
+            assertThat(response.status()).isEqualTo(InvoiceStatus.ISSUED);
+            assertThat(invoice.getIssuedBy()).isNull();
+            assertThat(invoice.getIssuedByUserId()).isEqualTo(STAFF_USER_ID);
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 
     @Test

@@ -78,6 +78,32 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
             Pageable pageable
     );
 
+    @Query("""
+            SELECT review
+            FROM Review review
+            JOIN FETCH review.customerProfile customer
+            JOIN FETCH customer.user customerUser
+            LEFT JOIN FETCH review.roomType roomType
+            WHERE review.status = :status
+            ORDER BY review.createdAt DESC, review.id DESC
+            """)
+    Page<Review> findAllPublished(
+            @Param("status") ReviewStatus status,
+            Pageable pageable
+    );
+
+    @Query("""
+            SELECT COUNT(review.id) AS totalReviews,
+                   AVG(review.overallRating) AS averageOverallRating,
+                   AVG(review.roomRating) AS averageRoomRating,
+                   AVG(review.cleanlinessRating) AS averageCleanlinessRating,
+                   AVG(review.serviceRating) AS averageServiceRating,
+                   AVG(review.valueRating) AS averageValueRating
+            FROM Review review
+            WHERE review.status = :status
+            """)
+    PublishedReviewAggregateProjection aggregatePublishedReviews(@Param("status") ReviewStatus status);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT review FROM Review review WHERE review.booking.publicId = :bookingPublicId")
     Optional<Review> findForUpdateByBooking_PublicId(@Param("bookingPublicId") String bookingPublicId);

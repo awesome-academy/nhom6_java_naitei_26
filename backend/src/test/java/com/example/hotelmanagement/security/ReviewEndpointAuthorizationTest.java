@@ -1,6 +1,9 @@
 package com.example.hotelmanagement.security;
 
 import com.example.hotelmanagement.dto.review.ReviewListResponse;
+import com.example.hotelmanagement.dto.review.PublishedReviewListResponse;
+import com.example.hotelmanagement.dto.review.PublishedReviewResponse;
+import com.example.hotelmanagement.dto.review.PublishedReviewSummaryResponse;
 import com.example.hotelmanagement.dto.review.StaffReviewListResponse;
 import com.example.hotelmanagement.entity.User;
 import com.example.hotelmanagement.entity.enums.UserStatus;
@@ -17,6 +20,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.time.OffsetDateTime;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -24,6 +28,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -85,6 +90,55 @@ class ReviewEndpointAuthorizationTest {
                 .andExpect(status().isForbidden());
 
         verifyNoInteractions(reviewService);
+    }
+
+    @Test
+    void publishedReviewsRequireRoomReadPermission() throws Exception {
+        mockMvc.perform(get("/api/reviews/published")
+                        .with(authentication(authenticationWith("review:create"))))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(reviewService);
+    }
+
+    @Test
+    void roomReadPermissionCanListPublishedReviewsWithoutSensitiveFields() throws Exception {
+        var item = new PublishedReviewResponse(
+                "Nguyen Van A",
+                "Deluxe",
+                5,
+                4,
+                5,
+                4,
+                null,
+                "Great stay",
+                "Loved it",
+                "Thank you",
+                OffsetDateTime.parse("2026-08-25T09:00:00Z"),
+                OffsetDateTime.parse("2026-08-24T09:00:00Z")
+        );
+        var response = new PublishedReviewListResponse(
+                List.of(item),
+                new PublishedReviewSummaryResponse(1, 5.0, 4.0, 5.0, 4.0, null),
+                0,
+                5,
+                1,
+                1
+        );
+        org.mockito.Mockito.when(reviewService.listPublishedReviews(0, 5)).thenReturn(response);
+
+        mockMvc.perform(get("/api/reviews/published")
+                        .with(authentication(authenticationWith("room:read"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.summary.totalReviews").value(1))
+                .andExpect(jsonPath("$.items[0].customerName").value("Nguyen Van A"))
+                .andExpect(jsonPath("$.items[0].customerEmail").doesNotExist())
+                .andExpect(jsonPath("$.items[0].moderationReason").doesNotExist())
+                .andExpect(jsonPath("$.items[0].bookingPublicId").doesNotExist())
+                .andExpect(jsonPath("$.items[0].bookingCode").doesNotExist())
+                .andExpect(jsonPath("$.items[0].staffReplyBy").doesNotExist());
+
+        verify(reviewService).listPublishedReviews(0, 5);
     }
 
     @Test

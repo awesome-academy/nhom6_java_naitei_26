@@ -18,6 +18,7 @@ import { toast } from "sonner"
 
 import { Badge, getBookingStatusVariant, getPaymentStatusVariant } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/action-dialog"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
@@ -150,6 +151,8 @@ export default function ProfileBookingsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [cancelTarget, setCancelTarget] = useState<Booking | null>(null)
+  const [isCancelling, setIsCancelling] = useState(false)
 
   useEffect(() => {
     let ignore = false
@@ -220,6 +223,22 @@ export default function ProfileBookingsPage() {
       toast.error(getErrorMessage(error))
     } finally {
       setIsDeleting(false)
+    }
+  }
+
+  async function handleConfirmCancel() {
+    if (!cancelTarget || isCancelling) return
+
+    setIsCancelling(true)
+    try {
+      const updated = await cancelBooking(cancelTarget.publicId)
+      setBookings((current) => current.map((item) => item.publicId === updated.publicId ? updated : item))
+      setCancelTarget(null)
+      toast.success("Đã gửi yêu cầu hủy booking")
+    } catch (error) {
+      toast.error(getErrorMessage(error))
+    } finally {
+      setIsCancelling(false)
     }
   }
 
@@ -306,14 +325,7 @@ export default function ProfileBookingsPage() {
                 setDeleteTarget({ type: "booking", booking: targetBooking })
               }}
               onCancel={async (targetBooking) => {
-                if (!window.confirm("Hủy booking theo chính sách hiện tại?")) return
-                try {
-                  const updated = await cancelBooking(targetBooking.publicId)
-                  setBookings((current) => current.map((item) => item.publicId === updated.publicId ? updated : item))
-                  toast.success("Đã gửi yêu cầu hủy booking")
-                } catch (error) {
-                  toast.error(getErrorMessage(error))
-                }
+                setCancelTarget(targetBooking)
               }}
             />
           ))}
@@ -356,6 +368,19 @@ export default function ProfileBookingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !isCancelling) setCancelTarget(null)
+        }}
+        title="Hủy booking?"
+        description="Booking sẽ được hủy theo chính sách hủy hiện tại của phòng. Bạn có muốn tiếp tục không?"
+        confirmLabel="Xác nhận hủy"
+        onConfirm={() => void handleConfirmCancel()}
+        isLoading={isCancelling}
+        destructive
+      />
     </div>
   )
 }
