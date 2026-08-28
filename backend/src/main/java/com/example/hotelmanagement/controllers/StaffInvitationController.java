@@ -20,6 +20,6 @@ public class StaffInvitationController {
     @PostMapping("/accept")
     public AuthMessageResponse accept(@Valid @RequestBody StaffInvitationAcceptRequest request) {
         staffProfileService.acceptStaffInvitation(request);
-        return new AuthMessageResponse("Kích hoạt tài khoản Staff thành công. Bạn có thể đăng nhập bằng mật khẩu mới.");
+        return new AuthMessageResponse("Kích hoạt tài khoản Staff thành công. Bạn có thể đăng nhập bằng mật khẩu trong email invitation.");
     }
 }

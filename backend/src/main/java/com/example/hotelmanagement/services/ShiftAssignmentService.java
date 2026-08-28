@@ -113,6 +113,7 @@ public class ShiftAssignmentService {
             @Valid ShiftAssignmentCreateRequest request,
             Long assignedBy
     ) {
+        validateWorkDate(request.workDate());
         StaffProfile staffProfile = getActiveStaffProfile(request.employeeCode());
         Shift shift = getActiveShift(request.shiftCode());
         ShiftPeriod period = calculateShiftPeriod(request.workDate(), shift);
@@ -142,6 +143,7 @@ public class ShiftAssignmentService {
             Long assignedBy
     ) {
         ShiftAssignment assignment = getExistingAssignment(publicId);
+        validateWorkDate(request.workDate());
         StaffProfile staffProfile = getActiveStaffProfile(request.employeeCode());
         Shift shift = getActiveShift(request.shiftCode());
         ShiftPeriod period = calculateShiftPeriod(request.workDate(), shift);
@@ -243,6 +245,16 @@ public class ShiftAssignmentService {
         }
         if (to.isBefore(from)) {
             throw new BusinessValidationException("'to' date cannot be before 'from' date");
+        }
+    }
+
+    private void validateWorkDate(LocalDate workDate) {
+        if (workDate == null) {
+            throw new BusinessValidationException("Work date is required");
+        }
+        LocalDate hotelToday = LocalDate.now(clock.withZone(hotelProperties.timeZone()));
+        if (workDate.isBefore(hotelToday)) {
+            throw new BusinessValidationException("Shift assignments cannot be scheduled in the past");
         }
     }
 

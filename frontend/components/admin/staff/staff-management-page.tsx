@@ -51,7 +51,12 @@ function formatDate(value: string | null | undefined) {
   return new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${value}T00:00:00`))
 }
 function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback
+  if (error instanceof Error && error.message) {
+    const fieldErrors = (error as Error & { fieldErrors?: Record<string, string> }).fieldErrors
+    const details = fieldErrors ? Object.values(fieldErrors).filter(Boolean).join(" ") : ""
+    return details ? `${error.message} ${details}` : error.message
+  }
+  return fallback
 }
 const vndFormatter = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 })
 function formatVndInput(value: string) {
@@ -82,12 +87,15 @@ export default function StaffManagementPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [passwordOpen, setPasswordOpen] = useState(false)
+  const [resendOpen, setResendOpen] = useState(false)
   const [statusTarget, setStatusTarget] = useState<StaffManagementListItem | null>(null)
   const [editingStaff, setEditingStaff] = useState<StaffManagementListItem | null>(null)
   const [passwordTarget, setPasswordTarget] = useState<StaffManagementListItem | null>(null)
+  const [resendTarget, setResendTarget] = useState<StaffManagementListItem | null>(null)
   const [createForm, setCreateForm] = useState<CreateForm>(emptyCreateForm())
   const [editForm, setEditForm] = useState<EditForm>({ position: "", department: "", baseSalary: "" })
   const [passwordForm, setPasswordForm] = useState<PasswordForm>({ newPassword: "", confirmPassword: "" })
+  const [resendForm, setResendForm] = useState<PasswordForm>({ newPassword: "", confirmPassword: "" })
   const [statusForm, setStatusForm] = useState<EmploymentStatus>("ACTIVE")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const canManage = user?.permissions.includes("staff:manage") ?? false
@@ -126,6 +134,9 @@ export default function StaffManagementPage() {
   }
   function openPassword(member: StaffManagementListItem) {
     setPasswordTarget(member); setPasswordForm({ newPassword: "", confirmPassword: "" }); setPasswordOpen(true)
+  }
+  function openResend(member: StaffManagementListItem) {
+    setResendTarget(member); setResendForm({ newPassword: "", confirmPassword: "" }); setResendOpen(true)
   }
   function openStatus(member: StaffManagementListItem) { setStatusTarget(member); setStatusForm(member.employmentStatus) }
 
@@ -174,11 +185,23 @@ export default function StaffManagementPage() {
     finally { setIsSubmitting(false) }
   }
 
-  async function resendInvitation(member: StaffManagementListItem) {
+  async function submitResend() {
+    if (!resendTarget) return
+    if (resendForm.newPassword.length < 12 || resendForm.newPassword.length > 64
+      || resendForm.newPassword !== resendForm.confirmPassword) {
+      toast.error("Mật khẩu tạm phải dài 12-64 ký tự và hai ô phải khớp."); return
+    }
     setIsSubmitting(true)
-    try { await resendStaffInvitation(member.employeeCode); toast.success("Đã gửi lại email invitation.") }
+    try {
+      await resendStaffInvitation(resendTarget.employeeCode, { temporaryPassword: resendForm.newPassword })
+      toast.success("Đã gửi lại email invitation với mật khẩu tạm mới."); setResendOpen(false)
+    }
     catch (error) { toast.error(getErrorMessage(error, "Không thể gửi lại invitation.")) }
     finally { setIsSubmitting(false) }
+  }
+
+  function resendInvitation(member: StaffManagementListItem) {
+    openResend(member)
   }
 
   async function submitStatus() {
@@ -225,5 +248,6 @@ export default function StaffManagementPage() {
     <Dialog open={passwordOpen} onOpenChange={(open) => !isSubmitting && setPasswordOpen(open)}><DialogContent><DialogHeader><DialogTitle>Đổi mật khẩu Staff</DialogTitle><DialogDescription>Admin không cần biết mật khẩu cũ. Các refresh token hiện tại sẽ bị thu hồi.</DialogDescription></DialogHeader><div className="flex flex-col gap-4"><div className="grid gap-2"><Label>Mật khẩu mới</Label><Input type="password" autoComplete="new-password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))} placeholder="Tối thiểu 12 ký tự" /></div><div className="grid gap-2"><Label>Nhập lại mật khẩu</Label><Input type="password" autoComplete="new-password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setPasswordOpen(false)} disabled={isSubmitting}>Hủy</Button><Button onClick={() => void submitPassword()} disabled={isSubmitting}>{isSubmitting ? <Loader2 className="animate-spin" /> : <KeyRound data-icon="inline-start" />} Đổi mật khẩu</Button></DialogFooter></DialogContent></Dialog>
 
     <Dialog open={statusTarget !== null} onOpenChange={(open) => !open && !isSubmitting && setStatusTarget(null)}><DialogContent><DialogHeader><DialogTitle>Cập nhật trạng thái Staff</DialogTitle><DialogDescription>{statusTarget?.fullName} · {statusTarget?.employeeCode}</DialogDescription></DialogHeader><div className="flex flex-col gap-2"><Label>Trạng thái</Label><Select value={statusForm} onValueChange={(value) => setStatusForm(value as EmploymentStatus)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="ACTIVE">Đang làm việc</SelectItem><SelectItem value="ON_LEAVE">Nghỉ phép</SelectItem><SelectItem value="TERMINATED">Đã nghỉ việc</SelectItem></SelectGroup></SelectContent></Select></div><DialogFooter><Button variant="outline" onClick={() => setStatusTarget(null)} disabled={isSubmitting}>Hủy</Button><Button onClick={() => void submitStatus()} disabled={isSubmitting}>Lưu trạng thái</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={resendOpen} onOpenChange={(open) => !isSubmitting && setResendOpen(open)}><DialogContent><DialogHeader><DialogTitle>Gửi lại invitation</DialogTitle><DialogDescription>Nhập mật khẩu tạm mới. Mật khẩu này sẽ được gửi trong email và dùng để đăng nhập sau khi kích hoạt.</DialogDescription></DialogHeader><div className="flex flex-col gap-4"><div className="grid gap-2"><Label>Mật khẩu tạm mới</Label><Input type="password" autoComplete="new-password" value={resendForm.newPassword} onChange={(event) => setResendForm((current) => ({ ...current, newPassword: event.target.value }))} placeholder="12-64 ký tự" /></div><div className="grid gap-2"><Label>Nhập lại mật khẩu</Label><Input type="password" autoComplete="new-password" value={resendForm.confirmPassword} onChange={(event) => setResendForm((current) => ({ ...current, confirmPassword: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setResendOpen(false)} disabled={isSubmitting}>Hủy</Button><Button onClick={() => void submitResend()} disabled={isSubmitting}>{isSubmitting ? <Loader2 className="animate-spin" /> : "Gửi lại invitation"}</Button></DialogFooter></DialogContent></Dialog>
   </div>
 }

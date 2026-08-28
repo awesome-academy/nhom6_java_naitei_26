@@ -5,15 +5,17 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
-@Schema(name = "StaffInvitationAcceptRequest", description = "Accept Staff invitation and set the permanent password")
+@Schema(name = "StaffInvitationAcceptRequest", description = "Activate a Staff invitation")
 public record StaffInvitationAcceptRequest(
         @NotBlank
         @Size(min = 32, max = 256)
         @Pattern(regexp = "^[A-Za-z0-9_-]+$")
-        String token,
-
-        @NotBlank
-        @Size(min = 12, max = 64)
-        String newPassword
+        String token
 ) {
+
+    /** @deprecated Password replacement is no longer part of invitation acceptance. */
+    @Deprecated
+    public StaffInvitationAcceptRequest(String token, String ignoredNewPassword) {
+        this(token);
+    }
 }

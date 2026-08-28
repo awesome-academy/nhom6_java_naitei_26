@@ -25,8 +25,8 @@ export function updateStaffEmploymentStatus(employeeCode: string, request: Staff
 export function resetStaffPassword(employeeCode: string, request: StaffPasswordUpdateRequest): Promise<void> {
   return apiClient.patch<void>(`/api/staff-profiles/${encodeURIComponent(employeeCode)}/password`, request)
 }
-export function resendStaffInvitation(employeeCode: string): Promise<void> {
-  return apiClient.post<void>(`/api/staff-profiles/${encodeURIComponent(employeeCode)}/invitation/resend`, {})
+export function resendStaffInvitation(employeeCode: string, request: { temporaryPassword: string }): Promise<void> {
+  return apiClient.post<void>(`/api/staff-profiles/${encodeURIComponent(employeeCode)}/invitation/resend`, request)
 }
 
 export function getOwnStaffProfile(): Promise<StaffOwnProfile> {
