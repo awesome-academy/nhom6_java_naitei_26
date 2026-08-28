@@ -672,7 +672,8 @@
 - Khi payment chuyển SUCCEEDED
 - BR-012: chỉ verified payment mới trigger booking CONFIRMED
   - Tự động hạ PENDING → CONFIRMED sau khi thanh toán đủ toàn bộ booking được xác minh
-- Staff/admin có thể Confirm thủ công booking PENDING để ghi nhận tiền mặt ngoài payment ledger;
+- Staff/admin có thể Confirm thủ công booking PENDING để ghi nhận tiền mặt qua một payment `CASH`
+  đã xác minh trong payment ledger;
   lịch sử dùng `MANUAL`, không tạo payment record tự động
 - Refund: cập nhật `refunded_amount` + `payment_status` trên 3 bảng
 

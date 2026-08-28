@@ -30,6 +30,11 @@ import {
 } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { cancelPayment, getPayment, submitMockWalletResult } from "@/lib/api/payment"
+import {
+  cancelStaffPayment,
+  getStaffPayment,
+  submitStaffMockWalletResult,
+} from "@/lib/api/booking-staff-api"
 import { loadPaymentCheckout, type PaymentCheckoutSession } from "@/lib/payment-checkout"
 import type { MockWalletResult, PaymentStatusResponse } from "@/types/payment"
 
@@ -60,9 +65,11 @@ function getRemainingSeconds(expiresAt: string | null) {
 export function MockWalletCheckout({
   paymentCode,
   bookingPublicId,
+  staffBooking = false,
 }: {
   paymentCode: string
   bookingPublicId?: string
+  staffBooking?: boolean
 }) {
   const router = useRouter()
   const [checkout, setCheckout] = useState<PaymentCheckoutSession | null>(null)
@@ -93,18 +100,26 @@ export function MockWalletCheckout({
       }
 
       try {
-        const currentPayment = await getPayment(resolvedBookingId, paymentCode)
+        const currentPayment = staffBooking
+          ? await getStaffPayment(resolvedBookingId, paymentCode)
+          : await getPayment(resolvedBookingId, paymentCode)
         if (ignore) return
         setCheckout(storedCheckout)
         setPayment(currentPayment)
         setRemainingSeconds(getRemainingSeconds(currentPayment.expiresAt))
 
         if (currentPayment.status === "SUCCEEDED") {
-          router.replace(buildResultUrl("success", resolvedBookingId, paymentCode))
+          router.replace(staffBooking
+            ? buildStaffResultUrl("SUCCEEDED", resolvedBookingId)
+            : buildResultUrl("success", resolvedBookingId, paymentCode))
         } else if (["FAILED", "EXPIRED"].includes(currentPayment.status)) {
-          router.replace(buildResultUrl("error", resolvedBookingId, paymentCode))
+          router.replace(staffBooking
+            ? buildStaffResultUrl("FAILED", resolvedBookingId)
+            : buildResultUrl("error", resolvedBookingId, paymentCode))
         } else if (currentPayment.status === "CANCELLED") {
-          router.replace(buildResultUrl("cancel", resolvedBookingId, paymentCode))
+          router.replace(staffBooking
+            ? buildStaffResultUrl("CANCELLED", resolvedBookingId)
+            : buildResultUrl("cancel", resolvedBookingId, paymentCode))
         }
       } catch (loadError) {
         if (!ignore) setError(getErrorMessage(loadError))
@@ -117,7 +132,7 @@ export function MockWalletCheckout({
     return () => {
       ignore = true
     }
-  }, [bookingPublicId, paymentCode, router])
+  }, [bookingPublicId, paymentCode, router, staffBooking])
 
   useEffect(() => {
     if (!payment?.expiresAt) return
@@ -138,10 +153,15 @@ export function MockWalletCheckout({
     setAction(result)
     setError(null)
     try {
-      await submitMockWalletResult(checkout.bookingPublicId, paymentCode, result)
-      router.push(
-        buildResultUrl(result === "SUCCEEDED" ? "success" : "error", checkout.bookingPublicId, paymentCode)
-      )
+      if (staffBooking) {
+        await submitStaffMockWalletResult(checkout.bookingPublicId, paymentCode, result)
+        router.push(buildStaffResultUrl(result, checkout.bookingPublicId))
+      } else {
+        await submitMockWalletResult(checkout.bookingPublicId, paymentCode, result)
+        router.push(
+          buildResultUrl(result === "SUCCEEDED" ? "success" : "error", checkout.bookingPublicId, paymentCode)
+        )
+      }
     } catch (submitError) {
       const message = getErrorMessage(submitError)
       setError(message)
@@ -155,8 +175,13 @@ export function MockWalletCheckout({
     setAction("CANCELLED")
     setError(null)
     try {
-      await cancelPayment(checkout.bookingPublicId, paymentCode)
-      router.push(buildResultUrl("cancel", checkout.bookingPublicId, paymentCode))
+      if (staffBooking) {
+        await cancelStaffPayment(checkout.bookingPublicId, paymentCode)
+        router.push(buildStaffResultUrl("CANCELLED", checkout.bookingPublicId))
+      } else {
+        await cancelPayment(checkout.bookingPublicId, paymentCode)
+        router.push(buildResultUrl("cancel", checkout.bookingPublicId, paymentCode))
+      }
     } catch (cancelError) {
       const message = getErrorMessage(cancelError)
       setError(message)
@@ -172,7 +197,7 @@ export function MockWalletCheckout({
 
   if (isLoading) {
     return (
-      <PaymentShell>
+      <PaymentShell staffBooking={staffBooking}>
         <Card className="mx-auto w-full max-w-xl">
           <CardHeader>
             <CardTitle>Đang tải mock payment</CardTitle>
@@ -189,7 +214,7 @@ export function MockWalletCheckout({
 
   if (error && (!checkout || !payment)) {
     return (
-      <PaymentShell>
+      <PaymentShell staffBooking={staffBooking}>
         <div className="mx-auto flex w-full max-w-xl flex-col gap-4">
           <Alert variant="destructive">
             <ReceiptText />
@@ -197,7 +222,7 @@ export function MockWalletCheckout({
             <AlertDescription>{error}</AlertDescription>
           </Alert>
           <Button asChild variant="outline" className="w-fit">
-            <Link href="/profile/bookings">Quay lại danh sách booking</Link>
+            <Link href={staffBooking ? "/manager/bookings" : "/profile/bookings"}>Quay lại danh sách booking</Link>
           </Button>
         </div>
       </PaymentShell>
@@ -207,7 +232,7 @@ export function MockWalletCheckout({
   if (!checkout || !payment) return null
 
   return (
-    <PaymentShell>
+    <PaymentShell staffBooking={staffBooking}>
       <div className="flex flex-col gap-5">
         <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
           <div className="flex flex-col gap-2">
@@ -327,10 +352,10 @@ export function MockWalletCheckout({
   )
 }
 
-function PaymentShell({ children }: { children: ReactNode }) {
+function PaymentShell({ children, staffBooking }: { children: ReactNode; staffBooking: boolean }) {
   return (
     <div className="min-h-screen bg-muted/30">
-      <SiteHeader />
+      {!staffBooking && <SiteHeader />}
       <main className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-8">{children}</main>
     </div>
   )
@@ -360,4 +385,9 @@ function buildResultUrl(
 ) {
   const params = new URLSearchParams({ bookingId: bookingPublicId, paymentCode })
   return `/payment/${outcome}?${params.toString()}`
+}
+
+function buildStaffResultUrl(result: "SUCCEEDED" | "FAILED" | "CANCELLED", bookingPublicId: string) {
+  const params = new URLSearchParams({ payment: result.toLowerCase(), bookingId: bookingPublicId })
+  return `/manager/bookings?${params.toString()}`
 }

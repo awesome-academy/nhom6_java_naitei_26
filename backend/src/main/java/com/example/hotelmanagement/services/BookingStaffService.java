@@ -37,9 +37,13 @@ public class BookingStaffService {
     private final InvoiceRepository invoiceRepository;
     private final BookingGuestRepository bookingGuestRepository;
     private final StaffProfileRepository staffProfileRepository;
-    private final UserRepository userRepository;
+    private final BookingGuestService bookingGuestService;
     private final BookingStateMachineService bookingStateMachineService;
+    private final PaymentService paymentService;
+    private final PaymentManagementService paymentManagementService;
     private final Clock clock;
+
+    private static final String STAFF_CASH_IDEMPOTENCY_PREFIX = "staff-cash-confirmation:";
 
     public BookingStaffService(
             BookingRepository bookingRepository,
@@ -50,8 +54,10 @@ public class BookingStaffService {
             InvoiceRepository invoiceRepository,
             BookingGuestRepository bookingGuestRepository,
             StaffProfileRepository staffProfileRepository,
-            UserRepository userRepository,
+            BookingGuestService bookingGuestService,
             BookingStateMachineService bookingStateMachineService,
+            PaymentService paymentService,
+            PaymentManagementService paymentManagementService,
             Clock clock
     ) {
         this.bookingRepository = bookingRepository;
@@ -62,8 +68,10 @@ public class BookingStaffService {
         this.invoiceRepository = invoiceRepository;
         this.bookingGuestRepository = bookingGuestRepository;
         this.staffProfileRepository = staffProfileRepository;
-        this.userRepository = userRepository;
+        this.bookingGuestService = bookingGuestService;
         this.bookingStateMachineService = bookingStateMachineService;
+        this.paymentService = paymentService;
+        this.paymentManagementService = paymentManagementService;
         this.clock = clock;
     }
 
@@ -230,30 +238,67 @@ public class BookingStaffService {
         if (booking.getStatus() != BookingStatus.PENDING) {
             throw new BusinessValidationException("Only pending bookings can be confirmed");
         }
+        if (!isStaffManualBooking(booking)) {
+            throw new BusinessValidationException("Only staff-created bookings can be confirmed at the front desk");
+        }
 
-        OffsetDateTime now = OffsetDateTime.now(clock);
-        booking.setStatus(BookingStatus.CONFIRMED);
-        booking.setConfirmedAt(now);
+        if (booking.getPaymentStatus() != BookingPaymentStatus.PAID) {
+            PaymentResponse cashPayment = paymentService.createStaffCashPayment(
+                    publicId,
+                    STAFF_CASH_IDEMPOTENCY_PREFIX + publicId,
+                    staffId
+            );
+            paymentManagementService.verifyCashPayment(cashPayment.paymentCode(), null, staffId);
+        }
 
-        // Add status history
-        BookingStatusHistory history = BookingStatusHistory.builder()
-                .booking(booking)
-                .fromStatus(BookingStatus.PENDING)
-                .toStatus(BookingStatus.CONFIRMED)
-                .actorType(ActorType.USER)
-                .changedBy(staffId)
-                .source(StatusChangeSource.MANUAL)
-                .build();
-        booking.getStatusHistory().add(history);
+        booking = bookingRepository.findForUpdateByPublicId(publicId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", publicId));
+        if (booking.getStatus() == BookingStatus.PENDING) {
+            if (booking.getPaymentStatus() != BookingPaymentStatus.PAID) {
+                throw new BusinessValidationException("Booking must be fully paid before confirmation");
+            }
+            bookingStateMachineService.confirmAsStaff(publicId, staffId);
+        }
 
-        booking = bookingRepository.saveAndFlush(booking);
+        bookingStateMachineService.checkIn(publicId, staffId);
+        booking = bookingRepository.findForUpdateByPublicId(publicId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", publicId));
 
         return new BookingConfirmResponse(
                 booking.getPublicId(),
                 booking.getBookingCode(),
                 booking.getStatus(),
-                booking.getConfirmedAt()
+                booking.getConfirmedAt(),
+                booking.getCheckedInAt()
         );
+    }
+
+    /**
+     * Captures guests for an online booking and completes the CONFIRMED -> CHECKED_IN transition.
+     * Staff-created bookings already contain their verified guest list, so an empty request keeps
+     * that data and only performs the state transition.
+     */
+    @Transactional
+    public BookingResponse checkInBooking(
+            String publicId,
+            BookingCheckInRequest request,
+            Long staffId
+    ) {
+        Booking booking = bookingRepository.findForUpdateByPublicId(publicId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", publicId));
+        if (booking.getStatus() != BookingStatus.CONFIRMED) {
+            throw new BusinessValidationException("Only confirmed bookings can be checked in");
+        }
+        boolean hasGuestPayload = request != null && request.rooms() != null && !request.rooms().isEmpty();
+        if (!isStaffManualBooking(booking) || hasGuestPayload) {
+            bookingGuestService.replaceGuestsForCheckIn(publicId, request, staffId);
+        }
+        return bookingStateMachineService.checkIn(publicId, staffId);
+    }
+
+    private boolean isStaffManualBooking(Booking booking) {
+        return booking.getSource() != null
+                && "STAFF_MANUAL".equalsIgnoreCase(booking.getSource().getCode());
     }
 
     private BookingListResponse.BookingStats getBookingStats() {
@@ -332,7 +377,8 @@ public class BookingStaffService {
                 .toList();
 
         // Map guests
-        List<BookingStaffDetailResponse.BookingGuestResponse> guestResponses = booking.getBookingGuests().stream()
+        List<BookingStaffDetailResponse.BookingGuestResponse> guestResponses = bookingGuestRepository
+                .findAllByBooking_PublicIdOrderByIdAsc(booking.getPublicId()).stream()
                 .map(this::mapToGuestResponse)
                 .toList();
 
@@ -445,7 +491,8 @@ public class BookingStaffService {
     private BookingStaffDetailResponse.BookingRoomDetailResponse mapToRoomDetail(BookingRoom br) {
         String assignedByName = br.getAssignedBy() == null
                 ? null
-                : userRepository.findById(br.getAssignedBy())
+                : staffProfileRepository.findById(br.getAssignedBy())
+                        .map(StaffProfile::getUser)
                         .map(User::getFullName)
                         .orElse(null);
 
@@ -479,8 +526,12 @@ public class BookingStaffService {
     }
 
     private BookingStaffDetailResponse.BookingGuestResponse mapToGuestResponse(BookingGuest guest) {
+        BookingRoom bookingRoom = guest.getBookingRoom();
         return new BookingStaffDetailResponse.BookingGuestResponse(
                 guest.getId(),
+                bookingRoom == null ? null : bookingRoom.getId(),
+                bookingRoom == null || bookingRoom.getRoom() == null
+                        ? null : bookingRoom.getRoom().getRoomNumber(),
                 guest.getFullName(),
                 guest.getNationality(),
                 guest.getIdDocumentType() != null ? guest.getIdDocumentType().name() : null,
@@ -524,7 +575,7 @@ public class BookingStaffService {
                 null, // paymentUrl
                 null, // deeplink
                 null, // qrCodeValue
-                null, // checkoutFields
+                List.of(), // checkoutFields is created only for a new checkout attempt
                 payment.getExpiresAt(),
                 payment.getCreatedAt()
         );

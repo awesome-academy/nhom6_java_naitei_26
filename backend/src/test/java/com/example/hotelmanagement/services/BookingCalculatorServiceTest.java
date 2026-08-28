@@ -2,6 +2,7 @@ package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationRequest;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationResponse;
+import com.example.hotelmanagement.dto.booking.StaffBookingPriceCalculationRequest;
 import com.example.hotelmanagement.dto.pricing.DailyRateResponse;
 import com.example.hotelmanagement.entity.CancellationPolicy;
 import com.example.hotelmanagement.entity.RoomType;
@@ -82,6 +83,45 @@ class BookingCalculatorServiceTest {
         assertEquals(money("2750.00"), response.totalAmount());
         assertEquals("VND", response.currency());
         assertEquals(2, response.dailyRates().size());
+    }
+
+    @Test
+    void calculateStaffPriceUsesNonRefundPolicyWithoutRoomTypePolicyOption() {
+        RoomType roomType = createRoomType(2, 0, 2);
+        CancellationPolicy nonRefundPolicy = CancellationPolicy.builder()
+                .code("NON_REFUND")
+                .name("Non-refundable")
+                .priceAdjustmentPercent(BigDecimal.ZERO)
+                .isActive(true)
+                .build();
+        when(bookingOptionResolverService.resolveStaffBooking(ROOM_TYPE_CODE, BookingPaymentOption.ONLINE))
+                .thenReturn(new BookingOptionSelection(
+                        roomType,
+                        BookingPaymentOption.ONLINE,
+                        nonRefundPolicy,
+                        BigDecimal.ZERO
+                ));
+        when(rateEngineService.calculateDailyRatesForRoomType(roomType, CHECK_IN_DATE, CHECK_OUT_DATE))
+                .thenReturn(List.of(
+                        new DailyRateResponse(CHECK_IN_DATE, money("1000.00")),
+                        new DailyRateResponse(CHECK_IN_DATE.plusDays(1), money("1000.00"))
+                ));
+        when(hotelSettingsRepository.getDecimalValue("default_room_tax_percent"))
+                .thenReturn(null);
+
+        BookingPriceCalculationResponse response = bookingCalculatorService.calculateStaffPrice(
+                new StaffBookingPriceCalculationRequest(
+                        ROOM_TYPE_CODE,
+                        BookingPaymentOption.ONLINE,
+                        CHECK_IN_DATE,
+                        CHECK_OUT_DATE,
+                        1
+                )
+        );
+
+        assertEquals("NON_REFUND", response.cancellationPolicyCode());
+        assertEquals(0, response.children());
+        verify(bookingOptionResolverService).resolveStaffBooking(ROOM_TYPE_CODE, BookingPaymentOption.ONLINE);
     }
 
     @Test

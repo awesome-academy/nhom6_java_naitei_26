@@ -2,6 +2,7 @@ package com.example.hotelmanagement.services;
 
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationRequest;
 import com.example.hotelmanagement.dto.booking.BookingPriceCalculationResponse;
+import com.example.hotelmanagement.dto.booking.StaffBookingPriceCalculationRequest;
 import com.example.hotelmanagement.dto.pricing.DailyRateResponse;
 import com.example.hotelmanagement.entity.RoomType;
 import com.example.hotelmanagement.exceptions.BusinessValidationException;
@@ -51,6 +52,42 @@ public class BookingCalculatorService {
                 request.paymentOption(),
                 request.cancellationPolicyCode()
         );
+        return calculatePrice(request, selection);
+    }
+
+    public BookingPriceCalculationResponse calculateStaffPrice(
+            @Valid StaffBookingPriceCalculationRequest request
+    ) {
+        if (request == null) {
+            throw new BusinessValidationException("Staff booking price calculation request is required");
+        }
+        return calculateStaffPrice(new BookingPriceCalculationRequest(
+                request.roomTypeCode(),
+                request.paymentOption(),
+                "NON_REFUND",
+                request.checkInDate(),
+                request.checkOutDate(),
+                request.adults(),
+                0
+        ));
+    }
+
+    public BookingPriceCalculationResponse calculateStaffPrice(
+            @Valid BookingPriceCalculationRequest request
+    ) {
+        validateRequest(request);
+
+        BookingOptionSelection selection = bookingOptionResolverService.resolveStaffBooking(
+                request.roomTypeCode(),
+                request.paymentOption()
+        );
+        return calculatePrice(request, selection);
+    }
+
+    private BookingPriceCalculationResponse calculatePrice(
+            BookingPriceCalculationRequest request,
+            BookingOptionSelection selection
+    ) {
         RoomType roomType = selection.roomType();
         validateRoomCanBeBooked(roomType);
         validateOccupancy(request, roomType);

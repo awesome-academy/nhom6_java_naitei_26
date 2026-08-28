@@ -1,16 +1,16 @@
 import {
-  addDays,
   eachDayOfInterval,
   endOfMonth,
   format,
-  isSameDay,
   isToday,
   isWeekend,
   startOfMonth,
 } from "date-fns"
 import { vi } from "date-fns/locale"
+import type { ReactNode } from "react"
 import { Building2, Wrench } from "lucide-react"
 
+import { CalendarToolbar } from "@/components/admin/calendar-toolbar"
 import {
   blockTypeDotStyles,
   blockTypeLabels,
@@ -26,6 +26,7 @@ interface MaintenanceCalendarProps {
   rooms: Room[]
   blocks: RoomStatusBlock[]
   canCreate: boolean
+  onMonthChange: (month: Date) => void
   onSelectEmptyCell: (room: Room, date: Date) => void
   onSelectBlock: (block: RoomStatusBlock) => void
 }
@@ -35,13 +36,13 @@ export function MaintenanceCalendar({
   rooms,
   blocks,
   canCreate,
+  onMonthChange,
   onSelectEmptyCell,
   onSelectBlock,
 }: MaintenanceCalendarProps) {
   const monthStart = startOfMonth(month)
   const monthEnd = endOfMonth(month)
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd })
-  const monthStartKey = format(monthStart, "yyyy-MM-dd")
 
   const blocksByRoom = blocks.reduce<Map<string, RoomStatusBlock[]>>((groups, block) => {
     const current = groups.get(block.roomNumber) ?? []
@@ -65,20 +66,24 @@ export function MaintenanceCalendar({
   }
 
   return (
-    <div className="min-w-0 space-y-4">
-      <BlockLegend />
-      <div className="max-h-[68vh] w-full max-w-full overflow-auto rounded-xl border bg-[var(--card)] shadow-sm">
-        <table className="min-w-max border-separate border-spacing-0 text-sm">
-          <thead className="sticky top-0 z-30 bg-[var(--card)] shadow-sm">
+    <div className="flex min-w-0 flex-col gap-4">
+      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="border-b px-4 py-3">
+          <BlockLegend />
+        </div>
+        <CalendarToolbar month={month} onMonthChange={onMonthChange} />
+        <div className="max-h-[68vh] w-full max-w-full overflow-auto">
+          <table className="min-w-max border-separate border-spacing-0 text-sm">
+            <thead className="sticky top-0 z-30 bg-card shadow-sm">
             <tr>
-              <th className="sticky left-0 z-40 min-w-56 border-b border-r bg-[var(--card)] px-4 py-3 text-left font-semibold">
+              <th className="sticky left-0 z-40 min-w-56 border-b border-r bg-card px-4 py-3 text-left font-semibold">
                 Phòng
               </th>
               {days.map((day) => (
                 <th
                   key={day.toISOString()}
                   className={cn(
-                    "h-14 min-w-12 border-b border-r px-1 text-center font-medium",
+                    "h-14 min-w-24 border-b border-r px-1 text-center font-medium",
                     isWeekend(day) && "bg-slate-50",
                     isToday(day) && "bg-blue-50 text-[var(--accent)]"
                   )}
@@ -92,113 +97,142 @@ export function MaintenanceCalendar({
                 </th>
               ))}
             </tr>
-          </thead>
-          <tbody>
-            {rooms.map((room) => {
-              const roomBlocks = blocksByRoom.get(room.roomNumber) ?? []
-              return (
-                <tr key={room.roomNumber} className="group">
-                  <th className="sticky left-0 z-20 min-w-56 border-b border-r bg-[var(--card)] px-4 py-3 text-left group-hover:bg-[var(--muted)]/40">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-semibold">{room.roomNumber}</p>
-                        <p className="truncate text-xs font-normal text-[var(--muted-foreground)]">
-                          {room.roomTypeName} · {room.floor === null ? "Chưa gán tầng" : `Tầng ${room.floor}`}
-                        </p>
+            </thead>
+            <tbody>
+              {rooms.map((room) => {
+                const roomBlocks = blocksByRoom.get(room.roomNumber) ?? []
+                return (
+                  <tr key={room.roomNumber} className="group">
+                    <th className="sticky left-0 z-20 min-w-56 border-b border-r bg-card px-4 py-3 text-left group-hover:bg-muted/40">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold">{room.roomNumber}</p>
+                          <p className="truncate text-xs font-normal text-muted-foreground">
+                            {room.roomTypeName} · {room.floor === null ? "Chưa gán tầng" : `Tầng ${room.floor}`}
+                          </p>
+                        </div>
+                        {room.operationalStatus !== "ACTIVE" && (
+                          <Wrench className="size-4 shrink-0 text-destructive" aria-label="Phòng không hoạt động" />
+                        )}
                       </div>
-                      {room.operationalStatus !== "ACTIVE" && (
-                        <Wrench className="h-4 w-4 shrink-0 text-[var(--destructive)]" aria-label="Phòng không hoạt động" />
-                      )}
-                    </div>
-                  </th>
-                  {days.map((day) => {
-                    const dateKey = format(day, "yyyy-MM-dd")
-                    const block = roomBlocks.find(
-                      (item) => item.startDate <= dateKey && item.endDate > dateKey
-                    )
-                    return (
-                      <CalendarCell
-                        key={dateKey}
-                        day={day}
-                        dateKey={dateKey}
-                        monthStartKey={monthStartKey}
-                        room={room}
-                        block={block}
-                        canCreate={canCreate}
-                        onSelectEmptyCell={onSelectEmptyCell}
-                        onSelectBlock={onSelectBlock}
-                      />
-                    )
-                  })}
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+                    </th>
+                    <RoomCalendarCells
+                      days={days}
+                      room={room}
+                      roomBlocks={roomBlocks}
+                      canCreate={canCreate}
+                      onSelectEmptyCell={onSelectEmptyCell}
+                      onSelectBlock={onSelectBlock}
+                    />
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
 }
 
-interface CalendarCellProps {
-  day: Date
-  dateKey: string
-  monthStartKey: string
+interface RoomCalendarCellsProps {
+  days: Date[]
   room: Room
-  block?: RoomStatusBlock
+  roomBlocks: RoomStatusBlock[]
   canCreate: boolean
   onSelectEmptyCell: (room: Room, date: Date) => void
   onSelectBlock: (block: RoomStatusBlock) => void
 }
 
-function CalendarCell({
-  day,
-  dateKey,
-  monthStartKey,
+function RoomCalendarCells({
+  days,
   room,
-  block,
+  roomBlocks,
   canCreate,
   onSelectEmptyCell,
   onSelectBlock,
-}: CalendarCellProps) {
-  const nextDateKey = format(addDays(day, 1), "yyyy-MM-dd")
+}: RoomCalendarCellsProps) {
+  const cells: ReactNode[] = []
 
-  if (block) {
-    const firstVisibleDate = block.startDate < monthStartKey ? monthStartKey : block.startDate
-    const isFirstCell = dateKey === firstVisibleDate
-    const isLastCell = nextDateKey >= block.endDate || isSameDay(day, endOfMonth(day))
-    return (
-      <td className={cn("h-14 min-w-12 border-b border-r p-0.5", isWeekend(day) && "bg-slate-50/70", isToday(day) && "bg-blue-50/70")}>
+  for (let index = 0; index < days.length;) {
+    const day = days[index]
+    const dateKey = format(day, "yyyy-MM-dd")
+    const block = findBlockForDate(roomBlocks, dateKey)
+
+    if (!block) {
+      cells.push(
+        <CalendarCell
+          key={dateKey}
+          day={day}
+          dateKey={dateKey}
+          room={room}
+          canCreate={canCreate}
+          onSelectEmptyCell={onSelectEmptyCell}
+        />
+      )
+      index += 1
+      continue
+    }
+
+    let span = 1
+    while (index + span < days.length) {
+      const nextDateKey = format(days[index + span], "yyyy-MM-dd")
+      const nextBlock = findBlockForDate(roomBlocks, nextDateKey)
+      if (nextBlock?.publicId !== block.publicId) break
+      span += 1
+    }
+
+    cells.push(
+      <td key={`${block.publicId}-${dateKey}`} colSpan={span} className="h-14 border-b border-r p-0.5">
         <button
           type="button"
           onClick={() => onSelectBlock(block)}
           title={`${blockTypeLabels[block.blockType]} · ${block.startDate} → ${block.endDate}`}
           className={cn(
-            "flex h-12 w-full items-center overflow-hidden border-y px-1 text-left text-[10px] font-medium transition-opacity hover:opacity-80 focus:relative focus:z-10 focus:outline-none focus:ring-2 focus:ring-[var(--ring)]",
-            blockTypeStyles[block.blockType],
-            isFirstCell && "rounded-l-md border-l",
-            isLastCell && "rounded-r-md border-r",
-            !isFirstCell && "border-l-0",
-            !isLastCell && "border-r-0"
+            "flex h-12 w-full items-center justify-center overflow-hidden rounded-md border px-3 text-center text-xs font-medium transition-opacity hover:opacity-80 focus:relative focus:z-10 focus:outline-none focus:ring-2 focus:ring-ring",
+            blockTypeStyles[block.blockType]
           )}
         >
-          {isFirstCell && <span className="truncate">{blockTypeLabels[block.blockType]}</span>}
+          <span className="min-w-0 max-w-full truncate text-center">{blockTypeLabels[block.blockType]}</span>
           <span className="sr-only">
             {blockTypeLabels[block.blockType]} phòng {room.roomNumber}, từ {block.startDate} đến {block.endDate}
           </span>
         </button>
       </td>
     )
+    index += span
   }
 
+  return cells
+}
+
+function findBlockForDate(roomBlocks: RoomStatusBlock[], dateKey: string) {
+  return roomBlocks.find((block) => block.startDate <= dateKey && block.endDate > dateKey)
+}
+
+interface CalendarCellProps {
+  day: Date
+  dateKey: string
+  room: Room
+  canCreate: boolean
+  onSelectEmptyCell: (room: Room, date: Date) => void
+}
+
+function CalendarCell({
+  day,
+  dateKey,
+  room,
+  canCreate,
+  onSelectEmptyCell,
+}: CalendarCellProps) {
   return (
-    <td className={cn("h-14 min-w-12 border-b border-r p-0.5", isWeekend(day) && "bg-slate-50/70", isToday(day) && "bg-blue-50/70")}>
+    <td className={cn("h-14 min-w-24 border-b border-r p-0.5", isWeekend(day) && "bg-slate-50/70", isToday(day) && "bg-blue-50/70")}>
       <button
         type="button"
         disabled={!canCreate}
         onClick={() => onSelectEmptyCell(room, day)}
         aria-label={`Tạo lịch cho phòng ${room.roomNumber} ngày ${dateKey}`}
-        className="h-12 w-full rounded-md transition-colors hover:bg-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-default disabled:hover:bg-transparent"
+        className="h-12 w-full rounded-md transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-default disabled:hover:bg-transparent"
       />
     </td>
   )
@@ -206,10 +240,10 @@ function CalendarCell({
 
 function BlockLegend() {
   return (
-    <div className="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border bg-[var(--card)] p-4 text-sm">
+    <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
       {(Object.keys(blockTypeLabels) as RoomBlockType[]).map((blockType) => (
         <div key={blockType} className="flex items-center gap-2">
-          <span className={cn("h-3 w-3 rounded-full", blockTypeDotStyles[blockType])} />
+          <span className={cn("size-3 rounded-full", blockTypeDotStyles[blockType])} />
           <span>{blockTypeLabels[blockType]}</span>
         </div>
       ))}

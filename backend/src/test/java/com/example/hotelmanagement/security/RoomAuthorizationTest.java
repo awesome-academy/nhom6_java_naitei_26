@@ -1,6 +1,9 @@
 package com.example.hotelmanagement.security;
 
 import com.example.hotelmanagement.dto.room.RoomResponse;
+import com.example.hotelmanagement.dto.room.RoomBookingStatus;
+import com.example.hotelmanagement.dto.room.RoomOccupancyResponse;
+import com.example.hotelmanagement.dto.room.RoomBookingMapResponse;
 import com.example.hotelmanagement.dto.room.RoomOperationalStatusResponse;
 import com.example.hotelmanagement.dto.roomstatusblock.RoomStatusBlockResponse;
 import com.example.hotelmanagement.dto.roomimage.RoomImageResponse;
@@ -10,6 +13,10 @@ import com.example.hotelmanagement.entity.enums.RoomOperationalStatus;
 import com.example.hotelmanagement.entity.enums.RoomBlockType;
 import com.example.hotelmanagement.entity.enums.RoomView;
 import com.example.hotelmanagement.services.RoomImageService;
+import com.example.hotelmanagement.services.BookingService;
+import com.example.hotelmanagement.services.BookingCalculatorService;
+import com.example.hotelmanagement.services.RoomOccupancyService;
+import com.example.hotelmanagement.services.RoomBookingMapService;
 import com.example.hotelmanagement.services.RoomService;
 import com.example.hotelmanagement.services.RoomStatusBlockService;
 import org.junit.jupiter.api.Test;
@@ -82,6 +89,18 @@ class RoomAuthorizationTest {
     @MockBean
     private RoomStatusBlockService roomStatusBlockService;
 
+    @MockBean
+    private RoomOccupancyService roomOccupancyService;
+
+    @MockBean
+    private RoomBookingMapService roomBookingMapService;
+
+    @MockBean
+    private BookingService bookingService;
+
+    @MockBean
+    private BookingCalculatorService bookingCalculatorService;
+
     @Test
     void roomEndpointsRequireAuthentication() throws Exception {
         mockMvc.perform(get("/api/rooms"))
@@ -137,11 +156,10 @@ class RoomAuthorizationTest {
 
     @Test
     @WithMockUser(authorities = "room:update")
-    void roomUpdatePermissionAllowsRoomHousekeepingAndImageOperations() throws Exception {
+    void roomUpdatePermissionAllowsRoomAndImageOperations() throws Exception {
         UUID imageId = UUID.randomUUID();
         OffsetDateTime expiry = OffsetDateTime.of(2026, 8, 19, 10, 0, 0, 0, ZoneOffset.UTC);
         when(roomService.updateRoom(eq(ROOM_NUMBER), any())).thenReturn(roomResponse());
-        when(roomService.updateHousekeepingStatus(eq(ROOM_NUMBER), any())).thenReturn(roomResponse());
         when(roomImageService.createUploadUrl(eq(ROOM_NUMBER), any()))
                 .thenReturn(new RoomImageUploadUrlResponse(
                         imageId, "https://upload.example", Map.of("Content-Type", "image/jpeg"), expiry
@@ -161,10 +179,6 @@ class RoomAuthorizationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(UPDATE_REQUEST))
                 .andExpect(status().isOk());
-        mockMvc.perform(patch("/api/rooms/{roomNumber}/housekeeping-status", ROOM_NUMBER)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"status\":\"DIRTY\"}"))
-                .andExpect(status().isOk());
         mockMvc.perform(post("/api/rooms/{roomNumber}/images/upload-url", ROOM_NUMBER)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"fileName\":\"room.jpg\",\"contentType\":\"image/jpeg\",\"fileSize\":1024}"))
@@ -182,6 +196,30 @@ class RoomAuthorizationTest {
                         .content("{\"status\":\"MAINTENANCE\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.operationalStatus").value("MAINTENANCE"));
+    }
+
+    @Test
+    @WithMockUser(authorities = "room:housekeeping:update")
+    void housekeepingPermissionAllowsHousekeepingUpdate() throws Exception {
+        when(roomService.updateHousekeepingStatus(eq(ROOM_NUMBER), any())).thenReturn(roomResponse());
+
+        mockMvc.perform(patch("/api/rooms/{roomNumber}/housekeeping-status", ROOM_NUMBER)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"DIRTY\"}"))
+                .andExpect(status().isOk());
+
+        verify(roomService).updateHousekeepingStatus(eq(ROOM_NUMBER), any());
+    }
+
+    @Test
+    @WithMockUser(authorities = "room:update")
+    void roomUpdatePermissionDoesNotAllowHousekeepingUpdate() throws Exception {
+        mockMvc.perform(patch("/api/rooms/{roomNumber}/housekeeping-status", ROOM_NUMBER)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"DIRTY\"}"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(roomService);
     }
 
     @Test
@@ -211,6 +249,200 @@ class RoomAuthorizationTest {
                 .andExpect(status().isUnauthorized());
 
         verifyNoInteractions(roomStatusBlockService);
+    }
+
+    @Test
+    void roomOccupancyRequiresAuthentication() throws Exception {
+        mockMvc.perform(get("/api/rooms/occupancy"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(roomOccupancyService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "room:read")
+    void roomReadPermissionDoesNotAllowRoomOccupancy() throws Exception {
+        mockMvc.perform(get("/api/rooms/occupancy"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(roomOccupancyService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "room:occupancy:read")
+    void roomOccupancyPermissionReturnsOccupancy() throws Exception {
+        when(roomOccupancyService.getOccupancy(LocalDate.of(2026, 8, 25))).thenReturn(List.of(
+                new RoomOccupancyResponse(ROOM_NUMBER, RoomBookingStatus.OCCUPIED)
+        ));
+
+        mockMvc.perform(get("/api/rooms/occupancy").param("date", "2026-08-25"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].roomNumber").value(ROOM_NUMBER))
+                .andExpect(jsonPath("$[0].bookingStatus").value("OCCUPIED"));
+
+        verify(roomOccupancyService).getOccupancy(LocalDate.of(2026, 8, 25));
+    }
+
+    @Test
+    void staffRoomBookingMapRequiresAuthentication() throws Exception {
+        mockMvc.perform(get("/api/admin/rooms/booking-map")
+                        .param("checkInDate", "2026-09-01")
+                        .param("checkOutDate", "2026-09-03"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(roomBookingMapService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "room:read")
+    void roomReadDoesNotGrantStaffRoomBookingMap() throws Exception {
+        mockMvc.perform(get("/api/admin/rooms/booking-map")
+                        .param("checkInDate", "2026-09-01")
+                        .param("checkOutDate", "2026-09-03"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(roomBookingMapService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "room:booking_map:read")
+    void roomBookingMapPermissionReturnsTimelineRooms() throws Exception {
+        when(roomBookingMapService.getBookingMap(
+                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 3)
+        )).thenReturn(List.of(new RoomBookingMapResponse(
+                1L,
+                ROOM_NUMBER,
+                "DLX",
+                "Deluxe",
+                RoomView.SEA,
+                1,
+                RoomOperationalStatus.ACTIVE,
+                HousekeepingStatus.CLEAN,
+                3,
+                true,
+                null,
+                List.of()
+        )));
+
+        mockMvc.perform(get("/api/admin/rooms/booking-map")
+                        .param("checkInDate", "2026-09-01")
+                        .param("checkOutDate", "2026-09-03"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].roomNumber").value(ROOM_NUMBER))
+                .andExpect(jsonPath("$[0].selectable").value(true));
+
+        verify(roomBookingMapService).getBookingMap(
+                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 3)
+        );
+    }
+
+    @Test
+    void staffBookingCreationRequiresAuthentication() throws Exception {
+        mockMvc.perform(post("/api/admin/bookings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(staffBookingRequest()))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(bookingService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "booking:create")
+    void customerBookingPermissionDoesNotGrantStaffBookingCreation() throws Exception {
+        mockMvc.perform(post("/api/admin/bookings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(staffBookingRequest()))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(bookingService);
+    }
+
+    @Test
+    void staffBookingPermissionPassesAuthenticatedUserId() throws Exception {
+        UserPrincipal principal = principal(99L);
+        var authentication = UsernamePasswordAuthenticationToken.authenticated(
+                principal,
+                null,
+                List.of(new SimpleGrantedAuthority("booking:create_staff"))
+        );
+
+        mockMvc.perform(post("/api/admin/bookings")
+                        .with(authentication(authentication))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(staffBookingRequest()))
+                .andExpect(status().isCreated());
+
+        verify(bookingService).createStaffBooking(any(), eq(99L));
+    }
+
+    @Test
+    @WithMockUser(authorities = "booking:create_staff")
+    void staffBookingRequiresContactPhone() throws Exception {
+        mockMvc.perform(post("/api/admin/bookings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(staffBookingRequest().replace(
+                                "\"contactPhone\": \"0900000000\",",
+                                "\"contactPhone\": \"\","
+                        )))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(bookingService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "booking:create_staff")
+    void staffBookingRequiresIdentityDocumentForEveryGuest() throws Exception {
+        mockMvc.perform(post("/api/admin/bookings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(staffBookingRequest().replace(
+                                "\"idDocumentNumber\": \"012345678901\"",
+                                "\"idDocumentNumber\": \"\""
+                        )))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(bookingService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "booking:create_staff")
+    void staffBookingPermissionAllowsPriceCalculation() throws Exception {
+        mockMvc.perform(post("/api/bookings/calculate-price")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "roomTypeCode":"DLX",
+                                  "paymentOption":"ONLINE",
+                                  "cancellationPolicyCode":"FLEXIBLE",
+                                  "checkInDate":"2026-09-01",
+                                  "checkOutDate":"2026-09-03",
+                                  "adults":1,
+                                  "children":0
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        verify(bookingCalculatorService).calculatePrice(any());
+    }
+
+    @Test
+    @WithMockUser(authorities = "room:read")
+    void roomReadPermissionDoesNotAllowPriceCalculation() throws Exception {
+        mockMvc.perform(post("/api/bookings/calculate-price")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "roomTypeCode":"DLX",
+                                  "paymentOption":"ONLINE",
+                                  "cancellationPolicyCode":"FLEXIBLE",
+                                  "checkInDate":"2026-09-01",
+                                  "checkOutDate":"2026-09-03",
+                                  "adults":1,
+                                  "children":0
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(bookingCalculatorService);
     }
 
     @Test
@@ -363,6 +595,40 @@ class RoomAuthorizationTest {
                 OffsetDateTime.of(2026, 8, 19, 10, 0, 0, 0, ZoneOffset.UTC),
                 OffsetDateTime.of(2026, 8, 19, 10, 0, 0, 0, ZoneOffset.UTC)
         );
+    }
+
+    private String staffBookingRequest() {
+        return """
+                {
+                  "contactName": "Nguyen Van A",
+                  "contactEmail": "guest@example.com",
+                  "contactPhone": "0900000000",
+                  "rooms": [
+                    {
+                      "roomNumber": "A101",
+                      "roomTypeCode": "DLX",
+                      "paymentOption": "ONLINE",
+                      "checkInDate": "2026-09-01",
+                      "checkOutDate": "2026-09-03",
+                      "guestCount": 2,
+                      "guests": [
+                        {
+                          "fullName": "Nguyen Van A",
+                          "nationality": "VN",
+                          "idDocumentType": "NATIONAL_ID",
+                          "idDocumentNumber": "012345678901"
+                        },
+                        {
+                          "fullName": "Nguyen Van B",
+                          "nationality": "VN",
+                          "idDocumentType": "PASSPORT",
+                          "idDocumentNumber": "P1234567"
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """;
     }
 
     private UserPrincipal principal(Long id) {

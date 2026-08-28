@@ -37,6 +37,15 @@ export const calculateBookingPrice = (
     children: number;
   },
 ) => apiClient.post<PriceCalculation>("/api/bookings/calculate-price", body);
+export const calculateStaffBookingPrice = (
+  body: {
+    roomTypeCode: string;
+    paymentOption: "ONLINE" | "PAY_AT_HOTEL";
+    checkInDate: string;
+    checkOutDate: string;
+    adults: number;
+  },
+) => apiClient.post<PriceCalculation>("/api/admin/bookings/calculate-price", body);
 export const createBooking = (body: BookingCreateRequest) =>
   apiClient.post<Booking>("/api/bookings", body);
 export const addBookingGuest = (

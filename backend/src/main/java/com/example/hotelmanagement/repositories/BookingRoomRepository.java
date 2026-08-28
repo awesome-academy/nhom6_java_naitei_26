@@ -19,6 +19,54 @@ import java.util.Set;
 public interface BookingRoomRepository extends JpaRepository<BookingRoom, Long> {
 
     @Query("""
+            SELECT room.id AS roomId,
+                   booking.publicId AS bookingPublicId,
+                   booking.bookingCode AS bookingCode,
+                   booking.status AS bookingStatus,
+                   bookingRoom.status AS bookingRoomStatus,
+                   bookingRoom.checkInDate AS startDate,
+                   bookingRoom.checkOutDate AS endDate
+            FROM BookingRoom bookingRoom
+            JOIN bookingRoom.booking booking
+            JOIN bookingRoom.room room
+            WHERE room.deletedAt IS NULL
+              AND bookingRoom.status IN (
+                    com.example.hotelmanagement.entity.enums.BookingRoomStatus.RESERVED,
+                    com.example.hotelmanagement.entity.enums.BookingRoomStatus.OCCUPIED
+                  )
+              AND bookingRoom.checkInDate < :endDate
+              AND bookingRoom.checkOutDate > :startDate
+            ORDER BY room.roomNumber ASC, bookingRoom.checkInDate ASC
+            """)
+    List<RoomBookingTimelineProjection> findBookingTimeline(
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate
+    );
+
+    @Query("""
+            SELECT room.roomNumber AS roomNumber,
+                   booking.status AS bookingStatus,
+                   bookingRoom.status AS bookingRoomStatus
+            FROM BookingRoom bookingRoom
+            JOIN bookingRoom.booking booking
+            JOIN bookingRoom.room room
+            WHERE room.deletedAt IS NULL
+              AND room.isActive = true
+              AND bookingRoom.checkInDate <= :date
+              AND bookingRoom.checkOutDate > :date
+              AND (
+                    (booking.status = com.example.hotelmanagement.entity.enums.BookingStatus.PENDING
+                        AND bookingRoom.status = com.example.hotelmanagement.entity.enums.BookingRoomStatus.RESERVED)
+                    OR (booking.status = com.example.hotelmanagement.entity.enums.BookingStatus.CONFIRMED
+                        AND bookingRoom.status = com.example.hotelmanagement.entity.enums.BookingRoomStatus.RESERVED)
+                    OR (booking.status = com.example.hotelmanagement.entity.enums.BookingStatus.CHECKED_IN
+                        AND bookingRoom.status = com.example.hotelmanagement.entity.enums.BookingRoomStatus.OCCUPIED)
+                  )
+            ORDER BY room.roomNumber ASC
+            """)
+    List<RoomOccupancyProjection> findOccupancyOnDate(@Param("date") LocalDate date);
+
+    @Query("""
             SELECT booking.publicId AS bookingPublicId,
                    booking.bookingCode AS bookingCode,
                    booking.contactName AS contactName,

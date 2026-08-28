@@ -29,6 +29,32 @@ export function formatCompactMoney(value: number, currency = "VND"): string {
   }).format(value)
 }
 
+export function getRateChangePercent(price: number, basePrice: number): number {
+  if (basePrice <= 0) return 0
+  return ((price - basePrice) / basePrice) * 100
+}
+
+export function formatRateChange(price: number, basePrice: number): string {
+  const change = getRateChangePercent(price, basePrice)
+  if (Math.abs(change) < 0.05) return "0%"
+  return `${new Intl.NumberFormat("vi-VN", {
+    maximumFractionDigits: 1,
+    signDisplay: "always",
+  }).format(change)}%`
+}
+
+export function getRateCellStyle(price: number, basePrice: number, hasOverride: boolean): string {
+  if (!hasOverride) return "bg-background text-muted-foreground"
+
+  const change = getRateChangePercent(price, basePrice)
+  if (change <= 0) return "bg-sky-100 text-sky-900 ring-1 ring-inset ring-sky-300"
+  if (change <= 10) return "bg-blue-100 text-blue-900 ring-1 ring-inset ring-blue-200"
+  if (change <= 25) return "bg-blue-200 text-blue-950 ring-1 ring-inset ring-blue-300"
+  if (change <= 50) return "bg-blue-300 text-blue-950 ring-1 ring-inset ring-blue-400"
+  if (change <= 100) return "bg-blue-500 text-white ring-1 ring-inset ring-blue-600"
+  return "bg-blue-700 text-white ring-1 ring-inset ring-blue-800"
+}
+
 export function formatWeekdays(weekdays: number[] | null): string {
   if (weekdays === null || weekdays.length === 7) return "Mọi ngày"
   return weekdays

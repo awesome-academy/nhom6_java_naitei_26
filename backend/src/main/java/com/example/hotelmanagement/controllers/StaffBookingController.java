@@ -1,24 +1,35 @@
 package com.example.hotelmanagement.controllers;
 
 import com.example.hotelmanagement.dto.booking.*;
+import com.example.hotelmanagement.dto.payment.PaymentCreateRequest;
+import com.example.hotelmanagement.dto.payment.PaymentResponse;
+import com.example.hotelmanagement.dto.payment.PaymentStatusResponse;
 import com.example.hotelmanagement.dto.room.AvailableRoomForAssignmentResponse;
 import com.example.hotelmanagement.entity.enums.BookingStatus;
 import com.example.hotelmanagement.entity.enums.HousekeepingStatus;
 import com.example.hotelmanagement.entity.enums.RoomView;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import com.example.hotelmanagement.security.UserPrincipal;
+import com.example.hotelmanagement.services.BookingCalculatorService;
 import com.example.hotelmanagement.services.BookingStaffService;
+import com.example.hotelmanagement.services.BookingService;
 import com.example.hotelmanagement.services.BookingStateMachineService;
+import com.example.hotelmanagement.services.PaymentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.net.URI;
 import java.util.List;
 import java.util.Set;
 
@@ -33,13 +44,86 @@ public class StaffBookingController {
 
     private final BookingStaffService bookingStaffService;
     private final BookingStateMachineService bookingStateMachineService;
+    private final BookingService bookingService;
+    private final BookingCalculatorService bookingCalculatorService;
+    private final PaymentService paymentService;
 
     public StaffBookingController(
             BookingStaffService bookingStaffService,
-            BookingStateMachineService bookingStateMachineService
+            BookingStateMachineService bookingStateMachineService,
+            BookingService bookingService,
+            BookingCalculatorService bookingCalculatorService,
+            PaymentService paymentService
     ) {
         this.bookingStaffService = bookingStaffService;
         this.bookingStateMachineService = bookingStateMachineService;
+        this.bookingService = bookingService;
+        this.bookingCalculatorService = bookingCalculatorService;
+        this.paymentService = paymentService;
+    }
+
+    @Operation(summary = "Create a staff-assisted booking")
+    @PostMapping(consumes = "application/json")
+    @PreAuthorize(PermissionExpressions.STAFF_BOOKING_CREATE)
+    public ResponseEntity<BookingResponse> createBooking(
+            @Valid @RequestBody StaffBookingCreateRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        BookingResponse response = bookingService.createStaffBooking(request, principal.getId());
+        return ResponseEntity.status(201).body(response);
+    }
+
+    @Operation(summary = "Calculate a staff booking price")
+    @PostMapping(value = "/calculate-price", consumes = "application/json")
+    @PreAuthorize(PermissionExpressions.STAFF_BOOKING_CREATE)
+    public ResponseEntity<BookingPriceCalculationResponse> calculatePrice(
+            @Valid @RequestBody StaffBookingPriceCalculationRequest request
+    ) {
+        return ResponseEntity.ok(bookingCalculatorService.calculateStaffPrice(request));
+    }
+
+    @Operation(summary = "Create a payment for a staff-assisted booking")
+    @PostMapping(value = "/{publicId}/payments", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize(PermissionExpressions.STAFF_BOOKING_PAYMENT)
+    public ResponseEntity<PaymentResponse> createStaffPayment(
+            @PathVariable String publicId,
+            @Valid @RequestBody PaymentCreateRequest request,
+            @RequestHeader("Idempotency-Key") @NotBlank @Size(max = 80) String idempotencyKey,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        PaymentResponse response = paymentService.createStaffPayment(
+                publicId,
+                request,
+                idempotencyKey,
+                principal.getId()
+        );
+        return ResponseEntity.created(URI.create(
+                "/api/admin/bookings/" + publicId + "/payments/" + response.paymentCode()
+        )).body(response);
+    }
+
+    @Operation(summary = "Get a staff-assisted booking payment")
+    @GetMapping("/{publicId}/payments/{paymentCode}")
+    @PreAuthorize(PermissionExpressions.STAFF_BOOKING_PAYMENT)
+    public PaymentStatusResponse getStaffPayment(
+            @PathVariable String publicId,
+            @PathVariable @NotBlank @Size(max = 30)
+            @Pattern(regexp = "^[A-Za-z0-9-]+$") String paymentCode,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return paymentService.getStaffPayment(publicId, paymentCode, principal.getId());
+    }
+
+    @Operation(summary = "Cancel a staff-assisted booking payment")
+    @PostMapping("/{publicId}/payments/{paymentCode}/cancel")
+    @PreAuthorize(PermissionExpressions.STAFF_BOOKING_PAYMENT)
+    public PaymentStatusResponse cancelStaffPayment(
+            @PathVariable String publicId,
+            @PathVariable @NotBlank @Size(max = 30)
+            @Pattern(regexp = "^[A-Za-z0-9-]+$") String paymentCode,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return paymentService.cancelStaffPayment(publicId, paymentCode, principal.getId());
     }
 
     @Operation(summary = "Get all bookings with filters (Staff view)")
@@ -149,14 +233,15 @@ public class StaffBookingController {
     }
 
     @Operation(summary = "Check-in a booking")
-    @PostMapping("/{publicId}/check-in")
+    @PostMapping(value = "/{publicId}/check-in", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize(PermissionExpressions.BOOKING_CHECK_IN)
     public ResponseEntity<BookingResponse> checkIn(
             @PathVariable String publicId,
+            @Valid @RequestBody(required = false) BookingCheckInRequest request,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ResponseEntity.ok(
-                bookingStateMachineService.checkIn(publicId, principal.getId())
+                bookingStaffService.checkInBooking(publicId, request, principal.getId())
         );
     }
 

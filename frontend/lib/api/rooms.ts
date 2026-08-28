@@ -1,5 +1,11 @@
 import { apiClient } from "@/lib/api/client"
-import type { Room, RoomCreateRequest, RoomUpdateRequest } from "@/types/room"
+import type {
+  HousekeepingStatus,
+  Room,
+  RoomCreateRequest,
+  RoomOccupancy,
+  RoomUpdateRequest,
+} from "@/types/room"
 
 function roomPath(roomNumber: string): string {
   return `/api/rooms/${encodeURIComponent(roomNumber)}`
@@ -18,4 +24,16 @@ export function updateRoom(
   request: RoomUpdateRequest
 ): Promise<Room> {
   return apiClient.put<Room>(roomPath(roomNumber), request)
+}
+
+export function updateHousekeepingStatus(
+  roomNumber: string,
+  status: HousekeepingStatus
+): Promise<Room> {
+  return apiClient.patch<Room>(`${roomPath(roomNumber)}/housekeeping-status`, { status })
+}
+
+export function getRoomOccupancy(date?: string): Promise<RoomOccupancy[]> {
+  const query = date ? `?date=${encodeURIComponent(date)}` : ""
+  return apiClient.get<RoomOccupancy[]>(`/api/rooms/occupancy${query}`)
 }

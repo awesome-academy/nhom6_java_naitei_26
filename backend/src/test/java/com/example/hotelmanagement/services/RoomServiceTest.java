@@ -203,7 +203,7 @@ class RoomServiceTest {
     }
 
     @Test
-    void housekeepingRejectsSkippedAndInspectedTransitions() {
+    void housekeepingRejectsSkippedTransitions() {
         Room room = createRoom(HousekeepingStatus.CLEAN);
         when(roomRepository.findByRoomNumberIgnoreCaseAndDeletedAtIsNull("A101"))
                 .thenReturn(Optional.of(room));
@@ -211,10 +211,6 @@ class RoomServiceTest {
         assertThrows(
                 BusinessValidationException.class,
                 () -> roomService.updateHousekeepingStatus("A101", requestStatus(HousekeepingStatus.CLEANING))
-        );
-        assertThrows(
-                BusinessValidationException.class,
-                () -> roomService.updateHousekeepingStatus("A101", requestStatus(HousekeepingStatus.INSPECTED))
         );
     }
 

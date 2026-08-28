@@ -76,7 +76,6 @@ enum housekeeping_status {
   CLEAN
   DIRTY
   CLEANING
-  INSPECTED
 }
 
 enum room_block_type {
