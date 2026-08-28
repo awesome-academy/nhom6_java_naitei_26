@@ -9,6 +9,7 @@ import com.example.hotelmanagement.entity.enums.PaymentStatus;
 import com.example.hotelmanagement.security.PermissionExpressions;
 import com.example.hotelmanagement.security.UserPrincipal;
 import com.example.hotelmanagement.services.PaymentManagementService;
+import com.example.hotelmanagement.services.RefundService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -39,9 +40,14 @@ import java.util.Set;
 public class PaymentManagementController {
 
     private final PaymentManagementService paymentManagementService;
+    private final RefundService refundService;
 
-    public PaymentManagementController(PaymentManagementService paymentManagementService) {
+    public PaymentManagementController(
+            PaymentManagementService paymentManagementService,
+            RefundService refundService
+    ) {
         this.paymentManagementService = paymentManagementService;
+        this.refundService = refundService;
     }
 
     @GetMapping
@@ -99,11 +105,8 @@ public class PaymentManagementController {
             @Valid @RequestBody PaymentRefundRequest request,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
-        PaymentDetailResponse response = paymentManagementService.requestRefund(
-                paymentCode,
-                request,
-                principal.getId()
-        );
+        refundService.requestManualRefund(paymentCode, request.amount(), request.reason(), principal.getId());
+        PaymentDetailResponse response = paymentManagementService.getPayment(paymentCode);
         return ResponseEntity.created(URI.create("/api/admin/payments/" + paymentCode)).body(response);
     }
 }

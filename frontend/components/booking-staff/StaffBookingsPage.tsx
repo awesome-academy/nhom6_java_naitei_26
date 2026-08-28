@@ -34,6 +34,8 @@ import {
   cancelBooking,
 } from "@/lib/api/booking-staff-api";
 import { getActiveServiceItems } from "@/lib/api/folio";
+import { getLatestRefund } from "@/lib/api/refund";
+import type { RefundResponse } from "@/types/refund";
 import {
   BookingListItem,
   BookingStaffDetail,
@@ -74,6 +76,14 @@ const PAYMENT_LABELS: Record<string, string> = {
   PARTIALLY_PAID: "Thanh toán một phần",
   PAID: "Đã thanh toán",
   REFUNDED: "Đã hoàn tiền",
+};
+
+const REFUND_STATUS_LABELS: Record<RefundResponse["status"], string> = {
+  PENDING: "Đang chờ khách sạn duyệt",
+  PROCESSING: "Đang xử lý hoàn tiền",
+  COMPLETED: "Đã hoàn tiền",
+  FAILED: "Hoàn tiền thất bại",
+  REJECTED: "Yêu cầu bị từ chối",
 };
 
 // Format currency
@@ -153,6 +163,7 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
   const canIssueInvoice = user?.permissions.includes("invoice:issue") ?? false;
   const canVoidInvoice = user?.permissions.includes("invoice:void") ?? false;
   const canSendEmail = user?.permissions.includes("email:send") ?? false;
+  const canManageRefund = user?.permissions.includes("refund:approve") ?? false;
   const canCreateStaffBooking = user?.permissions.includes("booking:create_staff") ?? false;
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -216,6 +227,10 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
     }, 0);
     return () => window.clearTimeout(timer);
   }, [isAuthLoading, isAuthenticated, refreshUser]);
+
+  // Refund (read-only status here — request/approve/complete now live in Payment Management)
+  const [refund, setRefund] = useState<RefundResponse | null>(null);
+  const [isLoadingRefund, setIsLoadingRefund] = useState(false);
 
   // Load bookings
   const loadBookings = useCallback(async () => {
@@ -299,9 +314,24 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
   const openBookingDetail = async (publicId: string) => {
     setIsLoadingDetail(true);
     setIsDetailOpen(true);
+    setRefund(null);
     try {
       const detail = await getBookingDetail(publicId);
       setSelectedBooking(detail);
+
+      if (detail.status === "CANCELLED" && canManageRefund) {
+        setIsLoadingRefund(true);
+        try {
+          setRefund(await getLatestRefund(publicId));
+        } catch (refundError) {
+          if ((refundError as Error & { status?: number })?.status !== 404) {
+            console.error("Failed to load refund", refundError);
+          }
+          setRefund(null);
+        } finally {
+          setIsLoadingRefund(false);
+        }
+      }
     } catch (error) {
       console.error("Failed to load booking detail:", error);
       setIsDetailOpen(false);
@@ -964,6 +994,45 @@ export function StaffBookingsPage({ portal = "/manager" }: { portal?: "/manager"
                           </CardContent>
                         </Card>
                       ))}
+                    </div>
+                  )}
+
+                  {canManageRefund && selectedBooking.status === "CANCELLED" && (
+                    <div className="mt-4 border-t pt-4">
+                      {isLoadingRefund ? (
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      ) : refund ? (
+                        <Card>
+                          <CardContent className="pt-4 flex items-center justify-between gap-4">
+                            <div>
+                              <p className="font-medium">
+                                Hoàn tiền — {REFUND_STATUS_LABELS[refund.status]}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                Số tiền: {formatCurrency(refund.amount, selectedBooking.currency)}
+                                {refund.status === "COMPLETED" && refund.processedAt
+                                  ? ` · Hoàn tất lúc ${formatDateTime(refund.processedAt)}`
+                                  : null}
+                              </p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                router.push(
+                                  `/manager/payments?booking=${encodeURIComponent(selectedBooking.bookingCode)}`
+                                )
+                              }
+                            >
+                              Xử lý tại Quản lý thanh toán
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Chưa có yêu cầu hoàn tiền cho booking này.
+                        </p>
+                      )}
                     </div>
                   )}
                 </TabsContent>

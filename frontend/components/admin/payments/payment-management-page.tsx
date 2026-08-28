@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import {
   CheckCircle2,
@@ -9,6 +9,7 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  ThumbsUp,
   Undo2,
   WalletCards,
 } from "lucide-react"
@@ -24,10 +25,12 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { getManagedPayment, getManagedPayments, requestPaymentRefund, verifyCashPayment } from "@/lib/api/payment-management"
+import { approveRefund, completeRefund } from "@/lib/api/refund"
 import type {
   PaymentDetail,
   PaymentListItem,
   PaymentMethod,
+  PaymentRefundSummary,
   PaymentStatus,
   RefundReason,
 } from "@/types/payment-management"
@@ -103,9 +106,12 @@ function isReceived(status: PaymentStatus) {
 
 export function PaymentManagementPage({ portal = "/manager" }: { portal?: "/manager" }) {
   const router = useRouter()
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuth()
-  const [filters, setFilters] = useState(EMPTY_FILTERS)
-  const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS)
+  const searchParams = useSearchParams()
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth()
+  const canManageRefund = user?.permissions.includes("refund:approve") ?? false
+  const initialBooking = searchParams.get("booking") ?? ""
+  const [filters, setFilters] = useState({ ...EMPTY_FILTERS, booking: initialBooking })
+  const [appliedFilters, setAppliedFilters] = useState({ ...EMPTY_FILTERS, booking: initialBooking })
   const [items, setItems] = useState<PaymentListItem[]>([])
   const [pagination, setPagination] = useState({ page: 0, size: 20, totalItems: 0, totalPages: 0 })
   const [isLoading, setIsLoading] = useState(true)
@@ -119,6 +125,7 @@ export function PaymentManagementPage({ portal = "/manager" }: { portal?: "/mana
   const [refundAmount, setRefundAmount] = useState("")
   const [refundReason, setRefundReason] = useState<RefundReason>("OTHER")
   const [isActionLoading, setIsActionLoading] = useState(false)
+  const [refundActionId, setRefundActionId] = useState<number | null>(null)
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
@@ -231,6 +238,36 @@ export function PaymentManagementPage({ portal = "/manager" }: { portal?: "/mana
     }
   }
 
+  async function handleApproveRefund(refund: PaymentRefundSummary) {
+    if (!selectedPayment) return
+    setRefundActionId(refund.id)
+    try {
+      await approveRefund(selectedPayment.bookingPublicId, refund.id)
+      setSelectedPayment(await getManagedPayment(selectedPayment.paymentCode))
+      toast.success("Đã duyệt yêu cầu hoàn tiền")
+      await loadPayments()
+    } catch (actionError) {
+      toast.error(getErrorMessage(actionError, "Không thể duyệt yêu cầu hoàn tiền."))
+    } finally {
+      setRefundActionId(null)
+    }
+  }
+
+  async function handleCompleteRefund(refund: PaymentRefundSummary) {
+    if (!selectedPayment) return
+    setRefundActionId(refund.id)
+    try {
+      await completeRefund(selectedPayment.bookingPublicId, refund.id, {})
+      setSelectedPayment(await getManagedPayment(selectedPayment.paymentCode))
+      toast.success("Đã hoàn tất hoàn tiền")
+      await loadPayments()
+    } catch (actionError) {
+      toast.error(getErrorMessage(actionError, "Không thể hoàn tất hoàn tiền."))
+    } finally {
+      setRefundActionId(null)
+    }
+  }
+
   const availableRefund = useMemo(() => {
     if (!selectedPayment) return 0
     const pending = selectedPayment.refunds
@@ -304,7 +341,7 @@ export function PaymentManagementPage({ portal = "/manager" }: { portal?: "/mana
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Quản lý thanh toán</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">Theo dõi payment, xác minh tiền mặt và tạo yêu cầu hoàn tiền.</p>
+          <p className="text-sm text-[var(--muted-foreground)]">Theo dõi payment, xác minh tiền mặt, và xử lý toàn bộ vòng đời hoàn tiền (tạo yêu cầu, duyệt, hoàn tất) — dù do khách yêu cầu hay khách sạn chủ động.</p>
         </div>
         <Button variant="outline" onClick={() => void loadPayments()} disabled={isLoading}>
           <RefreshCw data-icon="inline-start" className={isLoading ? "animate-spin" : undefined} /> Làm mới
@@ -436,7 +473,38 @@ export function PaymentManagementPage({ portal = "/manager" }: { portal?: "/mana
                           <span className="font-medium">{formatMoney(refund.amount, selectedPayment.currency)}</span>
                           <span className="text-muted-foreground">{REFUND_REASON_LABELS[refund.reason]} · {formatDateTime(refund.createdAt)}</span>
                         </div>
-                        <Badge variant={refund.status === "COMPLETED" ? "success" : refund.status === "REJECTED" || refund.status === "FAILED" ? "destructive" : "warning"}>{refund.status}</Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={refund.status === "COMPLETED" ? "success" : refund.status === "REJECTED" || refund.status === "FAILED" ? "destructive" : "warning"}>{refund.status}</Badge>
+                          {canManageRefund && refund.status === "PENDING" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void handleApproveRefund(refund)}
+                              disabled={refundActionId === refund.id}
+                            >
+                              {refundActionId === refund.id ? (
+                                <Loader2 data-icon="inline-start" className="animate-spin" />
+                              ) : (
+                                <ThumbsUp data-icon="inline-start" />
+                              )}
+                              Duyệt
+                            </Button>
+                          )}
+                          {canManageRefund && refund.status === "PROCESSING" && (
+                            <Button
+                              size="sm"
+                              onClick={() => void handleCompleteRefund(refund)}
+                              disabled={refundActionId === refund.id}
+                            >
+                              {refundActionId === refund.id ? (
+                                <Loader2 data-icon="inline-start" className="animate-spin" />
+                              ) : (
+                                <CheckCircle2 data-icon="inline-start" />
+                              )}
+                              Hoàn tất
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </CardContent>

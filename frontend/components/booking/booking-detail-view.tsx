@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -17,6 +17,8 @@ import {
   UserRound,
   UsersRound,
 } from "lucide-react"
+
+import { toast } from "sonner"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge, getBookingStatusVariant, getPaymentStatusVariant } from "@/components/ui/badge"
@@ -40,8 +42,10 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { getMyBookingDetail } from "@/lib/api/booking"
-import { cancelBooking, deletePendingBooking } from "@/lib/api/booking"
+import { deletePendingBooking } from "@/lib/api/booking"
+import { getLatestRefund, requestRefund as requestBookingRefund } from "@/lib/api/refund"
 import { getBookingReview } from "@/lib/api/reviews"
+import { CancelBookingDialog } from "@/components/booking/cancel-booking-dialog"
 import type {
   Booking,
   BookingDetail,
@@ -49,6 +53,7 @@ import type {
   BookingStatus,
   BookingStatusHistory,
 } from "@/types/booking"
+import type { RefundResponse } from "@/types/refund"
 
 const bookingStatusLabels: Record<BookingStatus, string> = {
   PENDING: "Chờ xác nhận",
@@ -66,6 +71,14 @@ const paymentStatusLabels: Record<string, string> = {
   PAID: "Đã thanh toán",
   PARTIALLY_REFUNDED: "Hoàn một phần",
   REFUNDED: "Đã hoàn tiền",
+}
+
+const refundStatusLabels: Record<RefundResponse["status"], string> = {
+  PENDING: "Đang chờ khách sạn duyệt",
+  PROCESSING: "Đang xử lý hoàn tiền",
+  COMPLETED: "Đã hoàn tiền",
+  FAILED: "Hoàn tiền thất bại",
+  REJECTED: "Yêu cầu bị từ chối",
 }
 
 const roomStatusLabels: Record<string, string> = {
@@ -163,49 +176,73 @@ function canCancelBooking(booking: Booking) {
   return booking.status === "CONFIRMED"
 }
 
+function canRequestRefund(booking: Booking, refund: RefundResponse | null) {
+  return booking.status === "CANCELLED" && refund === null
+}
+
 export function BookingDetailView({ publicId }: { publicId: string }) {
   const router = useRouter()
   const [detail, setDetail] = useState<BookingDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [hasReview, setHasReview] = useState<boolean | null>(null)
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [refund, setRefund] = useState<RefundResponse | null>(null)
+  const [isRequestingRefund, setIsRequestingRefund] = useState(false)
+
+  const loadBookingDetail = useCallback(async () => {
+    setError(null)
+    try {
+      const response = await getMyBookingDetail(publicId)
+      setDetail(response)
+
+      if (response.booking.status === "CANCELLED") {
+        try {
+          setRefund(await getLatestRefund(publicId))
+        } catch (refundError) {
+          if ((refundError as Error & { status?: number })?.status === 404) {
+            setRefund(null)
+          } else {
+            throw refundError
+          }
+        }
+      } else {
+        setRefund(null)
+      }
+
+      if (response.booking.status !== "CHECKED_OUT") {
+        setHasReview(false)
+        return
+      }
+
+      try {
+        await getBookingReview(publicId)
+        setHasReview(true)
+      } catch {
+        setHasReview(false)
+      }
+    } catch (loadError) {
+      setError(getErrorMessage(loadError))
+    }
+  }, [publicId])
 
   useEffect(() => {
     let ignore = false
 
-    async function loadBookingDetail() {
+    async function initialLoad() {
       setIsLoading(true)
-      setError(null)
       setHasReview(null)
-      try {
-        const response = await getMyBookingDetail(publicId)
-        if (ignore) return
-        setDetail(response)
-
-        if (response.booking.status !== "CHECKED_OUT") {
-          setHasReview(false)
-          return
-        }
-
-        try {
-          await getBookingReview(publicId)
-          if (!ignore) setHasReview(true)
-        } catch {
-          if (!ignore) setHasReview(false)
-        }
-      } catch (loadError) {
-        if (!ignore) setError(getErrorMessage(loadError))
-      } finally {
-        if (!ignore) setIsLoading(false)
-      }
+      await loadBookingDetail()
+      if (!ignore) setIsLoading(false)
     }
 
-    loadBookingDetail()
+    initialLoad()
 
     return () => {
       ignore = true
     }
-  }, [publicId])
+  }, [publicId, loadBookingDetail])
 
   if (isLoading) return <BookingDetailSkeleton />
 
@@ -233,20 +270,52 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
   const { booking } = detail
 
   async function removeBooking() {
-    if (!canDeleteBooking(booking) || !window.confirm("Xóa booking chờ thanh toán?")) return
-    await deletePendingBooking(booking.publicId)
-    router.replace("/profile/bookings")
+    if (isDeleting || !canDeleteBooking(booking) || !window.confirm("Xóa booking chờ thanh toán?")) return
+    setIsDeleting(true)
+    try {
+      await deletePendingBooking(booking.publicId)
+      router.replace("/profile/bookings")
+    } catch (deleteError) {
+      toast.error(deleteError instanceof Error ? deleteError.message : "Không thể xóa booking.")
+      setIsDeleting(false)
+    }
   }
 
-  async function cancelCurrentBooking() {
-    if (!canCancelBooking(booking) || !window.confirm("Hủy booking theo chính sách hiện tại?")) return
-    await cancelBooking(booking.publicId)
-    router.refresh()
+  async function handleCancelled() {
+    toast.success("Đã hủy booking")
+    await loadBookingDetail()
+  }
+
+  async function requestRefundForBooking() {
+    if (
+      isRequestingRefund ||
+      !canRequestRefund(booking, refund) ||
+      !window.confirm("Gửi yêu cầu hoàn tiền cho booking này?")
+    ) {
+      return
+    }
+    setIsRequestingRefund(true)
+    try {
+      const response = await requestBookingRefund(booking.publicId)
+      setRefund(response)
+      toast.success("Đã gửi yêu cầu hoàn tiền")
+    } catch (refundError) {
+      toast.error(refundError instanceof Error ? refundError.message : "Không thể gửi yêu cầu hoàn tiền.")
+    } finally {
+      setIsRequestingRefund(false)
+    }
   }
 
   return (
     <div className="flex flex-col gap-6">
       <BookingBreadcrumb current={booking.bookingCode} />
+
+      <CancelBookingDialog
+        open={isCancelDialogOpen}
+        booking={booking}
+        onOpenChange={setIsCancelDialogOpen}
+        onCancelled={handleCancelled}
+      />
 
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
         <div className="flex flex-col gap-2">
@@ -290,10 +359,24 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
             </>
           )}
           {canCancelBooking(booking) && (
-            <Button variant="outline" onClick={cancelCurrentBooking}>Hủy booking</Button>
+            <Button variant="outline" onClick={() => setIsCancelDialogOpen(true)}>
+              Hủy booking
+            </Button>
+          )}
+          {canRequestRefund(booking, refund) && (
+            <Button variant="outline" onClick={requestRefundForBooking} disabled={isRequestingRefund}>
+              {isRequestingRefund ? "Đang gửi yêu cầu..." : "Yêu cầu hoàn tiền"}
+            </Button>
           )}
           {canDeleteBooking(booking) && (
-            <Button variant="outline" className="text-destructive" onClick={removeBooking}>Xóa booking</Button>
+            <Button
+              variant="outline"
+              className="text-destructive"
+              onClick={removeBooking}
+              disabled={isDeleting}
+            >
+              {isDeleting ? "Đang xóa..." : "Xóa booking"}
+            </Button>
           )}
           <Button asChild variant="outline">
             <Link href="/profile/bookings">
@@ -322,6 +405,19 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
         </Alert>
       )}
 
+      {refund && (
+        <Alert variant={refund.status === "FAILED" || refund.status === "REJECTED" ? "destructive" : "default"}>
+          {refund.status === "COMPLETED" ? <CheckCircle2 /> : <Clock3 />}
+          <AlertTitle>Yêu cầu hoàn tiền — {refundStatusLabels[refund.status]}</AlertTitle>
+          <AlertDescription>
+            Số tiền hoàn: {formatMoney(refund.amount, booking.currency)}
+            {refund.status === "COMPLETED" && refund.processedAt
+              ? ` · Hoàn tất lúc ${formatDateTime(refund.processedAt)}`
+              : null}
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex flex-col gap-6">
         <StayDetailsCard booking={booking} />
         <div className="grid gap-6 lg:grid-cols-2">
@@ -329,7 +425,12 @@ export function BookingDetailView({ publicId }: { publicId: string }) {
           <ContactCard booking={booking} />
         </div>
         <BookingNotesCard detail={detail} />
-        <BookingTimeline history={detail.statusHistory} currentStatus={booking.status} />
+        <BookingTimeline
+          history={detail.statusHistory}
+          currentStatus={booking.status}
+          refund={refund}
+          currency={booking.currency}
+        />
       </div>
     </div>
   )
@@ -440,13 +541,27 @@ function RoomDetailCard({
   )
 }
 
+function RefundTimelineIcon({ status }: { status: RefundResponse["status"] }) {
+  if (status === "COMPLETED") return <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-primary" />
+  if (status === "FAILED" || status === "REJECTED") {
+    return <ReceiptText className="mt-0.5 size-5 shrink-0 text-destructive" />
+  }
+  return <Clock3 className="mt-0.5 size-5 shrink-0 text-primary" />
+}
+
 function BookingTimeline({
   history,
   currentStatus,
+  refund,
+  currency,
 }: {
   history: BookingStatusHistory[]
   currentStatus: BookingStatus
+  refund: RefundResponse | null
+  currency: string
 }) {
+  const showRefundStep = currentStatus === "CANCELLED" && refund !== null
+
   return (
     <Card>
       <CardHeader>
@@ -454,7 +569,7 @@ function BookingTimeline({
         <CardDescription>Lịch sử trạng thái được ghi nhận theo thời gian.</CardDescription>
       </CardHeader>
       <CardContent>
-        {history.length === 0 ? (
+        {history.length === 0 && !showRefundStep ? (
           <Alert>
             <Clock3 />
             <AlertTitle>Chưa có lịch sử trạng thái</AlertTitle>
@@ -480,6 +595,22 @@ function BookingTimeline({
                 </div>
               </li>
             ))}
+            {showRefundStep && refund && (
+              <li key="synthetic-refund" className="flex gap-3">
+                <RefundTimelineIcon status={refund.status} />
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">{refundStatusLabels[refund.status]}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDateTime(refund.status === "COMPLETED" ? refund.processedAt : refund.createdAt)}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Số tiền: {formatMoney(refund.amount, currency)}
+                  </p>
+                </div>
+              </li>
+            )}
           </ol>
         )}
       </CardContent>
