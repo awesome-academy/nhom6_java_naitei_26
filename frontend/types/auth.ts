@@ -54,6 +54,10 @@ export interface EmailVerificationRequest {
   token: string
 }
 
+export interface EmailVerificationResendRequest {
+  email: string
+}
+
 export interface PasswordResetEmailRequest {
   email: string
 }

@@ -3,6 +3,7 @@ package com.example.hotelmanagement.services;
 import com.example.hotelmanagement.dto.auth.AuthMessageResponse;
 import com.example.hotelmanagement.dto.auth.AuthResponse;
 import com.example.hotelmanagement.dto.auth.EmailVerificationRequest;
+import com.example.hotelmanagement.dto.auth.EmailVerificationResendRequest;
 import com.example.hotelmanagement.dto.auth.LoginRequest;
 import com.example.hotelmanagement.dto.auth.OAuthGoogleRequest;
 import com.example.hotelmanagement.dto.auth.RegisterRequest;
@@ -25,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.http.HttpStatus;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -95,6 +97,7 @@ class AuthServiceTest {
                 5,
                 Duration.ofMinutes(15),
                 Duration.ofHours(24),
+                Duration.ofMinutes(1),
                 Duration.ofMinutes(30),
                 "http://localhost:3000/auth/verify-email",
                 "http://localhost:3000/auth/reset-password",
@@ -145,6 +148,7 @@ class AuthServiceTest {
                 .build();
         AuthToken token = AuthToken.builder()
                 .user(user)
+                .expiresAt(OffsetDateTime.now(FIXED_CLOCK).plusHours(1))
                 .build();
         when(authTokenService.findTokenForVerification("verification-token"))
                 .thenReturn(Optional.of(token));
@@ -157,6 +161,51 @@ class AuthServiceTest {
         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
         assertThat(user.getEmailVerifiedAt()).isEqualTo(OffsetDateTime.now(FIXED_CLOCK));
         verify(emailService).sendAccountActivatedEmail(user);
+    }
+
+    @Test
+    void verifyEmailRejectsExpiredUnusedToken() {
+        User user = User.builder()
+            .publicId("public-id")
+            .email("guest@example.com")
+            .fullName("Guest")
+            .status(UserStatus.PENDING_VERIFICATION)
+            .build();
+        AuthToken token = AuthToken.builder()
+            .user(user)
+            .expiresAt(OffsetDateTime.now(FIXED_CLOCK).minusSeconds(1))
+            .build();
+        when(authTokenService.findTokenForVerification("expired-token"))
+            .thenReturn(Optional.of(token));
+
+        assertThatThrownBy(() -> authService.verifyEmail(new EmailVerificationRequest("expired-token")))
+            .isInstanceOfSatisfying(AuthException.class, exception ->
+                assertThat(exception.getStatus()).isEqualTo(HttpStatus.GONE)
+            );
+    }
+
+    @Test
+    void resendEmailVerificationSendsNewTokenForPendingUser() {
+        User user = User.builder()
+            .publicId("public-id")
+            .email("guest@example.com")
+            .fullName("Guest")
+            .status(UserStatus.PENDING_VERIFICATION)
+            .build();
+        when(userRepository.findByEmailIgnoreCaseAndDeletedAtIsNull("guest@example.com"))
+            .thenReturn(Optional.of(user));
+        when(authTokenService.createResendEmailVerificationToken(user, null))
+            .thenReturn(Optional.of(new AuthTokenService.IssuedAuthToken(
+                "verification-token",
+                OffsetDateTime.now(FIXED_CLOCK).plusHours(24)
+            )));
+
+        AuthMessageResponse response = authService.resendEmailVerification(
+            new EmailVerificationResendRequest("Guest@Example.com")
+        );
+
+        assertThat(response.message()).isNotBlank();
+        verify(emailService).sendVerificationEmail("guest@example.com", "Guest", "verification-token");
     }
 
     @Test

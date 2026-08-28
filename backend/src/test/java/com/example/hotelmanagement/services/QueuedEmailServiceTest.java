@@ -54,6 +54,7 @@ class QueuedEmailServiceTest {
                         5,
                         Duration.ofMinutes(15),
                         Duration.ofHours(24),
+                        Duration.ofMinutes(1),
                         Duration.ofMinutes(30),
                         "http://localhost:3000/auth/verify-email",
                         "http://localhost:3000/auth/reset-password",

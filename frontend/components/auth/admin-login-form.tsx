@@ -35,7 +35,7 @@ function getSafeRedirect(value: string | null): string {
 
 function getErrorMessage(error: unknown): string {
   const apiError = error as { status?: number; message?: string }
-  if (apiError.status === 401) return "Email hoặc mật khẩu không đúng"
+  if (apiError.status === 400 || apiError.status === 401) return "Email hoặc mật khẩu không đúng"
   if (apiError.status === 423) return "Tài khoản đang bị khóa tạm thời. Vui lòng thử lại sau."
   if (apiError.status === 403) return "Tài khoản chưa sẵn sàng để đăng nhập."
   return apiError.message || "Không thể đăng nhập Manager. Vui lòng thử lại."

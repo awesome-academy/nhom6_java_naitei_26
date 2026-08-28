@@ -16,6 +16,7 @@ function VerifyEmailContent() {
   const [message, setMessage] = useState(
     token ? "" : "Token xác thực không hợp lệ hoặc đã hết hạn."
   )
+  const [isVerificationTokenExpired, setIsVerificationTokenExpired] = useState(false)
 
   useEffect(() => {
     if (!token) return
@@ -29,7 +30,8 @@ function VerifyEmailContent() {
         setStatus("error")
         const error = err as { status?: number; message?: string }
         if (error.status === 410) {
-          setMessage("Token đã hết hạn hoặc đã được sử dụng. Vui lòng đăng ký tài khoản mới.")
+          setIsVerificationTokenExpired(true)
+          setMessage("Link xác thực đã hết hạn. Vui lòng đăng nhập để gửi lại email xác thực.")
         } else {
           setMessage(error.message || "Đã xảy ra lỗi khi xác thực email.")
         }
@@ -138,9 +140,11 @@ function VerifyEmailContent() {
         <Button asChild className="w-full h-12 text-base font-medium">
           <Link href="/login">Quay lại đăng nhập</Link>
         </Button>
-        <Button asChild variant="outline" className="w-full h-12 text-base font-medium">
-          <Link href="/register">Đăng ký tài khoản mới</Link>
-        </Button>
+        {!isVerificationTokenExpired && (
+          <Button asChild variant="outline" className="w-full h-12 text-base font-medium">
+            <Link href="/register">Đăng ký tài khoản mới</Link>
+          </Button>
+        )}
       </div>
     </div>
   )

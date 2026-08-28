@@ -50,6 +50,7 @@ class AuthTokenServiceTest {
             5,
             Duration.ofMinutes(15),
             Duration.ofHours(24),
+            Duration.ofMinutes(1),
             Duration.ofMinutes(30),
             "http://localhost:3000/auth/verify-email",
             "http://localhost:3000/auth/reset-password",
@@ -84,6 +85,20 @@ class AuthTokenServiceTest {
         assertThat(savedToken.getTokenHash()).isNotEqualTo(issuedToken.value());
         assertThat(savedToken.getRequestedIp()).isEqualTo("127.0.0.1");
         assertThat(savedToken.getExpiresAt()).isEqualTo(NOW.plusHours(24));
+    }
+
+    @Test
+    void createResendEmailVerificationTokenSkipsRecentRequests() {
+        when(authTokenRepository.existsByUserAndTokenTypeAndCreatedAtAfter(
+            user,
+            EMAIL_VERIFICATION,
+            NOW.minusMinutes(1)
+        )).thenReturn(true);
+
+        Optional<AuthTokenService.IssuedAuthToken> issuedToken = authTokenService
+            .createResendEmailVerificationToken(user, null);
+
+        assertThat(issuedToken).isEmpty();
     }
 
     @Test

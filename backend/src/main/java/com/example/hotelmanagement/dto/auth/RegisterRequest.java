@@ -26,7 +26,7 @@ public record RegisterRequest(
 
     @Schema(description = "Optional phone number", example = "+84901234567")
     @Size(max = 20)
-    @Pattern(regexp = "^[0-9+() .-]*$")
+    @Pattern(regexp = "^(?:\\s*|(?:[+() .-]*[0-9]){10,15}[+() .-]*)$")
     String phone
 ) {
 }
